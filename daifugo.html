@@ -252,6 +252,8 @@
   }
   .card.playable{ box-shadow:0 0 0 3px rgba(94,217,189,0.85), 0 2px 4px rgba(0,0,0,0.35); }
   .card.playable.selected{ box-shadow:0 0 0 3px rgba(94,217,189,0.85), 0 6px 14px rgba(0,0,0,0.5); }
+  .card.received{ box-shadow:0 0 0 3px rgba(230,126,34,0.9), 0 2px 4px rgba(0,0,0,0.35); }
+  .card.received.selected{ box-shadow:0 0 0 3px rgba(230,126,34,0.9), 0 6px 14px rgba(0,0,0,0.5); }
   .card .rank{ font-size:15px; line-height:1; }
   .card .rank.jokerlabel{ font-size:10px; letter-spacing:0.02em; }
   .card .suit{ font-size:20px; align-self:flex-end; line-height:1; }
@@ -637,6 +639,8 @@ let defendingDaifugoIdx = null;
 let handSortDescending = false;
 let discardHistory = [];
 let jokerCount = 2;
+let nextStartingPlayerOverride = null;
+let lastReceivedCardIds = new Set();
 
 function strengthIndex(rank){ return RANKS.indexOf(rank); }
 function orderReversed(){ return revolution !== elevenBack; }
@@ -782,6 +786,8 @@ function dealFreshHands(){
   violationReasons = {};
   defendingDaifugoIdx = null;
   discardHistory = [];
+  nextStartingPlayerOverride = null;
+  lastReceivedCardIds = new Set();
   gameOver = false;
   selected = new Set();
   logLines = [];
@@ -797,11 +803,16 @@ function dealFreshHands(){
 }
 
 function finalizeGameStart(){
-  currentPlayerIndex = 0;
-  outer:
-  for(let p=0;p<4;p++){
-    for(const c of hands[p]){
-      if(c.rank==='3' && c.suit==='♠'){ currentPlayerIndex=p; break outer; }
+  if(nextStartingPlayerOverride!==null){
+    currentPlayerIndex = nextStartingPlayerOverride;
+    nextStartingPlayerOverride = null;
+  } else {
+    currentPlayerIndex = 0;
+    outer:
+    for(let p=0;p<4;p++){
+      for(const c of hands[p]){
+        if(c.rank==='3' && c.suit==='♦'){ currentPlayerIndex=p; break outer; }
+      }
     }
   }
   exchangeInProgress = false;
@@ -822,6 +833,7 @@ function startGameWithExchange(){
   dealFreshHands();
   if(prevOrder && prevOrder.length===4){
     if(rules.miyakoOchi) defendingDaifugoIdx = prevOrder[0];
+    nextStartingPlayerOverride = prevOrder[3]; // previous daihinmin leads the next game
     log('新しいゲームを開始しました。前回の順位に応じてカード交換を行います。');
     exchangeInProgress = true;
     exchangeQueue = buildExchangeQueue(prevOrder);
@@ -855,6 +867,7 @@ function processNextExchange(){
     const ids = new Set(chosen.map(c=>c.id));
     hands[task.giver] = hands[task.giver].filter(c=>!ids.has(c.id));
     hands[task.receiver] = hands[task.receiver].concat(chosen);
+    lastReceivedCardIds = ids; // so the receiver's upcoming give-choice can highlight these
     log(playerName(task.giver)+'（前回の'+task.giverRole+'）が最強の'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した（'+chosen.map(c=>c.rank==='JOKER'?'ジョーカー':c.rank+c.suit).join('、')+'）');
     render();
     processNextExchange();
@@ -880,8 +893,13 @@ function openExchangeGiveModal(task){
 function renderExchangeModal(){
   const pa = pendingAction;
   const hand = hands[pa.task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
-  const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'exchangeToggleCard')).join('');
+  const cardsHtml = hand.map(c=>{
+    const extra = 'mini' + (lastReceivedCardIds.has(c.id) ? ' received' : '');
+    return cardHtml(c, extra, true, pa.chosen.has(c.id), 'exchangeToggleCard');
+  }).join('');
+  const hint = lastReceivedCardIds.size>0 ? '<p style="font-size:11px;color:#8a6d1f;">オレンジの枠＝相手から受け取ったカードです</p>' : '';
   showActionModal('<h2>カード交換</h2><p>あなたは前回の'+pa.task.giverRole+'です。'+playerName(pa.task.receiver)+'（前回の'+pa.task.receiverRole+'）に渡すカードを'+pa.task.count+'枚選んでください（'+pa.chosen.size+'/'+pa.task.count+'）</p>'
+    + hint
     + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
     + '<button class="action play" '+(pa.chosen.size===pa.task.count?'':'disabled')+' onclick="confirmExchange()">渡す</button>');
 }
@@ -972,12 +990,15 @@ function canBeatField(rank, count, cards){
   }
   if(field!==null && count!==field.count) return { ok:false, reason:'場と同じ枚数を出してください（'+field.count+'枚）' };
   if(isSpade3Counter(count, cards)) return { ok:true };
-  if(rules.numberLock && numberLock){
+  // Pure joker plays (single joker, or jokers-only for a multi-card play) always ignore
+  // number/suit locks - they're only subject to the normal strength comparison below.
+  const isPureJoker = rank==='JOKER';
+  if(rules.numberLock && numberLock && !isPureJoker){
     if(rank!==numberLock) return { ok:false, reason:'数しばり中：'+numberLock+'しか出せません' };
   } else if(field!==null){
     if(effStrength(rank) <= effStrength(field.rank)) return { ok:false, reason:'その組み合わせは出せません' };
   }
-  if(rules.suitLock && suitLock){
+  if(rules.suitLock && suitLock && !isPureJoker){
     if(!cards.some(c=>c.suit===suitLock)) return { ok:false, reason:'スートしばり中：'+suitLock+'を含めて出してください' };
   }
   return { ok:true };
@@ -1098,6 +1119,12 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
     fieldCleared=true;
     log('場が流れた');
     showCutIn('4止め！！ 8切り阻止！');
+  } else if(wasSpade3Counter){
+    // Spade-3 returns always clear the field immediately, same as 8-giri: nobody gets a
+    // chance to beat the "3" that was played, and the counterer leads the next trick.
+    clearField();
+    fieldCleared=true;
+    log('スペ3返しで場が流れた');
   }
 
   checkGameEnd();
@@ -1109,14 +1136,17 @@ function finalizeTurn(info, extraSkips){
   extraSkips = extraSkips || 0;
   if(gameOver){ render(); showResults(); return; }
   if(!(info.fieldCleared && !info.finished)){
+    const act = activePlayers();
+    // Cap skips at the number of OTHER active players: skipping further than that would wrap
+    // back around and skip the player who led (or double-skip someone), which must never happen.
+    const effectiveSkips = Math.min(extraSkips, Math.max(0, act.length-1));
     advanceTurn();
-    for(let k=0;k<extraSkips;k++) advanceTurn();
-    if(extraSkips>0 && field!==null){
+    for(let k=0;k<effectiveSkips;k++) advanceTurn();
+    if(effectiveSkips>0 && field!==null){
       // Skipped players never got a chance to respond, so they count the same as a pass
       // toward clearing the field (otherwise the trick can stall and wrap back to the
       // player who led it without ever resolving).
-      passStreak += extraSkips;
-      const act = activePlayers();
+      passStreak += effectiveSkips;
       if(passStreak >= act.length-1){
         clearField();
         log('スキップにより誰も応答できず、場が流れた');
@@ -1272,12 +1302,13 @@ function cpuTurn(idx){
     let best=null;
     for(const r of ranksAvail){
       if(groups[r].length < field.count) continue;
-      if(rules.numberLock && numberLock){
+      const isPureJokerR = r==='JOKER';
+      if(rules.numberLock && numberLock && !isPureJokerR){
         if(r!==numberLock) continue;
       } else {
         if(effStrength(r) <= effStrength(field.rank)) continue;
       }
-      if(rules.suitLock && suitLock && r!=='JOKER'){
+      if(rules.suitLock && suitLock && !isPureJokerR){
         if(!groups[r].some(c=>c.suit===suitLock)) continue;
       }
       const es = effStrength(r);

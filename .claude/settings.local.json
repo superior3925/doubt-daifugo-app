@@ -21,7 +21,9 @@
       "Bash(python -m http.server 8741)",
       "Bash(taskkill //F //PID 22180)",
       "Bash(python -m http.server 8742)",
-      "Bash(taskkill //F //PID 33344)"
+      "Bash(taskkill //F //PID 33344)",
+      "Bash(python -m http.server 8743)",
+      "Bash(taskkill //F //PID 31548)"
     ]
   }
 }
