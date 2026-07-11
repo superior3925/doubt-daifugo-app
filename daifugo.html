@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大富豪</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --felt-dark:#062219;
+    --felt:#0c3a2c;
+    --felt-light:#155440;
+    --gold:#c9a227;
+    --gold-soft:#e7cd7b;
+    --cream:#faf6ec;
+    --ink:#201b12;
+    --red-hanko:#a6321f;
+    --shadow:rgba(0,0,0,0.45);
+    --playable:#5ed9bd;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    background:
+      radial-gradient(ellipse at center, var(--felt) 0%, var(--felt-dark) 78%);
+    min-height:100vh;
+    color:var(--cream);
+    display:flex;
+    justify-content:center;
+    padding:20px 12px 40px;
+  }
+  .app{ width:100%; max-width:1180px; }
+  h1.title{
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    text-align:center;
+    font-size:38px;
+    letter-spacing:0.15em;
+    color:var(--gold-soft);
+    margin:4px 0 2px;
+    text-shadow:0 2px 6px var(--shadow);
+  }
+  .subtitle{
+    text-align:center;
+    font-size:12px;
+    color:#b9c9be;
+    letter-spacing:0.1em;
+    margin-bottom:14px;
+  }
+  .rules-toggle{
+    display:block;
+    margin:0 auto 14px;
+    background:transparent;
+    border:1px solid var(--gold);
+    color:var(--gold-soft);
+    padding:6px 16px;
+    border-radius:999px;
+    font-size:12px;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .rules-box{
+    display:none;
+    background:rgba(0,0,0,0.35);
+    border:1px solid var(--gold);
+    border-radius:10px;
+    padding:14px 18px;
+    font-size:13px;
+    line-height:1.9;
+    margin:0 auto 16px;
+    max-width:640px;
+    color:#e8e2cf;
+  }
+  .rules-box.show{display:block;}
+  .rules-box b{color:var(--gold-soft);}
+
+  .setup-box{
+    max-width:980px; margin:0 auto; background:rgba(0,0,0,0.35); border:1px solid var(--gold);
+    border-radius:14px; padding:18px 22px; text-align:center;
+  }
+  .setup-title{ font-family:'Shippori Mincho',serif; font-size:20px; color:var(--gold-soft); margin-bottom:6px; }
+  .setup-desc{ font-size:11px; color:#cfd8d0; margin-bottom:12px; }
+  .rule-columns{ display:grid; grid-template-columns:1fr 1fr; gap:16px; text-align:left; align-items:start; }
+  .rule-column-title{
+    font-family:'Shippori Mincho',serif; font-weight:800; font-size:13px; color:var(--gold-soft);
+    border-bottom:1px solid rgba(231,205,123,0.4); padding-bottom:4px; margin-bottom:8px;
+  }
+  .rule-list{ display:flex; flex-direction:column; gap:6px; }
+  .rule-item{
+    display:flex; gap:8px; align-items:flex-start; background:rgba(255,255,255,0.04);
+    border:1px solid rgba(231,205,123,0.25); border-radius:7px; padding:6px 10px; cursor:pointer;
+  }
+  .rule-item input{ margin-top:2px; }
+  .rule-item-sub{ margin-left:18px; padding:5px 8px; background:rgba(255,255,255,0.02); }
+  .rule-item-sub .rule-label{ font-size:11.5px; }
+  .rule-item:has(input:disabled){ opacity:0.4; cursor:not-allowed; }
+  .rule-label{ font-size:12.5px; font-weight:700; color:var(--gold-soft); line-height:1.3; }
+  .rule-desc{ font-size:10px; color:#cfd8d0; line-height:1.4; margin-top:1px; }
+  .fw-chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 2px 18px; }
+  .fw-chip{
+    display:flex; align-items:center; gap:4px; background:rgba(255,255,255,0.04);
+    border:1px solid rgba(231,205,123,0.3); border-radius:999px; padding:3px 10px 3px 6px;
+    cursor:pointer; font-size:10.5px; color:#e8e2cf;
+  }
+  .fw-chip input{ margin:0; }
+  .fw-chip:has(input:disabled){ opacity:0.4; cursor:not-allowed; }
+  .rule-num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:18px; height:18px; border-radius:50%; background:var(--gold);
+    color:#2b2200; font-size:10px; font-weight:800; margin-right:6px; flex-shrink:0;
+    vertical-align:middle;
+  }
+  .joker-stepper{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .joker-step-btn{
+    width:22px; height:22px; border-radius:6px; border:1px solid var(--gold);
+    background:transparent; color:var(--gold-soft); cursor:pointer; font-family:inherit; font-size:12px; line-height:1;
+  }
+  .joker-step-btn:disabled{ opacity:0.35; cursor:not-allowed; }
+  #jokerCountDisplay{ font-size:13px; font-weight:700; color:var(--gold-soft); min-width:14px; text-align:center; }
+  .setup-actions{ display:flex; justify-content:center; gap:10px; margin-top:14px; flex-wrap:wrap; }
+  @media (max-width:760px){
+    .rule-columns{ grid-template-columns:1fr; }
+  }
+
+  .game-layout{
+    display:flex;
+    gap:18px;
+    align-items:flex-start;
+  }
+  .game-main{ flex:1; min-width:0; }
+
+  .table{
+    background:radial-gradient(ellipse at center, var(--felt-light) 0%, var(--felt) 70%);
+    border:6px solid var(--felt-dark);
+    outline:2px solid var(--gold);
+    outline-offset:-10px;
+    border-radius:200px/90px;
+    padding:20px 20px;
+    position:relative;
+    min-height:420px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.5), 0 10px 30px var(--shadow);
+  }
+  .discard-pile{
+    position:absolute; top:10px; right:14px; z-index:5;
+    background:rgba(0,0,0,0.35); border:1px solid var(--gold); color:var(--gold-soft);
+    border-radius:10px; padding:6px 10px; font-size:12px; cursor:pointer; font-family:inherit;
+    display:flex; gap:5px; align-items:center;
+  }
+  .opponents-row{
+    display:flex;
+    justify-content:space-around;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .opp{
+    text-align:center;
+    background:rgba(0,0,0,0.25);
+    border:1px solid rgba(231,205,123,0.4);
+    border-radius:10px;
+    padding:8px 14px;
+    min-width:100px;
+    position:relative;
+  }
+  .opp.active{ border-color:var(--gold); box-shadow:0 0 12px rgba(201,162,39,0.6); }
+  .opp .name{ font-size:13px; font-weight:700; color:var(--gold-soft); }
+  .opp .cardback-row{ display:flex; justify-content:center; margin-top:4px; }
+  .cardback{
+    width:20px; height:28px;
+    background:repeating-linear-gradient(45deg, var(--red-hanko), var(--red-hanko) 3px, #7d2416 3px, #7d2416 6px);
+    border:1px solid var(--cream);
+    border-radius:3px;
+    margin-left:-8px;
+  }
+  .cardback:first-child{ margin-left:0; }
+  .opp .count{ font-size:11px; color:#cfd8d0; margin-top:2px; }
+  .badge{
+    position:absolute; top:-10px; right:-6px;
+    background:var(--red-hanko);
+    color:#fbe9e3;
+    border-radius:50%;
+    width:34px;height:34px;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Shippori Mincho',serif;
+    font-weight:800;
+    font-size:11px;
+    border:2px solid #fbe9e3;
+    transform:rotate(-8deg);
+    line-height:1.1;
+    text-align:center;
+  }
+  .badge.violation-badge{ background:#4a3c12; font-size:9px; }
+
+  .field-area{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    min-height:110px;
+  }
+  .field-owner{ font-size:12px; color:#cfe0d4; min-height:16px; }
+  .field-cards{ display:flex; gap:6px; min-height:78px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  .field-empty{ font-size:12px; color:#9db8a8; font-style:italic; }
+  .flags{ display:flex; gap:10px; font-size:11px; flex-wrap:wrap; justify-content:center; }
+  .flag{
+    padding:3px 10px; border-radius:999px; border:1px solid var(--gold);
+    color:var(--gold-soft); background:rgba(0,0,0,0.3);
+  }
+
+  .you-row{ text-align:center; border-radius:16px; padding:8px; transition:box-shadow .2s; }
+  .you-label-row{ display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
+  .you-label{ font-size:13px; font-weight:700; color:var(--gold-soft); }
+  .sort-toggle{
+    font-family:inherit; font-size:11px; background:transparent; border:1px solid var(--gold);
+    color:var(--gold-soft); padding:4px 10px; border-radius:999px; cursor:pointer;
+  }
+
+  .hand{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:6px;
+    margin-top:4px;
+    min-height:100px;
+  }
+  .card{
+    width:56px; height:80px;
+    background:var(--cream);
+    border-radius:6px;
+    border:1px solid #cfc7ab;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    padding:4px 5px;
+    font-weight:700;
+    cursor:pointer;
+    user-select:none;
+    transition:transform .12s ease, box-shadow .12s ease;
+    box-shadow:0 2px 4px rgba(0,0,0,0.35);
+  }
+  .card:hover{ transform:translateY(-6px); }
+  .card.selected{
+    transform:translateY(-16px);
+    outline:2px solid var(--gold);
+    box-shadow:0 6px 14px rgba(0,0,0,0.5);
+  }
+  .card.playable{ box-shadow:0 0 0 3px rgba(94,217,189,0.85), 0 2px 4px rgba(0,0,0,0.35); }
+  .card.playable.selected{ box-shadow:0 0 0 3px rgba(94,217,189,0.85), 0 6px 14px rgba(0,0,0,0.5); }
+  .card .rank{ font-size:15px; line-height:1; }
+  .card .rank.jokerlabel{ font-size:10px; letter-spacing:0.02em; }
+  .card .suit{ font-size:20px; align-self:flex-end; line-height:1; }
+  .card.red{ color:var(--red-hanko); }
+  .card.black{ color:#1a1a1a; }
+  .card.joker{ color:var(--red-hanko); background:linear-gradient(160deg,#faf6ec 60%,#f0e6c8 100%); }
+  .card.mini{ width:44px; height:64px; }
+  .card.mini .rank{ font-size:12px; }
+  .card.mini .rank.jokerlabel{ font-size:8px; }
+  .card.mini .suit{ font-size:16px; }
+  .card.disabled{ opacity:0.45; cursor:not-allowed; }
+  .card.disabled:hover{ transform:none; }
+
+  @keyframes cardDeal{
+    0%{ transform:translateY(34px) scale(0.7) rotate(-6deg); opacity:0; }
+    65%{ transform:translateY(-5px) scale(1.06) rotate(2deg); opacity:1; }
+    100%{ transform:translateY(0) scale(1) rotate(0deg); opacity:1; }
+  }
+  .card.deal-in{ animation:cardDeal 0.45s cubic-bezier(.22,1.4,.4,1); }
+
+  @keyframes cardFlowOut{
+    0%{ transform:translateY(0) scale(1) rotate(0deg); opacity:1; }
+    100%{ transform:translateY(50px) scale(0.75) rotate(10deg); opacity:0; }
+  }
+  .card.flow-out{ animation:cardFlowOut 0.55s ease-in forwards; pointer-events:none; }
+
+  @keyframes turnGlow{
+    0%,100%{ box-shadow:0 0 8px rgba(201,162,39,0.55); }
+    50%{ box-shadow:0 0 22px rgba(201,162,39,0.95); }
+  }
+  .opp.active{ border-color:var(--gold); animation:turnGlow 1.3s ease-in-out infinite; }
+
+  .you-row.active-turn{
+    outline:2px solid var(--gold);
+    animation:turnGlow 1.3s ease-in-out infinite;
+  }
+
+  @keyframes bannerPulse{
+    0%,100%{ transform:scale(1); box-shadow:0 0 6px rgba(201,162,39,0.5); }
+    50%{ transform:scale(1.035); box-shadow:0 0 20px rgba(201,162,39,0.95); }
+  }
+  .turn-banner{
+    text-align:center;
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:16px;
+    padding:8px 14px;
+    border-radius:999px;
+    margin:0 auto 12px;
+    max-width:320px;
+    letter-spacing:0.05em;
+  }
+  .turn-banner.your-turn{
+    background:var(--gold);
+    color:#2b2200;
+    animation:bannerPulse 1.1s ease-in-out infinite;
+  }
+  .turn-banner.cpu-turn{
+    background:rgba(0,0,0,0.3);
+    color:var(--gold-soft);
+    border:1px solid var(--gold);
+  }
+  .turn-banner.neutral{
+    background:transparent;
+    color:#b9c9be;
+    border:1px solid rgba(231,205,123,0.3);
+  }
+
+  .cut-in{
+    position:fixed; top:38%; left:0; right:0; z-index:80;
+    display:flex; justify-content:center; pointer-events:none;
+  }
+  @keyframes cutInSlam{
+    0%{ transform:translateX(-130%) skewX(-8deg); opacity:0; }
+    14%{ transform:translateX(3%) skewX(-8deg); opacity:1; }
+    22%{ transform:translateX(0) skewX(-8deg); opacity:1; }
+    78%{ transform:translateX(0) skewX(-8deg); opacity:1; }
+    100%{ transform:translateX(130%) skewX(-8deg); opacity:0; }
+  }
+  .cut-in-text{
+    background:linear-gradient(100deg, var(--red-hanko), #7d2416 70%);
+    color:#fff2df;
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    font-size:clamp(20px, 5vw, 40px);
+    padding:14px 36px;
+    border-top:3px solid var(--gold-soft);
+    border-bottom:3px solid var(--gold-soft);
+    box-shadow:0 12px 40px rgba(0,0,0,0.65);
+    letter-spacing:0.06em;
+    white-space:nowrap;
+    animation:cutInSlam 1.3s cubic-bezier(.2,.9,.25,1) forwards;
+  }
+
+  .bomber-fly{
+    position:fixed; top:56%; left:0; right:0; z-index:79;
+    display:flex; justify-content:center; gap:6px; flex-wrap:wrap; pointer-events:none;
+    max-width:90vw; margin:0 auto;
+  }
+
+  .controls{
+    display:flex;
+    justify-content:center;
+    gap:12px;
+    margin-top:16px;
+  }
+  button.action{
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    font-weight:700;
+    font-size:14px;
+    padding:10px 26px;
+    border-radius:999px;
+    border:none;
+    cursor:pointer;
+    transition:opacity .12s, transform .12s;
+  }
+  button.action:active{ transform:scale(0.96); }
+  button.play{ background:var(--gold); color:#2b2200; }
+  button.pass{ background:transparent; color:var(--cream); border:1px solid var(--cream); }
+  button.pass.highlight-pass{
+    border-color:var(--red-hanko);
+    background:rgba(166,50,31,0.3);
+    animation:turnGlow 1.1s ease-in-out infinite;
+  }
+  /* Used for "decline" style buttons inside light-colored modals (.result-card), where the
+     dark-on-dark button.pass styling above would be nearly invisible. */
+  button.decline{ background:transparent; color:var(--ink); border:1px solid var(--ink); }
+  button.decline:hover{ background:rgba(32,27,18,0.08); }
+  button.action:disabled{ opacity:0.35; cursor:not-allowed; }
+  button.restart{
+    background:transparent; border:1px solid var(--gold-soft); color:var(--gold-soft);
+    padding:8px 20px; border-radius:999px; font-size:13px; cursor:pointer; font-family:inherit;
+  }
+
+  .rank-btn{
+    font-family:inherit; font-size:12px; font-weight:700; padding:6px 10px; border-radius:8px;
+    border:1px solid var(--gold); background:transparent; color:var(--gold-soft); cursor:pointer;
+  }
+  .rank-btn.active{ background:var(--gold); color:#2b2200; }
+
+  .msg-flash{
+    text-align:center;
+    font-size:12px;
+    color:#ffb4a3;
+    min-height:16px;
+  }
+
+  .log-sidebar{
+    width:280px;
+    flex-shrink:0;
+    background:rgba(0,0,0,0.3);
+    border:1px solid rgba(231,205,123,0.35);
+    border-radius:10px;
+    padding:10px 14px;
+    max-height:700px;
+    display:flex;
+    flex-direction:column;
+  }
+  .log-header{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:12px; color:var(--gold-soft); font-weight:700; margin-bottom:6px;
+  }
+  .log-collapse-btn{
+    background:transparent; border:1px solid var(--gold); color:var(--gold-soft);
+    border-radius:6px; width:24px; height:24px; cursor:pointer; font-family:inherit;
+  }
+  .log-panel{
+    flex:1;
+    overflow-y:auto;
+    font-size:12px;
+    line-height:1.8;
+    color:#d9e3da;
+  }
+  .log-sidebar.collapsed .log-panel{ display:none; }
+
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.7);
+    display:none; align-items:center; justify-content:center; z-index:50;
+    padding:16px;
+  }
+  .overlay.show{ display:flex; }
+  .result-card{
+    position:relative;
+    background:var(--cream); color:var(--ink);
+    border-radius:14px; padding:28px 32px;
+    width:320px; max-width:100%; text-align:center;
+    box-shadow:0 20px 50px rgba(0,0,0,0.6);
+    max-height:86vh; overflow-y:auto;
+  }
+  .result-card h2{
+    font-family:'Shippori Mincho', serif;
+    font-size:24px; margin:0 0 16px; color:var(--red-hanko);
+  }
+  .result-card p{ font-size:13px; margin:8px 0 14px; line-height:1.6; }
+  .result-row{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:8px 4px; border-bottom:1px solid #ddd3b8; font-size:14px;
+  }
+  .result-row:last-child{ border-bottom:none; }
+  .result-title{
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;
+    color:var(--red-hanko);
+  }
+
+  .modal-minimize{
+    position:absolute; top:10px; right:12px;
+    width:26px; height:26px; border-radius:50%;
+    border:1px solid var(--red-hanko); background:transparent; color:var(--red-hanko);
+    font-weight:800; font-size:16px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .restore-tab{
+    position:fixed; bottom:20px; right:20px; z-index:90;
+    background:var(--gold); color:#2b2200; border:none;
+    padding:12px 20px; border-radius:999px; font-weight:800; font-size:13px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.5); cursor:pointer; font-family:inherit;
+    animation:bannerPulse 1.4s ease-in-out infinite;
+  }
+
+  @media (max-width:900px){
+    .game-layout{ flex-direction:column; }
+    .log-sidebar{ width:100%; max-height:220px; }
+  }
+  @media (max-width:600px){
+    h1.title{ font-size:28px; }
+    .card{ width:44px; height:64px; padding:3px 4px;}
+    .card .rank{ font-size:12px;}
+    .card .suit{ font-size:16px;}
+    .opp{ min-width:76px; padding:6px 8px; }
+    .table{ border-radius:60px; padding:14px 10px; }
+    .setup-box{ padding:16px 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1 class="title">大 富 豪</h1>
+  <div class="subtitle">DAIFUGO &mdash; 拡張ルール対応版</div>
+
+  <div id="setupScreen">
+    <div class="setup-box">
+      <div class="setup-title">対戦ルール設定</div>
+      <div class="setup-desc">今回の対戦で有効にするローカルルールを選んでください。何も選ばなければ基本ルールのみで遊べます。</div>
+      <div class="rule-list" id="ruleList"></div>
+      <div class="setup-actions">
+        <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
+        <button class="rules-toggle" id="selectNoneBtn" type="button">すべて解除</button>
+      </div>
+      <button class="action play" id="startGameBtn" style="margin-top:16px;">この設定でゲーム開始</button>
+    </div>
+  </div>
+
+  <div id="gameScreen" style="display:none;">
+    <div class="subtitle" id="activeRulesLine"></div>
+    <div style="display:flex; justify-content:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
+      <button class="rules-toggle" id="rulesBtn">ルールを見る</button>
+      <button class="rules-toggle" id="backToSetupBtn">ルール設定に戻る</button>
+    </div>
+    <div class="rules-box" id="rulesBox">
+      ・4人（あなた + CPU3人）で配ります。<br>
+      ・場に出ているカードより<b>同じ枚数・強いランク</b>のカードを出します（ペア・トリプルもOK）。<br>
+      ・強さは弱い順に <b>3,4,5,6,7,8,9,10,J,Q,K,A,2</b>。<br>
+      ・<b>8切り</b>・<b>革命</b>を含め、拡張ルールはすべて「ルール設定に戻る」から個別にON/OFFできます。<br>
+      ・全員がパスすると場が流れます。手札が0枚になった順に<b>大富豪・富豪・貧民・大貧民</b>が決まります。
+    </div>
+
+    <div class="turn-banner" id="turnBanner"></div>
+
+    <div class="game-layout">
+      <div class="game-main">
+        <div class="table">
+          <button class="discard-pile" id="discardPileBtn" type="button" title="捨て札を見る">🂠 <span id="discardCount">0</span></button>
+          <div class="opponents-row" id="opponents"></div>
+          <div class="field-area">
+            <div class="flags" id="flags"></div>
+            <div class="field-owner" id="fieldOwner"></div>
+            <div class="field-cards" id="fieldCards"></div>
+          </div>
+          <div class="you-row" id="youRow">
+            <div class="you-label-row">
+              <div class="you-label" id="youLabel">あなたの手札</div>
+              <button class="sort-toggle" id="sortToggleBtn" type="button">並び順: 強い→右</button>
+            </div>
+            <div class="hand" id="hand"></div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="action pass" id="passBtn">パス</button>
+          <button class="action play" id="playBtn">出す</button>
+        </div>
+        <div class="msg-flash" id="msgFlash"></div>
+      </div>
+
+      <div class="log-sidebar" id="logSidebar">
+        <div class="log-header">
+          <span>ゲームログ</span>
+          <button class="log-collapse-btn" id="logCollapseBtn" type="button">－</button>
+        </div>
+        <div class="log-panel" id="logPanel"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="result-card">
+    <h2>ゲーム終了</h2>
+    <div id="resultList"></div>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
+      <button class="action play" id="nextGameBtn">次のゲームへ（カード交換あり）</button>
+      <button class="restart" id="restartBtn2">ルール設定に戻る</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="actionOverlay">
+  <div class="result-card" id="actionCard"></div>
+</div>
+
+<div class="overlay" id="historyOverlay">
+  <div class="result-card" id="historyCard"></div>
+</div>
+
+<div class="cut-in" id="cutInHost"></div>
+<div class="bomber-fly" id="bomberFlyHost"></div>
+<button class="restore-tab" id="restoreTab" style="display:none;" type="button">操作画面に戻る</button>
+
+<script>
+const RANKS = ['3','4','5','6','7','8','9','10','J','Q','K','A','2'];
+const SUITS = ['♠','♥','♦','♣'];
+const RANK_TITLES = ['大富豪','富豪','貧民','大貧民'];
+const NAMES = ['あなた','CPU 1','CPU 2','CPU 3'];
+
+const RULE_DEFS = [
+  // 数字による特殊効果系（トリガーとなる数字の小さい順）
+  {key:'spade3Return', label:'スペ3返し', num:3, desc:'場に出たジョーカー単騎を、スペードの3で打ち消せます（ジョーカー有効時のみ意味を持ちます）。', category:'number'},
+  {key:'fourStop', label:'4止め', num:4, desc:'8切りを阻止する効果（8切りが有効な場合のみ選択できます）。8がN枚出されたとき2倍（2N枚）の4（ジョーカー代用可）を出せれば阻止して自分の番にできます。', dependsOn:'eightGiri', category:'number'},
+  {key:'fiveSkip', label:'5スキップ', num:5, desc:'5を出すと、出した枚数分だけ次のプレイヤーの番がスキップされます。', category:'number'},
+  {key:'sevenGive', label:'7渡し', num:7, desc:'7を出すと、出した枚数分のカードを渡します。', category:'number'},
+  {key:'sevenGiveForceLeft', label:'└ 左隣に強制', desc:'オンで相手を選べず必ず左隣に渡します。オフなら相手を自由に選べます。', sub:true, dependsOn:'sevenGive', category:'number'},
+  {key:'eightGiri', label:'8切り', num:8, desc:'8を出すと場が流れ、続けて自分の番になります。', category:'number'},
+  {key:'tenDiscard', label:'10捨て', num:10, desc:'10を出すと、出した枚数分のカードを手札から選んで捨てます。', category:'number'},
+  {key:'elevenBack', label:'11バック', num:11, desc:'J(11)を出すと、そのトリック中だけ強さの順序が反転します。', category:'number'},
+  {key:'elevenBackChoice', label:'└ 発動を任意にする', desc:'オンでJを出したプレイヤーが発動するか毎回選べます。オフなら常に自動発動。', sub:true, dependsOn:'elevenBack', category:'number'},
+  {key:'twelveBomber', label:'12ボンバー', num:12, desc:'Q(12)を出すと、出した枚数まで好きなランクを指定でき、全員がそのランクを手札から捨てます。', category:'number'},
+  {key:'revolutionRule', label:'革命', desc:'同じランクを4枚出すと、強さの順序が逆転します（特定の数字に限らないため番号なし）。', category:'number'},
+
+  // しばり・特殊ルール系
+  {key:'suitLock', label:'スートしばり', desc:'直前のプレイと今回のプレイが共通のスートを含むと（2枚出し等でも片方一致でOK）、以降そのトリック中は該当スートを含めないと出せなくなります。', category:'lock'},
+  {key:'numberLock', label:'数しばり', desc:'連続する数字が出されると、次は一つ上の数字しか出せません（11バックや革命中は逆方向）。', category:'lock'},
+  {key:'jokers', label:'ジョーカー', desc:'山札にジョーカーを1〜8枚（デフォルト2枚）追加。単騎最強、組み合わせではワイルドカードとしても使えます。', category:'lock'},
+  {key:'forbiddenWin', label:'禁止上がり', desc:'特定条件で上がると反則になり、その時点で最下位候補になります（複数人反則時、後の反則ほど上位）。下から条件を選べます。', category:'lock'},
+  {key:'fwSpade3', label:'スペ3返し上がり', num:3, desc:'ジョーカーへのスペ3返しで上がると反則（通常の3上がりは問題なし）。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'fwFiveSkip', label:'5スキップ上がり', num:5, desc:'出した5の枚数が対戦相手の人数以上のとき反則（相手3人なら3枚以上、相手1人なら1枚以上）。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'fwSevenGive', label:'7渡し上がり', num:7, desc:'7を出してカードを渡した結果、手札がなくなったら反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'fwEightGiri', label:'8切り上がり', num:8, desc:'8を出して上がると反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'fwTenDiscard', label:'10捨て上がり', num:10, desc:'10を出して捨てた結果、手札がなくなったら反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'fwBomber', label:'12ボンバー上がり', num:12, desc:'12ボンバーの没収効果で手札がなくなったら反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'fwStrongest', label:'最強カード上がり', desc:'最強ランク（通常2とジョーカー、11バック/革命中は3とジョーカー）で上がると反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'fwJokerWild', label:'ジョーカーワイルド上がり', desc:'ジョーカーを他ランクのワイルドカードとして使った手で上がると反則です（純粋なジョーカー単騎/複数での上がりは対象外）。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
+  {key:'miyakoOchi', label:'都落ち', desc:'前回の大富豪が今回1位になれなかった場合、その時点で最下位候補になります（カード交換ありの連戦時のみ意味を持ちます）。', category:'lock'}
+];
+
+let rules = {};
+let hands, field, revolution, elevenBack, passStreak, currentPlayerIndex, finishedOrder, gameOver, selected, logLines;
+let suitLock, numberLock, prevPlaySuits;
+let pendingAction = null;
+let fieldSeqCounter = 0;
+let pendingDealAnimation = false;
+let dealAnimationTimer = null;
+let previousFinishedOrder = null;
+let exchangeInProgress = false;
+let exchangeQueue = [];
+let gameGen = 0;
+let flowingOutCards = null;
+let flowOutTimer = null;
+let legitFinishOrder = [];
+let violationFinishOrder = [];
+let violationReasons = {};
+let defendingDaifugoIdx = null;
+let handSortDescending = false;
+let discardHistory = [];
+let jokerCount = 2;
+
+function strengthIndex(rank){ return RANKS.indexOf(rank); }
+function orderReversed(){ return revolution !== elevenBack; }
+function effStrength(rank){
+  if(rank==='JOKER') return 999;
+  const i = strengthIndex(rank);
+  return orderReversed() ? (12-i) : i;
+}
+
+function bomberPalette(){ return rules.jokers ? RANKS.concat(['JOKER']) : RANKS.slice(); }
+function bomberPriorityOrder(){
+  const order = RANKS.slice().reverse();
+  if(rules.jokers) order.unshift('JOKER');
+  return order;
+}
+
+function buildDeck(){
+  const deck=[];
+  for(const s of SUITS) for(const r of RANKS) deck.push({rank:r, suit:s, id:s+'_'+r});
+  if(rules.jokers){
+    const n = rules.jokerCount || 2;
+    for(let i=1;i<=n;i++) deck.push({rank:'JOKER', suit:null, id:'JOKER_'+i});
+  }
+  for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
+  return deck;
+}
+
+function log(msg){
+  logLines.push(msg);
+  if(logLines.length>80) logLines.shift();
+  const panel=document.getElementById('logPanel');
+  panel.innerHTML = logLines.map(l=>'<div>'+l+'</div>').join('');
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function activePlayers(){ return [0,1,2,3].filter(i=>!finishedOrder.includes(i)); }
+function leftNeighborOf(idx){
+  let i = (idx+1)%4;
+  let guard = 0;
+  while(finishedOrder.includes(i) && guard<4){ i = (i+1)%4; guard++; }
+  return i;
+}
+function playerName(i){ return NAMES[i]; }
+function countOfRank(hand, rank){ return hand.filter(c=>c.rank===rank).length; }
+
+function activeRulesSummary(){
+  const active = RULE_DEFS.filter(r=>rules[r.key]).map(r=> r.key==='jokers' ? 'ジョーカー'+(rules.jokerCount||2)+'枚' : r.label);
+  return active.length ? '有効ルール: '+active.join('、') : '追加ルールなし（基本ルールのみ）';
+}
+
+function computeFinalRanking(){
+  return legitFinishOrder.concat(violationFinishOrder.slice().reverse());
+}
+
+function recordDiscard(cards, reason){
+  if(!cards || cards.length===0) return;
+  discardHistory.push({cards: cards.slice(), reason});
+  if(discardHistory.length>50) discardHistory.shift();
+  updateDiscardPileButton();
+}
+
+function updateDiscardPileButton(){
+  const el = document.getElementById('discardCount');
+  if(el) el.textContent = discardHistory.reduce((s,h)=>s+h.cards.length,0);
+}
+
+function markLegitFinish(idx){
+  const isFirst = legitFinishOrder.length===0;
+  legitFinishOrder.push(idx);
+  finishedOrder.push(idx);
+  if(isFirst) maybeTriggerMiyakoOchi(idx);
+  checkGameEnd();
+}
+
+function markViolationFinish(idx, reason){
+  violationFinishOrder.push(idx);
+  finishedOrder.push(idx);
+  violationReasons[idx] = reason;
+  checkGameEnd();
+}
+
+function maybeTriggerMiyakoOchi(newDaifugoIdx){
+  if(!rules.miyakoOchi) return;
+  if(defendingDaifugoIdx===null) return;
+  if(newDaifugoIdx===defendingDaifugoIdx) return;
+  if(finishedOrder.includes(defendingDaifugoIdx)) return;
+  log(playerName(defendingDaifugoIdx)+'は都落ち！前回の大富豪が1位を逃したため、その時点での最下位候補になります');
+  showCutIn('都落ち！！');
+  markViolationFinish(defendingDaifugoIdx, '都落ち');
+}
+
+function checkForbiddenWin(playerIdx, rank, count, wasSpade3Counter, postToggleReversed, cardsPlayed){
+  if(!rules.forbiddenWin) return null;
+  if(rules.fwSpade3 && wasSpade3Counter) return 'スペ3返し上がり';
+  if(rules.fwJokerWild && cardsPlayed.some(c=>c.rank==='JOKER') && cardsPlayed.some(c=>c.rank!=='JOKER')){
+    return 'ジョーカーワイルド上がり';
+  }
+  if(rules.fwStrongest){
+    const isStrongest = rank==='JOKER' || (postToggleReversed ? rank==='3' : rank==='2');
+    if(isStrongest) return '最強カード上がり';
+  }
+  if(rules.fwEightGiri && rank==='8') return '8切り上がり';
+  if(rules.fwFiveSkip && rules.fiveSkip && rank==='5'){
+    const opponents = activePlayers().filter(i=>i!==playerIdx).length;
+    if(count >= opponents) return '5スキップ上がり';
+  }
+  return null;
+}
+
+function clearField(){
+  if(field && field.cards && field.cards.length){
+    flowingOutCards = field.cards;
+    recordDiscard(field.cards, playerName(field.owner)+'が出した'+(field.rank==='JOKER'?'ジョーカー':field.rank)+'×'+field.count+'（場が流れた分）');
+    if(flowOutTimer) clearTimeout(flowOutTimer);
+    flowOutTimer = setTimeout(()=>{ flowingOutCards = null; flowOutTimer = null; render(); }, 600);
+  }
+  field = null;
+  passStreak = 0;
+  suitLock = null;
+  numberLock = null;
+  elevenBack = false;
+  prevPlaySuits = null;
+}
+
+function dealFreshHands(){
+  gameGen++;
+  if(dealAnimationTimer){ clearTimeout(dealAnimationTimer); dealAnimationTimer=null; }
+  pendingDealAnimation = false;
+  if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer=null; }
+  flowingOutCards = null;
+  if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
+  const cutInHost = document.getElementById('cutInHost');
+  if(cutInHost) cutInHost.innerHTML = '';
+  const bomberFlyHost = document.getElementById('bomberFlyHost');
+  if(bomberFlyHost) bomberFlyHost.innerHTML = '';
+  const deck = buildDeck();
+  hands = [[],[],[],[]];
+  for(let i=0;i<deck.length;i++) hands[i%4].push(deck[i]);
+  revolution = false;
+  finishedOrder = [];
+  legitFinishOrder = [];
+  violationFinishOrder = [];
+  violationReasons = {};
+  defendingDaifugoIdx = null;
+  discardHistory = [];
+  gameOver = false;
+  selected = new Set();
+  logLines = [];
+  pendingAction = null;
+  exchangeInProgress = false;
+  clearField();
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('actionOverlay').classList.remove('show');
+  document.getElementById('historyOverlay').classList.remove('show');
+  document.getElementById('restoreTab').style.display = 'none';
+  document.getElementById('activeRulesLine').textContent = activeRulesSummary();
+  updateDiscardPileButton();
+}
+
+function finalizeGameStart(){
+  currentPlayerIndex = 0;
+  outer:
+  for(let p=0;p<4;p++){
+    for(const c of hands[p]){
+      if(c.rank==='3' && c.suit==='♠'){ currentPlayerIndex=p; break outer; }
+    }
+  }
+  exchangeInProgress = false;
+  log(playerName(currentPlayerIndex)+'からスタート。（'+activeRulesSummary()+'）');
+  render();
+  scheduleNextIfCpu();
+}
+
+function startGame(){
+  dealFreshHands();
+  previousFinishedOrder = null;
+  log('新しいゲームを開始しました。');
+  finalizeGameStart();
+}
+
+function startGameWithExchange(){
+  const prevOrder = previousFinishedOrder;
+  dealFreshHands();
+  if(prevOrder && prevOrder.length===4){
+    if(rules.miyakoOchi) defendingDaifugoIdx = prevOrder[0];
+    log('新しいゲームを開始しました。前回の順位に応じてカード交換を行います。');
+    exchangeInProgress = true;
+    exchangeQueue = buildExchangeQueue(prevOrder);
+    render();
+    processNextExchange();
+  } else {
+    log('新しいゲームを開始しました。');
+    finalizeGameStart();
+  }
+}
+
+function buildExchangeQueue(prevOrder){
+  const [daifugoIdx, fugoIdx, hinminIdx, daihinminIdx] = prevOrder;
+  return [
+    {giver:daihinminIdx, receiver:daifugoIdx, count:2, giverChoice:false, giverRole:'大貧民', receiverRole:'大富豪'},
+    {giver:daifugoIdx, receiver:daihinminIdx, count:2, giverChoice:true, giverRole:'大富豪', receiverRole:'大貧民'},
+    {giver:hinminIdx, receiver:fugoIdx, count:1, giverChoice:false, giverRole:'貧民', receiverRole:'富豪'},
+    {giver:fugoIdx, receiver:hinminIdx, count:1, giverChoice:true, giverRole:'富豪', receiverRole:'貧民'},
+  ];
+}
+
+function processNextExchange(){
+  if(exchangeQueue.length===0){
+    finalizeGameStart();
+    return;
+  }
+  const task = exchangeQueue.shift();
+  if(!task.giverChoice){
+    const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(b.rank)-effStrength(a.rank));
+    const chosen = sorted.slice(0, task.count);
+    const ids = new Set(chosen.map(c=>c.id));
+    hands[task.giver] = hands[task.giver].filter(c=>!ids.has(c.id));
+    hands[task.receiver] = hands[task.receiver].concat(chosen);
+    log(playerName(task.giver)+'（前回の'+task.giverRole+'）が最強の'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した（'+chosen.map(c=>c.rank==='JOKER'?'ジョーカー':c.rank+c.suit).join('、')+'）');
+    render();
+    processNextExchange();
+  } else if(task.giver===0){
+    openExchangeGiveModal(task);
+  } else {
+    const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+    const chosen = sorted.slice(0, task.count);
+    const ids = new Set(chosen.map(c=>c.id));
+    hands[task.giver] = hands[task.giver].filter(c=>!ids.has(c.id));
+    hands[task.receiver] = hands[task.receiver].concat(chosen);
+    log(playerName(task.giver)+'（前回の'+task.giverRole+'）が'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した');
+    render();
+    processNextExchange();
+  }
+}
+
+function openExchangeGiveModal(task){
+  pendingAction = {type:'exchange', idx:0, task, chosen:new Set()};
+  render();
+  renderExchangeModal();
+}
+function renderExchangeModal(){
+  const pa = pendingAction;
+  const hand = hands[pa.task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'exchangeToggleCard')).join('');
+  showActionModal('<h2>カード交換</h2><p>あなたは前回の'+pa.task.giverRole+'です。'+playerName(pa.task.receiver)+'（前回の'+pa.task.receiverRole+'）に渡すカードを'+pa.task.count+'枚選んでください（'+pa.chosen.size+'/'+pa.task.count+'）</p>'
+    + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
+    + '<button class="action play" '+(pa.chosen.size===pa.task.count?'':'disabled')+' onclick="confirmExchange()">渡す</button>');
+}
+function exchangeToggleCard(id){
+  const pa = pendingAction;
+  if(pa.chosen.has(id)) pa.chosen.delete(id);
+  else if(pa.chosen.size<pa.task.count) pa.chosen.add(id);
+  renderExchangeModal();
+}
+function confirmExchange(){
+  const pa = pendingAction;
+  const task = pa.task;
+  const giveCards = hands[task.giver].filter(c=>pa.chosen.has(c.id));
+  hands[task.giver] = hands[task.giver].filter(c=>!pa.chosen.has(c.id));
+  hands[task.receiver] = hands[task.receiver].concat(giveCards);
+  log(playerName(task.giver)+'が'+playerName(task.receiver)+'に'+giveCards.length+'枚渡した');
+  hideActionModal();
+  pendingAction = null;
+  render();
+  processNextExchange();
+}
+
+function advanceTurn(){
+  const act = activePlayers();
+  if(act.length<=1) return;
+  do{
+    currentPlayerIndex = (currentPlayerIndex+1)%4;
+  } while(finishedOrder.includes(currentPlayerIndex));
+}
+
+function checkGameEnd(){
+  if(gameOver) return;
+  const act = activePlayers();
+  if(act.length<=1){
+    if(act.length===1) markLegitFinish(act[0]);
+    if(gameOver) return;
+    gameOver = true;
+    log('ゲーム終了！');
+  }
+}
+
+function checkGameEndAfterSideEffect(sourceType){
+  const violationBySource = {
+    bomber: rules.fwBomber ? '12ボンバー上がり' : null,
+    give: rules.fwSevenGive ? '7渡し上がり' : null,
+    discard: rules.fwTenDiscard ? '10捨て上がり' : null
+  };
+  for(let i=0;i<4;i++){
+    if(hands[i].length===0 && !finishedOrder.includes(i)){
+      const violation = (rules.forbiddenWin && violationBySource[sourceType]) || null;
+      if(violation){
+        log(playerName(i)+'が禁止上がり！（'+violation+'）→ その時点での最下位候補になります');
+        showCutIn('禁止上がり！！('+violation+')');
+        markViolationFinish(i, violation);
+      } else {
+        log(playerName(i)+' が上がり！');
+        markLegitFinish(i);
+      }
+    }
+  }
+  checkGameEnd();
+}
+
+function isValidGroup(cards){
+  const real = cards.filter(c=>c.rank!=='JOKER');
+  if(real.length===0) return cards.length>0;
+  return real.every(c=>c.rank===real[0].rank);
+}
+function representedRank(cards){
+  const real = cards.filter(c=>c.rank!=='JOKER');
+  return real.length ? real[0].rank : 'JOKER';
+}
+
+function isSpade3Counter(count, cards){
+  return !!(rules.spade3Return && field && field.rank==='JOKER' && field.count===1
+    && count===1 && cards[0].rank==='3' && cards[0].suit==='♠');
+}
+
+function isFourStopCounter(count, cards){
+  return !!(rules.fourStop && field && field.rank==='8'
+    && count===field.count*2 && representedRank(cards)==='4');
+}
+
+function canBeatField(rank, count, cards){
+  if(isFourStopCounter(count, cards)) return { ok:true };
+  if(field && field.rank==='8' && rules.fourStop){
+    return { ok:false, reason:'8切りは4止め（4を'+(field.count*2)+'枚、ジョーカー代用可）以外では返せません' };
+  }
+  if(field!==null && count!==field.count) return { ok:false, reason:'場と同じ枚数を出してください（'+field.count+'枚）' };
+  if(isSpade3Counter(count, cards)) return { ok:true };
+  if(rules.numberLock && numberLock){
+    if(rank!==numberLock) return { ok:false, reason:'数しばり中：'+numberLock+'しか出せません' };
+  } else if(field!==null){
+    if(effStrength(rank) <= effStrength(field.rank)) return { ok:false, reason:'その組み合わせは出せません' };
+  }
+  if(rules.suitLock && suitLock){
+    if(!cards.some(c=>c.suit===suitLock)) return { ok:false, reason:'スートしばり中：'+suitLock+'を含めて出してください' };
+  }
+  return { ok:true };
+}
+
+function updateLocksAfterPlay(prevField, rank, count, cards, wasSpade3Counter, postToggleReversed){
+  if(wasSpade3Counter){
+    suitLock = null; numberLock = null; prevPlaySuits = null;
+    return;
+  }
+
+  // Suit lock: activates as soon as this play shares at least one suit with the play it beat
+  // (from the 2nd matching play onward), regardless of how many cards are in each play. A pair
+  // of [3♦,3♣] followed by a pair of [5♦,5♥] locks ♦ specifically, since that's the suit both
+  // plays have in common. Once locked, any later play just needs to include that suit somewhere.
+  const thisSuits = new Set(cards.filter(c=>c.suit).map(c=>c.suit));
+  if(rules.suitLock){
+    if(prevPlaySuits){
+      const common = [...thisSuits].filter(s=>prevPlaySuits.has(s));
+      if(common.length>0){
+        if(!(suitLock && common.includes(suitLock))){
+          suitLock = common[0];
+          log('スートしばり発動：'+suitLock+'を含めて出してください');
+        }
+      } else {
+        suitLock = null;
+      }
+    } else {
+      suitLock = null;
+    }
+  }
+  prevPlaySuits = thisSuits.size>0 ? thisSuits : null;
+
+  if(rules.numberLock){
+    // Adjacency ("was this play exactly one step stronger than what it beat?") is judged by the
+    // direction that was in effect when the play legally beat the field, i.e. BEFORE this play's
+    // own revolution/11-back toggle. The resulting lock target, however, must point at the "next"
+    // rank in whatever direction is in effect AFTER this play's toggle resolves.
+    if(prevField && rank!=='JOKER' && prevField.rank!=='JOKER' && effStrength(rank)===effStrength(prevField.rank)+1){
+      const nextIdx = strengthIndex(rank) + (postToggleReversed ? -1 : 1);
+      const nextRank = (nextIdx>=0 && nextIdx<RANKS.length) ? RANKS[nextIdx] : null;
+      numberLock = nextRank;
+      if(nextRank) log('数しばり発動：次は'+nextRank+'しか出せません');
+    } else {
+      numberLock = null;
+    }
+  }
+}
+
+function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
+  const prevField = field;
+  const wasSpade3Counter = isSpade3Counter(cardsPlayed.length, cardsPlayed);
+  const wasFourStopCounter = isFourStopCounter(cardsPlayed.length, cardsPlayed);
+  hands[playerIdx] = hands[playerIdx].filter(c=>!cardsPlayed.some(p=>p.id===c.id));
+  const rank = representedRank(cardsPlayed);
+  const count = cardsPlayed.length;
+
+  field = {rank, count, owner:playerIdx, cards:cardsPlayed, seq: ++fieldSeqCounter};
+  passStreak = 0;
+  pendingDealAnimation = true;
+  if(dealAnimationTimer) clearTimeout(dealAnimationTimer);
+  dealAnimationTimer = setTimeout(()=>{ pendingDealAnimation = false; dealAnimationTimer = null; }, 0);
+
+  if(wasSpade3Counter){
+    log(playerName(playerIdx)+'：スペードの3でジョーカーを返した！');
+    showCutIn('スペ3返し！！');
+  } else if(wasFourStopCounter){
+    log(playerName(playerIdx)+'：4止めで8切りを阻止した！（4を'+count+'枚）');
+  } else {
+    log(playerName(playerIdx)+'： '+(rank==='JOKER'?'ジョーカー':rank)+' を'+count+'枚出した');
+    if(rank==='8' && rules.fourStop) log('4を'+(count*2)+'枚（ジョーカー代用可）出せれば4止めで阻止できます');
+  }
+
+  const willToggleRevolution = (count>=4) && rules.revolutionRule;
+  const willToggleElevenBack = rank==='J' && rules.elevenBack && (rules.elevenBackChoice ? !!elevenBackDecision : true);
+  const postToggleRevolution = willToggleRevolution ? !revolution : revolution;
+  const postToggleElevenBack = willToggleElevenBack ? !elevenBack : elevenBack;
+  const postToggleReversed = postToggleRevolution !== postToggleElevenBack;
+
+  updateLocksAfterPlay(prevField, rank, count, cardsPlayed, wasSpade3Counter || wasFourStopCounter, postToggleReversed);
+
+  if(willToggleRevolution){
+    revolution = postToggleRevolution;
+    log('革命が起きた！強さが逆転する');
+    showCutIn('革命！！！');
+  }
+  if(willToggleElevenBack){
+    elevenBack = postToggleElevenBack;
+    log(elevenBack ? '11バック発動！このトリック中は強さが逆転する' : '11バック解除');
+    if(elevenBack) showCutIn('11バック！！');
+  } else if(rank==='J' && rules.elevenBack && rules.elevenBackChoice && !elevenBackDecision){
+    log(playerName(playerIdx)+'は11バックを発動しなかった');
+    showCutIn('11バック 見送り');
+  }
+
+  let finished=false;
+  if(hands[playerIdx].length===0){
+    finished=true;
+    const violation = checkForbiddenWin(playerIdx, rank, count, wasSpade3Counter, postToggleReversed, cardsPlayed);
+    if(violation){
+      log(playerName(playerIdx)+'が禁止上がり！（'+violation+'）→ その時点での最下位候補になります');
+      showCutIn('禁止上がり！！('+violation+')');
+      markViolationFinish(playerIdx, violation);
+    } else {
+      log(playerName(playerIdx)+' が上がり！');
+      markLegitFinish(playerIdx);
+    }
+  }
+
+  let fieldCleared=false;
+  if(rank==='8' && rules.eightGiri && !rules.fourStop){
+    clearField();
+    fieldCleared=true;
+    log('8切り！場が流れた');
+    showCutIn('8切り発動！！！');
+  } else if(wasFourStopCounter){
+    clearField();
+    fieldCleared=true;
+    log('場が流れた');
+    showCutIn('4止め！！ 8切り阻止！');
+  }
+
+  checkGameEnd();
+
+  return {rank, count, finished, fieldCleared, playerIdx};
+}
+
+function finalizeTurn(info, extraSkips){
+  extraSkips = extraSkips || 0;
+  if(gameOver){ render(); showResults(); return; }
+  if(!(info.fieldCleared && !info.finished)){
+    advanceTurn();
+    for(let k=0;k<extraSkips;k++) advanceTurn();
+    if(extraSkips>0 && field!==null){
+      // Skipped players never got a chance to respond, so they count the same as a pass
+      // toward clearing the field (otherwise the trick can stall and wrap back to the
+      // player who led it without ever resolving).
+      passStreak += extraSkips;
+      const act = activePlayers();
+      if(passStreak >= act.length-1){
+        clearField();
+        log('スキップにより誰も応答できず、場が流れた');
+      }
+    }
+  } else {
+    if(finishedOrder.includes(currentPlayerIndex)) advanceTurn();
+  }
+  render();
+  scheduleNextIfCpu();
+}
+
+function afterPlayEffects(info){
+  if(gameOver){ finalizeTurn(info, 0); return; }
+  const idx = info.playerIdx;
+  const rank = info.rank;
+  const count = info.count;
+
+  let extraSkips = 0;
+  if(rules.fiveSkip && rank==='5'){
+    extraSkips = count;
+    log(playerName(idx)+'の5スキップ！次の'+count+'人が休みになります');
+    showCutIn('5スキップ！！');
+  }
+
+  const needsGive = rules.sevenGive && rank==='7' && hands[idx].length>0;
+  const needsDiscard = rules.tenDiscard && rank==='10' && hands[idx].length>0;
+  const needsBomber = rules.twelveBomber && rank==='Q';
+
+  if(!needsGive && !needsDiscard && !needsBomber){
+    finalizeTurn(info, extraSkips);
+    return;
+  }
+
+  if(needsGive) showCutIn('7渡し！');
+  else if(needsDiscard) showCutIn('10捨て！');
+
+  if(idx===0){
+    if(needsGive) openGiveModal(idx, count, info, extraSkips);
+    else if(needsDiscard) openDiscardModal(idx, count, info, extraSkips);
+    else if(needsBomber) openBomberModal(idx, count, info, extraSkips);
+  } else {
+    if(needsGive) cpuDoGive(idx, count);
+    if(needsDiscard) cpuDoDiscard(idx, count);
+    if(needsBomber){
+      cpuDoBomber(idx, count, ()=>{ finalizeTurn(info, extraSkips); });
+      return;
+    }
+    finalizeTurn(info, extraSkips);
+  }
+}
+
+function passAction(playerIdx){
+  passStreak++;
+  log(playerName(playerIdx)+'： パス');
+  advanceTurn();
+  const act = activePlayers();
+  if(passStreak >= act.length-1){
+    const wasEightStanding = field && field.rank==='8' && rules.fourStop;
+    clearField();
+    log(wasEightStanding ? '誰も4止めできず、8切りが成立した' : '場が流れた');
+    if(wasEightStanding) showCutIn('8切り成立！！！');
+  }
+  render();
+  scheduleNextIfCpu();
+}
+
+function scheduleNextIfCpu(){
+  if(gameOver) return;
+  if(currentPlayerIndex!==0){
+    const myGen = gameGen;
+    const myTurnPlayer = currentPlayerIndex;
+    setTimeout(()=>{
+      if(myGen!==gameGen) return;
+      if(gameOver || pendingAction || exchangeInProgress) return;
+      if(currentPlayerIndex!==myTurnPlayer) return;
+      cpuTurn(currentPlayerIndex);
+    }, 850);
+  }
+}
+
+function groupByRank(hand){
+  const map={};
+  for(const c of hand){ (map[c.rank] = map[c.rank]||[]).push(c); }
+  return map;
+}
+
+function cpuDecideElevenBack(idx){
+  const hand = hands[idx];
+  if(hand.length===0) return false;
+  const avgIdx = hand.reduce((s,c)=> s + (c.rank==='JOKER' ? 12 : strengthIndex(c.rank)), 0) / hand.length;
+  return avgIdx < 6;
+}
+function cpuResolvePlay(idx, cardsToPlay){
+  let decision;
+  if(rules.elevenBack && rules.elevenBackChoice && representedRank(cardsToPlay)==='J'){
+    decision = cpuDecideElevenBack(idx);
+  }
+  return resolvePlayCore(idx, cardsToPlay, decision);
+}
+
+function cpuTurn(idx){
+  if(gameOver) return;
+  const hand = hands[idx];
+
+  if(rules.spade3Return && field && field.rank==='JOKER' && field.count===1){
+    const spade3 = hand.find(c=>c.rank==='3' && c.suit==='♠');
+    if(spade3){
+      const cardsToPlay=[spade3];
+      const info = cpuResolvePlay(idx, cardsToPlay);
+      render();
+      afterPlayEffects(info);
+      return;
+    }
+  }
+
+  if(field && field.rank==='8' && rules.fourStop){
+    const needed = field.count*2;
+    const fours = hand.filter(c=>c.rank==='4');
+    const jokers = hand.filter(c=>c.rank==='JOKER');
+    // A joker can only stand in for "4" alongside at least one real 4; a pure-joker
+    // group is always just "strongest single card x N", not a 4-stop counter.
+    if(fours.length>=1 && fours.length + jokers.length >= needed){
+      const cardsToPlay = fours.concat(jokers).slice(0, needed);
+      const info = cpuResolvePlay(idx, cardsToPlay);
+      render();
+      afterPlayEffects(info);
+      return;
+    }
+    passAction(idx);
+    return;
+  }
+
+  const groups = groupByRank(hand);
+  const ranksAvail = Object.keys(groups);
+
+  if(field===null){
+    let best=null;
+    for(const r of ranksAvail){
+      const es = effStrength(r);
+      if(best===null || es < best.es){ best = {rank:r, es}; }
+    }
+    if(best){
+      const cardsToPlay = groups[best.rank].slice();
+      const info = cpuResolvePlay(idx, cardsToPlay);
+      render();
+      afterPlayEffects(info);
+      return;
+    }
+    passAction(idx);
+    return;
+  } else {
+    let best=null;
+    for(const r of ranksAvail){
+      if(groups[r].length < field.count) continue;
+      if(rules.numberLock && numberLock){
+        if(r!==numberLock) continue;
+      } else {
+        if(effStrength(r) <= effStrength(field.rank)) continue;
+      }
+      if(rules.suitLock && suitLock && r!=='JOKER'){
+        if(!groups[r].some(c=>c.suit===suitLock)) continue;
+      }
+      const es = effStrength(r);
+      if(best===null || es < best.es){ best = {rank:r, es}; }
+    }
+    if(best){
+      let cardsToPlay;
+      if(rules.suitLock && suitLock && best.rank!=='JOKER'){
+        const suitCard = groups[best.rank].find(c=>c.suit===suitLock);
+        const rest = groups[best.rank].filter(c=>c!==suitCard).slice(0, field.count-1);
+        cardsToPlay = [suitCard, ...rest];
+      } else {
+        cardsToPlay = groups[best.rank].slice(0, field.count);
+      }
+      const info = cpuResolvePlay(idx, cardsToPlay);
+      render();
+      afterPlayEffects(info);
+      return;
+    }
+    passAction(idx);
+    return;
+  }
+}
+
+function cpuDoGive(idx, count){
+  const others = activePlayers().filter(i=>i!==idx);
+  if(others.length===0) return;
+  const recipient = rules.sevenGiveForceLeft ? leftNeighborOf(idx) : others[Math.floor(Math.random()*others.length)];
+  const need = Math.min(count, hands[idx].length);
+  if(need<=0) return;
+  const sorted = hands[idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const giveCards = sorted.slice(0, need);
+  const giveIds = new Set(giveCards.map(c=>c.id));
+  hands[idx] = hands[idx].filter(c=>!giveIds.has(c.id));
+  hands[recipient] = hands[recipient].concat(giveCards);
+  log(playerName(idx)+'が'+playerName(recipient)+'に'+giveCards.length+'枚渡した');
+  checkGameEndAfterSideEffect('give');
+}
+
+function cpuDoDiscard(idx, count){
+  const need = Math.min(count, hands[idx].length);
+  if(need<=0) return;
+  const sorted = hands[idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const discarded = sorted.slice(0, need);
+  const discardIds = new Set(discarded.map(c=>c.id));
+  hands[idx] = hands[idx].filter(c=>!discardIds.has(c.id));
+  log(playerName(idx)+'が'+need+'枚のカードを捨てた');
+  recordDiscard(discarded, playerName(idx)+'が10捨てで捨てた');
+  checkGameEndAfterSideEffect('discard');
+}
+
+function cpuChooseBomberRanks(hand, maxCount){
+  const priority = bomberPriorityOrder();
+  const held = new Set(hand.map(c=>c.rank));
+  const zeroHeld = priority.filter(r=>!held.has(r));
+  let chosen = zeroHeld.slice(0, maxCount);
+  if(chosen.length<maxCount){
+    const rest = priority.filter(r=>!chosen.includes(r));
+    rest.sort((a,b)=> countOfRank(hand,a)-countOfRank(hand,b));
+    for(const r of rest){ if(chosen.length>=maxCount) break; chosen.push(r); }
+  }
+  return chosen;
+}
+
+function cpuDoBomber(idx, count, onComplete){
+  const chosen = cpuChooseBomberRanks(hands[idx], count);
+  applyBomber(chosen, onComplete);
+}
+
+function applyBomber(ranksChosen, onComplete){
+  if(ranksChosen.length===0){
+    log('12ボンバー：ランク指定なし');
+    if(onComplete) onComplete();
+    return;
+  }
+  const label = ranksChosen.map(r=>r==='JOKER'?'ジョーカー':r).join('、');
+  log('12ボンバー発動！指定ランク：'+label);
+  showCutIn(label+' を没収！！');
+  setTimeout(()=>{
+    const allRemoved = [];
+    for(let i=0;i<4;i++){
+      const removedCards = hands[i].filter(c=>ranksChosen.includes(c.rank));
+      if(removedCards.length>0){
+        allRemoved.push(...removedCards);
+        hands[i] = hands[i].filter(c=>!ranksChosen.includes(c.rank));
+        log(playerName(i)+'が'+removedCards.length+'枚捨てた');
+      }
+    }
+    if(allRemoved.length===0){
+      render();
+      checkGameEndAfterSideEffect('bomber');
+      if(onComplete) onComplete();
+      return;
+    }
+    recordDiscard(allRemoved, '12ボンバーで没収されたカード');
+    const flyHost = document.getElementById('bomberFlyHost');
+    if(flyHost) flyHost.innerHTML = allRemoved.map(c=>cardHtml(c,'mini flow-out',false,false)).join('');
+    render();
+    setTimeout(()=>{
+      if(flyHost) flyHost.innerHTML = '';
+      checkGameEndAfterSideEffect('bomber');
+      if(onComplete) onComplete();
+    }, 650);
+  }, 900);
+}
+
+let cutInTimer = null;
+function showCutIn(text){
+  const host = document.getElementById('cutInHost');
+  if(!host) return;
+  if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
+  host.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'cut-in-text';
+  el.textContent = text;
+  host.appendChild(el);
+  cutInTimer = setTimeout(()=>{ host.innerHTML=''; cutInTimer=null; }, 1300);
+}
+
+function showActionModal(html){
+  document.getElementById('actionCard').innerHTML = '<button class="modal-minimize" onclick="minimizeActionModal()" title="最小化して手札を見る">－</button>' + html;
+  document.getElementById('actionOverlay').classList.add('show');
+  document.getElementById('restoreTab').style.display = 'none';
+}
+function hideActionModal(){
+  document.getElementById('actionOverlay').classList.remove('show');
+  document.getElementById('restoreTab').style.display = 'none';
+}
+function minimizeActionModal(){
+  document.getElementById('actionOverlay').classList.remove('show');
+  document.getElementById('restoreTab').style.display = 'block';
+}
+function restoreActionModal(){
+  document.getElementById('restoreTab').style.display = 'none';
+  document.getElementById('actionOverlay').classList.add('show');
+}
+
+function showHistoryModal(html){
+  document.getElementById('historyCard').innerHTML = '<button class="modal-minimize" onclick="closeHistoryModal()" title="閉じる">×</button>' + html;
+  document.getElementById('historyOverlay').classList.add('show');
+}
+function closeHistoryModal(){
+  document.getElementById('historyOverlay').classList.remove('show');
+}
+function openDiscardHistoryModal(){
+  const html = discardHistory.length===0
+    ? '<h2>捨て札</h2><p>まだ捨て札はありません。</p>'
+    : '<h2>捨て札</h2><div style="max-height:55vh;overflow-y:auto;">'
+      + discardHistory.slice().reverse().map(h=>
+          '<div style="margin-bottom:12px;text-align:left;">'
+          + '<div style="font-size:11px;color:#6b5f3f;margin-bottom:4px;">'+h.reason+'</div>'
+          + '<div class="hand" style="justify-content:flex-start;">'+h.cards.map(c=>cardHtml(c,'mini',false,false)).join('')+'</div>'
+          + '</div>'
+        ).join('')
+      + '</div>';
+  showHistoryModal(html);
+}
+
+function openGiveModal(idx, count, info, extraSkips){
+  const need = Math.min(count, hands[idx].length);
+  pendingAction = {type:'give', idx, need, info, extraSkips, recipient:null, chosen:new Set()};
+  if(rules.sevenGiveForceLeft){
+    pendingAction.recipient = leftNeighborOf(idx);
+    if(need===hands[idx].length){ hands[idx].forEach(c=>pendingAction.chosen.add(c.id)); }
+  }
+  render();
+  renderGiveModalStep();
+}
+function renderGiveModalStep(){
+  const pa = pendingAction;
+  const others = activePlayers().filter(i=>i!==pa.idx);
+  if(pa.recipient===null){
+    const buttons = others.map(i=>'<button class="action play" onclick="giveChooseRecipient('+i+')">'+playerName(i)+'</button>').join(' ');
+    showActionModal('<h2>7渡し</h2><p>誰にカードを渡しますか？</p><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">'+buttons+'</div>');
+  } else {
+    const hand = hands[pa.idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+    const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'giveToggleCard')).join('');
+    showActionModal('<h2>7渡し</h2><p>'+playerName(pa.recipient)+'に渡すカードを'+pa.need+'枚選んでください（'+pa.chosen.size+'/'+pa.need+'）</p>'
+      + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
+      + '<button class="action play" '+(pa.chosen.size===pa.need?'':'disabled')+' onclick="confirmGive()">渡す</button>');
+  }
+}
+function giveChooseRecipient(i){
+  const pa = pendingAction;
+  pa.recipient = i;
+  if(pa.need===hands[pa.idx].length){ hands[pa.idx].forEach(c=>pa.chosen.add(c.id)); }
+  renderGiveModalStep();
+}
+function giveToggleCard(id){
+  const pa = pendingAction;
+  if(pa.chosen.has(id)) pa.chosen.delete(id);
+  else if(pa.chosen.size<pa.need) pa.chosen.add(id);
+  renderGiveModalStep();
+}
+function confirmGive(){
+  const pa = pendingAction;
+  const giveCards = hands[pa.idx].filter(c=>pa.chosen.has(c.id));
+  hands[pa.idx] = hands[pa.idx].filter(c=>!pa.chosen.has(c.id));
+  hands[pa.recipient] = hands[pa.recipient].concat(giveCards);
+  log(playerName(pa.idx)+'が'+playerName(pa.recipient)+'に'+giveCards.length+'枚渡した');
+  checkGameEndAfterSideEffect('give');
+  hideActionModal();
+  const info=pa.info, extraSkips=pa.extraSkips;
+  pendingAction=null;
+  finalizeTurn(info, extraSkips);
+}
+
+function openDiscardModal(idx, count, info, extraSkips){
+  const need = Math.min(count, hands[idx].length);
+  const chosen = new Set();
+  if(need===hands[idx].length){ hands[idx].forEach(c=>chosen.add(c.id)); }
+  pendingAction = {type:'discard', idx, need, info, extraSkips, chosen};
+  render();
+  renderDiscardModal();
+}
+function renderDiscardModal(){
+  const pa = pendingAction;
+  const hand = hands[pa.idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'discardToggleCard')).join('');
+  showActionModal('<h2>10捨て</h2><p>捨てるカードを'+pa.need+'枚選んでください（'+pa.chosen.size+'/'+pa.need+'）</p>'
+    + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
+    + '<button class="action play" '+(pa.chosen.size===pa.need?'':'disabled')+' onclick="confirmDiscard()">捨てる</button>');
+}
+function discardToggleCard(id){
+  const pa = pendingAction;
+  if(pa.chosen.has(id)) pa.chosen.delete(id);
+  else if(pa.chosen.size<pa.need) pa.chosen.add(id);
+  renderDiscardModal();
+}
+function confirmDiscard(){
+  const pa = pendingAction;
+  const discarded = hands[pa.idx].filter(c=>pa.chosen.has(c.id));
+  hands[pa.idx] = hands[pa.idx].filter(c=>!pa.chosen.has(c.id));
+  log(playerName(pa.idx)+'が'+discarded.length+'枚のカードを捨てた');
+  recordDiscard(discarded, playerName(pa.idx)+'が10捨てで捨てた');
+  checkGameEndAfterSideEffect('discard');
+  hideActionModal();
+  const info=pa.info, extraSkips=pa.extraSkips;
+  pendingAction=null;
+  finalizeTurn(info, extraSkips);
+}
+
+function openBomberModal(idx, count, info, extraSkips){
+  pendingAction = {type:'bomber', idx, max:count, info, extraSkips, chosen:new Set()};
+  render();
+  renderBomberModal();
+}
+function renderBomberModal(){
+  const pa = pendingAction;
+  const palette = bomberPalette();
+  const btns = palette.map(r=>{
+    const active = pa.chosen.has(r);
+    const label = r==='JOKER' ? 'JOKER' : r;
+    return '<button type="button" class="rank-btn'+(active?' active':'')+'" onclick="bomberToggleRank(\''+r+'\')">'+label+'</button>';
+  }).join('');
+  showActionModal('<h2>12ボンバー</h2><p>捨てさせるランクを最大'+pa.max+'個まで選んでください（'+pa.chosen.size+'/'+pa.max+'）</p>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:280px;margin:0 auto;">'+btns+'</div>'
+    + '<button class="action play" style="margin-top:14px;" onclick="confirmBomber()">決定</button>');
+}
+function bomberToggleRank(r){
+  const pa = pendingAction;
+  if(pa.chosen.has(r)) pa.chosen.delete(r);
+  else if(pa.chosen.size<pa.max) pa.chosen.add(r);
+  renderBomberModal();
+}
+function confirmBomber(){
+  const pa = pendingAction;
+  hideActionModal();
+  const info=pa.info, extraSkips=pa.extraSkips;
+  pendingAction=null;
+  applyBomber(Array.from(pa.chosen), ()=>{ finalizeTurn(info, extraSkips); });
+}
+
+function openElevenBackChoiceModal(cards){
+  pendingAction = {type:'elevenBackChoice', idx:0, cards};
+  render();
+  showActionModal('<h2>11バック</h2><p>Jを出しました。強さの順序を反転させますか？</p>'
+    + '<div style="display:flex;gap:14px;justify-content:center;margin-top:10px;">'
+    + '<button class="action play" onclick="confirmElevenBackChoice(true)">発動する</button>'
+    + '<button class="action decline" onclick="confirmElevenBackChoice(false)">発動しない</button>'
+    + '</div>');
+}
+function confirmElevenBackChoice(decision){
+  const cards = pendingAction.cards;
+  hideActionModal();
+  pendingAction = null;
+  const info = resolvePlayCore(0, cards, decision);
+  render();
+  afterPlayEffects(info);
+}
+
+function computePlayableCardIds(){
+  const playable = new Set();
+  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return playable;
+  const hand = hands[0];
+
+  if(rules.spade3Return && field && field.rank==='JOKER' && field.count===1){
+    const spade3 = hand.find(c=>c.rank==='3' && c.suit==='♠');
+    if(spade3) playable.add(spade3.id);
+  }
+
+  if(field && field.rank==='8' && rules.fourStop){
+    const needed = field.count*2;
+    const fours = hand.filter(c=>c.rank==='4');
+    const jokersAll = hand.filter(c=>c.rank==='JOKER');
+    if(fours.length>=1 && fours.length + jokersAll.length >= needed){
+      fours.forEach(c=>playable.add(c.id));
+      jokersAll.forEach(c=>playable.add(c.id));
+    }
+    return playable;
+  }
+
+  const jokers = hand.filter(c=>c.rank==='JOKER');
+  const groups = {};
+  for(const c of hand){ if(c.rank!=='JOKER'){ (groups[c.rank]=groups[c.rank]||[]).push(c); } }
+
+  const countsToTry = field ? [field.count] : Array.from({length: hand.length}, (_,i)=>i+1);
+
+  for(const rank of Object.keys(groups)){
+    const realCards = groups[rank];
+    for(const count of countsToTry){
+      if(count > realCards.length + jokers.length) continue;
+      const neededJokers = Math.max(0, count - realCards.length);
+      if(neededJokers > jokers.length) continue;
+
+      if(count===1){
+        // Suit can matter here (suit lock), so check each real card of this rank individually
+        // rather than only the first one in array order.
+        for(const c of realCards){
+          if(canBeatField(rank, 1, [c]).ok) playable.add(c.id);
+        }
+      } else {
+        // Suit can still matter here if suit-lock is active, so make sure the sample we test
+        // includes a locked-suit card when one is available for this rank.
+        let realPart;
+        if(rules.suitLock && suitLock){
+          const suitCard = realCards.find(c=>c.suit===suitLock);
+          realPart = suitCard
+            ? [suitCard].concat(realCards.filter(c=>c!==suitCard).slice(0, count-neededJokers-1))
+            : realCards.slice(0, count-neededJokers);
+        } else {
+          realPart = realCards.slice(0, count-neededJokers);
+        }
+        const sample = realPart.concat(jokers.slice(0, neededJokers));
+        if(canBeatField(rank, count, sample).ok){
+          // If this rank/count is legal at all, every card of that rank could take part in
+          // some valid selection (the player just needs to include the locked suit if any).
+          realCards.forEach(c=>playable.add(c.id));
+          jokers.slice(0, neededJokers).forEach(c=>playable.add(c.id));
+        }
+      }
+    }
+  }
+
+  if(jokers.length>0){
+    for(const count of countsToTry){
+      if(count>jokers.length) continue;
+      const sample = jokers.slice(0,count);
+      if(canBeatField('JOKER', count, sample).ok){ jokers.forEach(c=>playable.add(c.id)); }
+    }
+  }
+
+  return playable;
+}
+
+function toggleSelect(id){
+  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return;
+  if(selected.has(id)){
+    selected.delete(id);
+    render();
+    return;
+  }
+  const card = hands[0].find(c=>c.id===id);
+  if(!card) return;
+  const currentCards = currentSelectionCards();
+  const wouldBeCards = currentCards.concat([card]);
+  if(currentCards.length>0 && !isValidGroup(wouldBeCards)){
+    selected = new Set([id]);
+  } else {
+    selected.add(id);
+  }
+  render();
+}
+
+function currentSelectionCards(){
+  return hands[0].filter(c=>selected.has(c.id));
+}
+
+function flashMsg(msg){
+  const el = document.getElementById('msgFlash');
+  el.textContent = msg;
+  setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 2200);
+}
+
+function humanPlay(){
+  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return;
+  const cards = currentSelectionCards();
+  if(cards.length===0){ flashMsg('カードを選んでください'); return; }
+  if(!isValidGroup(cards)){ flashMsg('同じランクのカードを選んでください（ジョーカーはワイルドとして使えます）'); return; }
+  const rank = representedRank(cards);
+  const count = cards.length;
+  const check = canBeatField(rank, count, cards);
+  if(!check.ok){ flashMsg(check.reason); return; }
+  selected.clear();
+  if(rank==='J' && rules.elevenBack && rules.elevenBackChoice){
+    openElevenBackChoiceModal(cards);
+    return;
+  }
+  const info = resolvePlayCore(0, cards);
+  render();
+  afterPlayEffects(info);
+}
+
+function humanPass(){
+  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return;
+  if(field===null){ flashMsg('場が空の時はパスできません'); return; }
+  selected.clear();
+  passAction(0);
+}
+
+function showResults(){
+  const finalRanking = computeFinalRanking();
+  previousFinishedOrder = finalRanking.slice();
+  const list = document.getElementById('resultList');
+  list.innerHTML = finalRanking.map((pIdx, i)=>{
+    const title = RANK_TITLES[i] || '';
+    const reason = violationReasons[pIdx] ? '<div style="font-size:11px;color:var(--red-hanko);">反則：'+violationReasons[pIdx]+'</div>' : '';
+    return '<div class="result-row"><span>'+(i+1)+'位　'+playerName(pIdx)+reason+'</span><span class="result-title">'+title+'</span></div>';
+  }).join('');
+  document.getElementById('overlay').classList.add('show');
+}
+
+function suitClass(card){
+  if(card.rank==='JOKER') return 'joker';
+  return (card.suit==='♥'||card.suit==='♦') ? 'red' : 'black';
+}
+
+function cardHtml(card, extraClass, clickable, selectedFlag, onclickFn){
+  onclickFn = onclickFn || 'toggleSelect';
+  const displaySuit = card.rank==='JOKER' ? '★' : card.suit;
+  const displayRank = card.rank==='JOKER' ? 'JOKER' : card.rank;
+  return '<div class="card '+suitClass(card)+' '+(extraClass||'')+' '+(selectedFlag?'selected':'')+'" '
+    + (clickable? 'onclick="'+onclickFn+'(\''+card.id+'\')"' : '')
+    + '><div class="rank'+(card.rank==='JOKER'?' jokerlabel':'')+'">'+displayRank+'</div><div class="suit">'+displaySuit+'</div></div>';
+}
+
+function render(){
+  document.getElementById('rulesBox').classList.toggle('show', document.getElementById('rulesBox').dataset.open==='1');
+
+  const finalRankingForBadges = gameOver ? computeFinalRanking() : null;
+  const oppHtml = [1,2,3].map(i=>{
+    let badge = '';
+    if(finishedOrder.includes(i)){
+      if(gameOver){
+        badge = '<div class="badge">'+RANK_TITLES[finalRankingForBadges.indexOf(i)]+'</div>';
+      } else if(legitFinishOrder.includes(i)){
+        badge = '<div class="badge">'+RANK_TITLES[legitFinishOrder.indexOf(i)]+'</div>';
+      } else {
+        badge = '<div class="badge violation-badge">反則</div>';
+      }
+    }
+    const backs = hands[i].map(()=>'<div class="cardback"></div>').join('');
+    const activeClass = (currentPlayerIndex===i && !gameOver && !pendingAction && !exchangeInProgress) ? 'active' : '';
+    return '<div class="opp '+activeClass+'">'+badge+'<div class="name">'+playerName(i)+'</div>'
+      + '<div class="cardback-row">'+(backs||'&nbsp;')+'</div>'
+      + '<div class="count">残り '+hands[i].length+'枚</div></div>';
+  }).join('');
+  document.getElementById('opponents').innerHTML = oppHtml;
+
+  const flagParts = [];
+  if(revolution) flagParts.push('<div class="flag">革命中（強さ逆転）</div>');
+  if(elevenBack) flagParts.push('<div class="flag">11バック中</div>');
+  if(rules.suitLock && suitLock) flagParts.push('<div class="flag">スートしばり：'+suitLock+'</div>');
+  if(rules.numberLock && numberLock) flagParts.push('<div class="flag">数しばり：次は'+numberLock+'</div>');
+  if(field && field.rank==='8' && rules.fourStop) flagParts.push('<div class="flag">8切り成立待ち（4止め：4×'+(field.count*2)+'）</div>');
+  document.getElementById('flags').innerHTML = flagParts.join('');
+
+  const isNewField = field !== null && pendingDealAnimation;
+  if(field===null){
+    if(flowingOutCards){
+      document.getElementById('fieldOwner').textContent = '場が流れました';
+      document.getElementById('fieldCards').innerHTML = flowingOutCards.map(c=>cardHtml(c,'mini flow-out',false,false)).join('');
+    } else {
+      document.getElementById('fieldOwner').textContent = '';
+      document.getElementById('fieldCards').innerHTML = '<div class="field-empty">場は空です &mdash; 好きなカードを出せます</div>';
+    }
+  } else {
+    const label = field.rank==='JOKER' ? 'ジョーカー' : field.rank;
+    document.getElementById('fieldOwner').textContent = playerName(field.owner)+' が出した '+label+' × '+field.count;
+    document.getElementById('fieldCards').innerHTML = (field.cards||[]).map(c=>cardHtml(c,'mini'+(isNewField?' deal-in':''),false,false)).join('');
+  }
+
+  const isYourTurn = (currentPlayerIndex===0 && !gameOver && !pendingAction && !exchangeInProgress);
+  const playableIds = computePlayableCardIds();
+  const sortedHand = hands[0].slice().sort((a,b)=> handSortDescending
+    ? effStrength(b.rank)-effStrength(a.rank)
+    : effStrength(a.rank)-effStrength(b.rank));
+  document.getElementById('hand').innerHTML = sortedHand.map(c=>{
+    let extra = isYourTurn ? '' : 'disabled';
+    if(isYourTurn && playableIds.has(c.id)) extra += ' playable';
+    return cardHtml(c, extra, isYourTurn, selected.has(c.id));
+  }).join('') || '<div class="field-empty">手札なし</div>';
+
+  let youBadgeText = '';
+  if(finishedOrder.includes(0)){
+    if(gameOver){
+      youBadgeText = RANK_TITLES[finalRankingForBadges.indexOf(0)];
+    } else if(legitFinishOrder.includes(0)){
+      youBadgeText = RANK_TITLES[legitFinishOrder.indexOf(0)];
+    } else {
+      youBadgeText = '反則（順位確定待ち）';
+    }
+  }
+  document.getElementById('youLabel').textContent = youBadgeText
+    ? 'あなたの手札 （'+youBadgeText+'）'
+    : 'あなたの手札';
+
+  document.getElementById('youRow').classList.toggle('active-turn', isYourTurn);
+
+  document.getElementById('playBtn').disabled = !isYourTurn;
+  const noLegalPlay = isYourTurn && field!==null && playableIds.size===0;
+  document.getElementById('passBtn').disabled = !isYourTurn || field===null;
+  document.getElementById('passBtn').classList.toggle('highlight-pass', noLegalPlay);
+
+  const banner = document.getElementById('turnBanner');
+  if(gameOver){
+    banner.textContent = '結果を確認してください';
+    banner.className = 'turn-banner neutral';
+  } else if(exchangeInProgress){
+    banner.textContent = (pendingAction && pendingAction.type==='exchange') ? 'あなたが渡すカードを選んでください' : 'カード交換中…';
+    banner.className = 'turn-banner neutral';
+  } else if(pendingAction){
+    banner.textContent = (pendingAction.idx===0 ? 'あなたの追加アクション中…' : playerName(pendingAction.idx)+' の追加アクション中…');
+    banner.className = 'turn-banner neutral';
+  } else if(currentPlayerIndex===0){
+    banner.textContent = '★ あなたの番です ★';
+    banner.className = 'turn-banner your-turn';
+  } else {
+    banner.textContent = playerName(currentPlayerIndex)+' が考え中…';
+    banner.className = 'turn-banner cpu-turn';
+  }
+
+  updateDiscardPileButton();
+}
+
+function syncSubRuleStates(){
+  RULE_DEFS.filter(r=>r.dependsOn).forEach(r=>{
+    const parentCb = document.getElementById('rule_'+r.dependsOn);
+    const subCb = document.getElementById('rule_'+r.key);
+    subCb.disabled = !parentCb.checked;
+    if(!parentCb.checked) subCb.checked = false;
+  });
+}
+
+function adjustJokerCount(delta){
+  jokerCount = Math.max(1, Math.min(8, jokerCount + delta));
+  const disp = document.getElementById('jokerCountDisplay');
+  if(disp) disp.textContent = jokerCount;
+}
+function syncJokerStepperState(){
+  const cb = document.getElementById('rule_jokers');
+  const enabled = cb && cb.checked;
+  const minus = document.getElementById('jokerMinusBtn');
+  const plus = document.getElementById('jokerPlusBtn');
+  if(minus) minus.disabled = !enabled;
+  if(plus) plus.disabled = !enabled;
+}
+
+function ruleNumBadge(r){
+  return (r.num!==undefined) ? '<span class="rule-num">'+r.num+'</span>' : '';
+}
+function ruleItemHtml(r){
+  return '<label class="rule-item'+(r.sub?' rule-item-sub':'')+'"><input type="checkbox" id="rule_'+r.key+'"><div><div class="rule-label">'+ruleNumBadge(r)+r.label+'</div><div class="rule-desc">'+r.desc+'</div></div></label>';
+}
+function fwChipHtml(r){
+  return '<label class="fw-chip" title="'+r.desc.replace(/"/g,'&quot;')+'"><input type="checkbox" id="rule_'+r.key+'">'+ruleNumBadge(r)+'<span>'+r.label+'</span></label>';
+}
+function jokerItemHtml(r){
+  return '<div class="rule-item">'
+    + '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;cursor:pointer;">'
+    + '<input type="checkbox" id="rule_'+r.key+'">'
+    + '<div style="flex:1;"><div class="rule-label">'+r.label+'</div><div class="rule-desc">'+r.desc+'</div></div>'
+    + '</label>'
+    + '<div class="joker-stepper" onclick="event.stopPropagation()">'
+    + '<button type="button" class="joker-step-btn" id="jokerMinusBtn" onclick="adjustJokerCount(-1)">－</button>'
+    + '<span id="jokerCountDisplay">'+jokerCount+'</span>'
+    + '<button type="button" class="joker-step-btn" id="jokerPlusBtn" onclick="adjustJokerCount(1)">＋</button>'
+    + '</div>'
+    + '</div>';
+}
+
+function renderRuleSetup(){
+  const categories = [
+    {key:'number', title:'数字による特殊効果'},
+    {key:'lock', title:'しばり・特殊ルール'}
+  ];
+  const columnsHtml = categories.map(cat=>{
+    const items = RULE_DEFS.filter(r=>r.category===cat.key);
+    let body = '';
+    let i = 0;
+    while(i<items.length){
+      if(items[i].compact){
+        const chips = [];
+        while(i<items.length && items[i].compact){ chips.push(items[i]); i++; }
+        body += '<div class="fw-chip-row">' + chips.map(fwChipHtml).join('') + '</div>';
+      } else if(items[i].key==='jokers'){
+        body += jokerItemHtml(items[i]);
+        i++;
+      } else {
+        body += ruleItemHtml(items[i]);
+        i++;
+      }
+    }
+    return '<div class="rule-column"><div class="rule-column-title">'+cat.title+'</div><div class="rule-list">'+body+'</div></div>';
+  }).join('');
+  document.getElementById('ruleList').innerHTML = '<div class="rule-columns">'+columnsHtml+'</div>';
+
+  RULE_DEFS.filter(r=>r.dependsOn).forEach(r=>{
+    document.getElementById('rule_'+r.dependsOn).addEventListener('change', syncSubRuleStates);
+  });
+  document.getElementById('rule_jokers').addEventListener('change', syncJokerStepperState);
+  syncSubRuleStates();
+  syncJokerStepperState();
+}
+
+document.getElementById('playBtn').addEventListener('click', humanPlay);
+document.getElementById('passBtn').addEventListener('click', humanPass);
+document.getElementById('rulesBtn').addEventListener('click', ()=>{
+  const box=document.getElementById('rulesBox');
+  const open = box.dataset.open==='1';
+  box.dataset.open = open ? '0' : '1';
+  box.classList.toggle('show', !open);
+});
+document.getElementById('backToSetupBtn').addEventListener('click', ()=>{
+  if(!gameOver){
+    if(!confirm('現在のゲームを中断してルール設定に戻りますか？')) return;
+  }
+  document.getElementById('gameScreen').style.display='none';
+  document.getElementById('setupScreen').style.display='block';
+});
+document.getElementById('restartBtn2').addEventListener('click', ()=>{
+  document.getElementById('overlay').classList.remove('show');
+  document.getElementById('gameScreen').style.display='none';
+  document.getElementById('setupScreen').style.display='block';
+});
+document.getElementById('nextGameBtn').addEventListener('click', ()=>{
+  document.getElementById('overlay').classList.remove('show');
+  startGameWithExchange();
+});
+document.getElementById('selectAllBtn').addEventListener('click', ()=>{
+  RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = true);
+  syncSubRuleStates();
+  syncJokerStepperState();
+});
+document.getElementById('selectNoneBtn').addEventListener('click', ()=>{
+  RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = false);
+  syncSubRuleStates();
+  syncJokerStepperState();
+});
+document.getElementById('startGameBtn').addEventListener('click', ()=>{
+  rules = {};
+  RULE_DEFS.forEach(r=> rules[r.key] = document.getElementById('rule_'+r.key).checked);
+  rules.jokerCount = jokerCount;
+  document.getElementById('setupScreen').style.display='none';
+  document.getElementById('gameScreen').style.display='block';
+  startGame();
+});
+document.getElementById('restoreTab').addEventListener('click', restoreActionModal);
+document.getElementById('discardPileBtn').addEventListener('click', openDiscardHistoryModal);
+document.getElementById('sortToggleBtn').addEventListener('click', ()=>{
+  handSortDescending = !handSortDescending;
+  document.getElementById('sortToggleBtn').textContent = '並び順: ' + (handSortDescending ? '強い→左' : '強い→右');
+  render();
+});
+document.getElementById('logCollapseBtn').addEventListener('click', ()=>{
+  const sidebar = document.getElementById('logSidebar');
+  const collapsed = sidebar.classList.toggle('collapsed');
+  document.getElementById('logCollapseBtn').textContent = collapsed ? '＋' : '－';
+});
+
+renderRuleSetup();
+</script>
+</body>
+</html>

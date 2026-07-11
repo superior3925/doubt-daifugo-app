@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check daifugo.js)",
+      "Bash(python -m http.server 8734)",
+      "Bash(taskkill //F //FI \"WINDOWTITLE eq *http.server*\")",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 33820)",
+      "Bash(python -m http.server 8735)",
+      "Bash(taskkill //F //PID 18208)",
+      "Bash(python -m http.server 8736)",
+      "Bash(taskkill //F //PID 15060)",
+      "Bash(python -m http.server 8737)",
+      "Bash(taskkill //F //PID 12920)",
+      "Bash(python -m http.server 8738)",
+      "Bash(taskkill //F //PID 13984)",
+      "Bash(python -m http.server 8739)",
+      "Bash(taskkill //F //PID 19180)",
+      "Bash(python -m http.server 8740)",
+      "Bash(taskkill //F //PID 30416)",
+      "Bash(python -m http.server 8741)",
+      "Bash(taskkill //F //PID 22180)",
+      "Bash(python -m http.server 8742)",
+      "Bash(taskkill //F //PID 33344)"
+    ]
+  }
+}
