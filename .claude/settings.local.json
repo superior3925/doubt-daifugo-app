@@ -23,7 +23,13 @@
       "Bash(python -m http.server 8742)",
       "Bash(taskkill //F //PID 33344)",
       "Bash(python -m http.server 8743)",
-      "Bash(taskkill //F //PID 31548)"
+      "Bash(taskkill //F //PID 31548)",
+      "Bash(python -m http.server 8744)",
+      "Bash(taskkill //F //PID 37620)",
+      "Bash(python -m http.server 8745)",
+      "Bash(taskkill //F //PID 41440)",
+      "Bash(git checkout *)",
+      "Bash(git add *)"
     ]
   }
 }

@@ -435,6 +435,12 @@
     padding:16px;
   }
   .overlay.show{ display:flex; }
+  /* The action modal (7渡し/10捨て/12ボンバー/カード交換/11バック choice) lets clicks pass
+     through its dimmed backdrop so the player can still see - and, once dragged aside, click -
+     their hand underneath without needing to minimize. The card itself opts back into normal
+     pointer handling and can be dragged by its handle bar. */
+  #actionOverlay{ background:rgba(0,0,0,0.2); pointer-events:none; }
+  #actionOverlay .result-card{ pointer-events:auto; }
   .result-card{
     position:relative;
     background:var(--cream); color:var(--ink);
@@ -442,6 +448,14 @@
     width:320px; max-width:100%; text-align:center;
     box-shadow:0 20px 50px rgba(0,0,0,0.6);
     max-height:86vh; overflow-y:auto;
+  }
+  .result-card.dragging{ box-shadow:0 26px 60px rgba(0,0,0,0.8); transition:none; }
+  .modal-drag-handle{
+    cursor:move; user-select:none; -webkit-user-select:none;
+    font-size:10.5px; color:#8a6d1f; text-align:center;
+    margin:-28px -32px 14px; padding:6px 32px;
+    background:rgba(32,27,18,0.06); border-radius:14px 14px 0 0;
+    border-bottom:1px dashed rgba(32,27,18,0.2);
   }
   .result-card h2{
     font-family:'Shippori Mincho', serif;
@@ -597,6 +611,7 @@ const RULE_DEFS = [
   {key:'sevenGive', label:'7渡し', num:7, desc:'7を出すと、出した枚数分のカードを渡します。', category:'number'},
   {key:'sevenGiveForceLeft', label:'└ 左隣に強制', desc:'オンで相手を選べず必ず左隣に渡します。オフなら相手を自由に選べます。', sub:true, dependsOn:'sevenGive', category:'number'},
   {key:'eightGiri', label:'8切り', num:8, desc:'8を出すと場が流れ、続けて自分の番になります。', category:'number'},
+  {key:'nineReverse', label:'9リバース', num:9, desc:'9を出すとプレー順（手番の回る向き）が反転します。1枚でも複数枚でも効果は同じで、もう一度9が出されると元に戻ります。', category:'number'},
   {key:'tenDiscard', label:'10捨て', num:10, desc:'10を出すと、出した枚数分のカードを手札から選んで捨てます。', category:'number'},
   {key:'elevenBack', label:'11バック', num:11, desc:'J(11)を出すと、そのトリック中だけ強さの順序が反転します。', category:'number'},
   {key:'elevenBackChoice', label:'└ 発動を任意にする', desc:'オンでJを出したプレイヤーが発動するか毎回選べます。オフなら常に自動発動。', sub:true, dependsOn:'elevenBack', category:'number'},
@@ -638,8 +653,10 @@ let violationReasons = {};
 let defendingDaifugoIdx = null;
 let handSortDescending = false;
 let discardHistory = [];
+let currentTrickCards = [];
 let jokerCount = 2;
 let nextStartingPlayerOverride = null;
+let turnDirection = 1;
 let lastReceivedCardIds = new Set();
 
 function strengthIndex(rank){ return RANKS.indexOf(rank); }
@@ -677,10 +694,18 @@ function log(msg){
 }
 
 function activePlayers(){ return [0,1,2,3].filter(i=>!finishedOrder.includes(i)); }
+function passClearThreshold(act){
+  // Normally the field owner is one of the active players still waiting their turn to come
+  // back around, so only the *other* act.length-1 players need to pass. But if the owner
+  // already went out on the very play that set this field, they're no longer in `act` at
+  // all - every one of the act.length players now active still needs a chance to respond.
+  if(!field) return act.length;
+  return act.includes(field.owner) ? act.length-1 : act.length;
+}
 function leftNeighborOf(idx){
-  let i = (idx+1)%4;
+  let i = (idx+turnDirection+4)%4;
   let guard = 0;
-  while(finishedOrder.includes(i) && guard<4){ i = (i+1)%4; guard++; }
+  while(finishedOrder.includes(i) && guard<4){ i = (i+turnDirection+4)%4; guard++; }
   return i;
 }
 function playerName(i){ return NAMES[i]; }
@@ -753,7 +778,11 @@ function checkForbiddenWin(playerIdx, rank, count, wasSpade3Counter, postToggleR
 function clearField(){
   if(field && field.cards && field.cards.length){
     flowingOutCards = field.cards;
-    recordDiscard(field.cards, playerName(field.owner)+'が出した'+(field.rank==='JOKER'?'ジョーカー':field.rank)+'×'+field.count+'（場が流れた分）');
+    if(currentTrickCards.length>0){
+      const label = '最後は'+playerName(field.owner)+'が出した'+(field.rank==='JOKER'?'ジョーカー':field.rank)+'×'+field.count+'（このトリック全体で'+currentTrickCards.length+'枚）';
+      recordDiscard(currentTrickCards, label);
+    }
+    currentTrickCards = [];
     if(flowOutTimer) clearTimeout(flowOutTimer);
     flowOutTimer = setTimeout(()=>{ flowingOutCards = null; flowOutTimer = null; render(); }, 600);
   }
@@ -767,6 +796,7 @@ function clearField(){
 
 function dealFreshHands(){
   gameGen++;
+  turnDirection = 1;
   if(dealAnimationTimer){ clearTimeout(dealAnimationTimer); dealAnimationTimer=null; }
   pendingDealAnimation = false;
   if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer=null; }
@@ -786,6 +816,7 @@ function dealFreshHands(){
   violationReasons = {};
   defendingDaifugoIdx = null;
   discardHistory = [];
+  currentTrickCards = [];
   nextStartingPlayerOverride = null;
   lastReceivedCardIds = new Set();
   gameOver = false;
@@ -926,7 +957,7 @@ function advanceTurn(){
   const act = activePlayers();
   if(act.length<=1) return;
   do{
-    currentPlayerIndex = (currentPlayerIndex+1)%4;
+    currentPlayerIndex = (currentPlayerIndex+turnDirection+4)%4;
   } while(finishedOrder.includes(currentPlayerIndex));
 }
 
@@ -1057,6 +1088,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
   const count = cardsPlayed.length;
 
   field = {rank, count, owner:playerIdx, cards:cardsPlayed, seq: ++fieldSeqCounter};
+  currentTrickCards = currentTrickCards.concat(cardsPlayed);
   passStreak = 0;
   pendingDealAnimation = true;
   if(dealAnimationTimer) clearTimeout(dealAnimationTimer);
@@ -1092,6 +1124,11 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
   } else if(rank==='J' && rules.elevenBack && rules.elevenBackChoice && !elevenBackDecision){
     log(playerName(playerIdx)+'は11バックを発動しなかった');
     showCutIn('11バック 見送り');
+  }
+  if(rank==='9' && rules.nineReverse){
+    turnDirection = -turnDirection;
+    log('9リバース発動！プレー順が反転する');
+    showCutIn('9リバース！！');
   }
 
   let finished=false;
@@ -1137,9 +1174,10 @@ function finalizeTurn(info, extraSkips){
   if(gameOver){ render(); showResults(); return; }
   if(!(info.fieldCleared && !info.finished)){
     const act = activePlayers();
-    // Cap skips at the number of OTHER active players: skipping further than that would wrap
-    // back around and skip the player who led (or double-skip someone), which must never happen.
-    const effectiveSkips = Math.min(extraSkips, Math.max(0, act.length-1));
+    // Cap skips at how many players still need to respond to this field (see passClearThreshold):
+    // skipping further than that would wrap back around and skip the player who led (or
+    // double-skip someone), which must never happen.
+    const effectiveSkips = Math.min(extraSkips, passClearThreshold(act));
     advanceTurn();
     for(let k=0;k<effectiveSkips;k++) advanceTurn();
     if(effectiveSkips>0 && field!==null){
@@ -1147,7 +1185,7 @@ function finalizeTurn(info, extraSkips){
       // toward clearing the field (otherwise the trick can stall and wrap back to the
       // player who led it without ever resolving).
       passStreak += effectiveSkips;
-      if(passStreak >= act.length-1){
+      if(passStreak >= passClearThreshold(act)){
         clearField();
         log('スキップにより誰も応答できず、場が流れた');
       }
@@ -1204,7 +1242,7 @@ function passAction(playerIdx){
   log(playerName(playerIdx)+'： パス');
   advanceTurn();
   const act = activePlayers();
-  if(passStreak >= act.length-1){
+  if(passStreak >= passClearThreshold(act)){
     const wasEightStanding = field && field.rank==='8' && rules.fourStop;
     clearField();
     log(wasEightStanding ? '誰も4止めできず、8切りが成立した' : '場が流れた');
@@ -1429,13 +1467,21 @@ function showCutIn(text){
 }
 
 function showActionModal(html){
-  document.getElementById('actionCard').innerHTML = '<button class="modal-minimize" onclick="minimizeActionModal()" title="最小化して手札を見る">－</button>' + html;
+  const card = document.getElementById('actionCard');
+  card.innerHTML = '<div class="modal-drag-handle" title="ドラッグで移動できます">⠿ ドラッグでどかせます</div>'
+    + '<button class="modal-minimize" onclick="minimizeActionModal()" title="最小化して手札を見る">－</button>' + html;
   document.getElementById('actionOverlay').classList.add('show');
   document.getElementById('restoreTab').style.display = 'none';
+  const handle = card.querySelector('.modal-drag-handle');
+  if(handle){
+    handle.onmousedown = (e)=>startModalDrag(e, card);
+    handle.ontouchstart = (e)=>startModalDrag(e, card);
+  }
 }
 function hideActionModal(){
   document.getElementById('actionOverlay').classList.remove('show');
   document.getElementById('restoreTab').style.display = 'none';
+  resetActionModalPosition();
 }
 function minimizeActionModal(){
   document.getElementById('actionOverlay').classList.remove('show');
@@ -1445,6 +1491,48 @@ function restoreActionModal(){
   document.getElementById('restoreTab').style.display = 'none';
   document.getElementById('actionOverlay').classList.add('show');
 }
+function resetActionModalPosition(){
+  const card = document.getElementById('actionCard');
+  card.style.position = '';
+  card.style.left = '';
+  card.style.top = '';
+  card.style.margin = '';
+  card.classList.remove('dragging');
+}
+
+let modalDragState = null;
+function startModalDrag(e, targetEl){
+  const point = e.touches ? e.touches[0] : e;
+  const rect = targetEl.getBoundingClientRect();
+  modalDragState = { targetEl, offsetX: point.clientX - rect.left, offsetY: point.clientY - rect.top };
+  targetEl.style.position = 'fixed';
+  targetEl.style.left = rect.left + 'px';
+  targetEl.style.top = rect.top + 'px';
+  targetEl.style.margin = '0';
+  targetEl.classList.add('dragging');
+  if(e.cancelable) e.preventDefault();
+}
+function onModalDragMove(e){
+  if(!modalDragState) return;
+  const point = e.touches ? e.touches[0] : e;
+  const el = modalDragState.targetEl;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  let left = point.clientX - modalDragState.offsetX;
+  let top = point.clientY - modalDragState.offsetY;
+  left = Math.max(-w+60, Math.min(window.innerWidth-60, left));
+  top = Math.max(0, Math.min(window.innerHeight-40, top));
+  el.style.left = left+'px';
+  el.style.top = top+'px';
+  if(e.cancelable) e.preventDefault();
+}
+function onModalDragEnd(){
+  if(modalDragState) modalDragState.targetEl.classList.remove('dragging');
+  modalDragState = null;
+}
+document.addEventListener('mousemove', onModalDragMove);
+document.addEventListener('touchmove', onModalDragMove, {passive:false});
+document.addEventListener('mouseup', onModalDragEnd);
+document.addEventListener('touchend', onModalDragEnd);
 
 function showHistoryModal(html){
   document.getElementById('historyCard').innerHTML = '<button class="modal-minimize" onclick="closeHistoryModal()" title="閉じる">×</button>' + html;
@@ -1472,7 +1560,6 @@ function openGiveModal(idx, count, info, extraSkips){
   pendingAction = {type:'give', idx, need, info, extraSkips, recipient:null, chosen:new Set()};
   if(rules.sevenGiveForceLeft){
     pendingAction.recipient = leftNeighborOf(idx);
-    if(need===hands[idx].length){ hands[idx].forEach(c=>pendingAction.chosen.add(c.id)); }
   }
   render();
   renderGiveModalStep();
@@ -1486,15 +1573,14 @@ function renderGiveModalStep(){
   } else {
     const hand = hands[pa.idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
     const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'giveToggleCard')).join('');
-    showActionModal('<h2>7渡し</h2><p>'+playerName(pa.recipient)+'に渡すカードを'+pa.need+'枚選んでください（'+pa.chosen.size+'/'+pa.need+'）</p>'
+    showActionModal('<h2>7渡し</h2><p>'+playerName(pa.recipient)+'に渡すカードを最大'+pa.need+'枚まで選べます（'+pa.chosen.size+'/'+pa.need+'）</p>'
       + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
-      + '<button class="action play" '+(pa.chosen.size===pa.need?'':'disabled')+' onclick="confirmGive()">渡す</button>');
+      + '<button class="action play" onclick="confirmGive()">渡す</button>');
   }
 }
 function giveChooseRecipient(i){
   const pa = pendingAction;
   pa.recipient = i;
-  if(pa.need===hands[pa.idx].length){ hands[pa.idx].forEach(c=>pa.chosen.add(c.id)); }
   renderGiveModalStep();
 }
 function giveToggleCard(id){
@@ -1518,9 +1604,7 @@ function confirmGive(){
 
 function openDiscardModal(idx, count, info, extraSkips){
   const need = Math.min(count, hands[idx].length);
-  const chosen = new Set();
-  if(need===hands[idx].length){ hands[idx].forEach(c=>chosen.add(c.id)); }
-  pendingAction = {type:'discard', idx, need, info, extraSkips, chosen};
+  pendingAction = {type:'discard', idx, need, info, extraSkips, chosen:new Set()};
   render();
   renderDiscardModal();
 }
@@ -1528,9 +1612,9 @@ function renderDiscardModal(){
   const pa = pendingAction;
   const hand = hands[pa.idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
   const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'discardToggleCard')).join('');
-  showActionModal('<h2>10捨て</h2><p>捨てるカードを'+pa.need+'枚選んでください（'+pa.chosen.size+'/'+pa.need+'）</p>'
+  showActionModal('<h2>10捨て</h2><p>捨てるカードを最大'+pa.need+'枚まで選べます（'+pa.chosen.size+'/'+pa.need+'）</p>'
     + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
-    + '<button class="action play" '+(pa.chosen.size===pa.need?'':'disabled')+' onclick="confirmDiscard()">捨てる</button>');
+    + '<button class="action play" onclick="confirmDiscard()">捨てる</button>');
 }
 function discardToggleCard(id){
   const pa = pendingAction;
@@ -1781,6 +1865,7 @@ function render(){
   const flagParts = [];
   if(revolution) flagParts.push('<div class="flag">革命中（強さ逆転）</div>');
   if(elevenBack) flagParts.push('<div class="flag">11バック中</div>');
+  if(turnDirection===-1) flagParts.push('<div class="flag">プレー順：逆回り</div>');
   if(rules.suitLock && suitLock) flagParts.push('<div class="flag">スートしばり：'+suitLock+'</div>');
   if(rules.numberLock && numberLock) flagParts.push('<div class="flag">数しばり：次は'+numberLock+'</div>');
   if(field && field.rank==='8' && rules.fourStop) flagParts.push('<div class="flag">8切り成立待ち（4止め：4×'+(field.count*2)+'）</div>');
