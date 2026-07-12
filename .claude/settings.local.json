@@ -29,7 +29,20 @@
       "Bash(python -m http.server 8745)",
       "Bash(taskkill //F //PID 41440)",
       "Bash(git checkout *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "PowerShell(gh --version 2>&1)",
+      "PowerShell(git ls-remote origin 2>&1)",
+      "PowerShell(git push -u origin feature/extended-daifugo-rules-and-ui)",
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue; where.exe gh 2>&1; Write-Host \"---env---\"; Get-ChildItem Env: | Where-Object { $_.Name -match 'GITHUB|GH_' } | Select-Object Name)",
+      "mcp__claude-in-chrome__navigate",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "PowerShell(git push origin main)",
+      "PowerShell(curl.exe -s -o NUL -w \"%{http_code}\" \"https://api.github.com/repos/superior3925/-\" -H \"User-Agent: check\")",
+      "PowerShell(curl.exe -s \"https://api.github.com/repos/superior3925/-\" -H \"User-Agent: check\")"
     ]
   }
 }

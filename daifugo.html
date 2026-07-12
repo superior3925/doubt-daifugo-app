@@ -82,6 +82,10 @@
   }
   .setup-title{ font-family:'Shippori Mincho',serif; font-size:20px; color:var(--gold-soft); margin-bottom:6px; }
   .setup-desc{ font-size:11px; color:#cfd8d0; margin-bottom:12px; }
+  .cpu-level-block{ text-align:left; margin-bottom:16px; }
+  .cpu-level-list{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .cpu-level-item input{ margin-top:2px; }
+  @media (max-width:760px){ .cpu-level-list{ grid-template-columns:1fr; } }
   .rule-columns{ display:grid; grid-template-columns:1fr 1fr; gap:16px; text-align:left; align-items:start; }
   .rule-column-title{
     font-family:'Shippori Mincho',serif; font-weight:800; font-size:13px; color:var(--gold-soft);
@@ -512,6 +516,17 @@
     <div class="setup-box">
       <div class="setup-title">対戦ルール設定</div>
       <div class="setup-desc">今回の対戦で有効にするローカルルールを選んでください。何も選ばなければ基本ルールのみで遊べます。</div>
+
+      <div class="cpu-level-block">
+        <div class="rule-column-title">CPUの強さ</div>
+        <div class="cpu-level-list">
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="normal" checked><div><div class="rule-label">ノーマル</div><div class="rule-desc">ルールは把握しているが、出せるカードがあれば深く考えずに出す入門者タイプ。</div></div></label>
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="elite"><div><div class="rule-label">エリート</div><div class="rule-desc">ルールを完全把握。役や縛りを使いこなし、変則的なプレーも行う中級者。</div></div></label>
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="legend"><div><div class="rule-label">レジェンド</div><div class="rule-desc">捨て札などから他家の手札を確率的に推測し、駆け引きを仕掛けてくる最強タイプ。</div></div></label>
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="random"><div><div class="rule-label">ランダム</div><div class="rule-desc">開始時に上記3つから抽選します（連戦中は同じ強さのまま）。</div></div></label>
+        </div>
+      </div>
+
       <div class="rule-list" id="ruleList"></div>
       <div class="setup-actions">
         <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
@@ -658,6 +673,14 @@ let jokerCount = 2;
 let nextStartingPlayerOverride = null;
 let turnDirection = 1;
 let lastReceivedCardIds = new Set();
+let cpuLevelSetting = 'normal';
+let cpuLevel = 'normal';
+const CPU_LEVEL_LABELS = {normal:'ノーマル', elite:'エリート', legend:'レジェンド'};
+function resolveCpuLevel(setting){
+  if(setting!=='random') return setting;
+  const opts = ['normal','elite','legend'];
+  return opts[Math.floor(Math.random()*opts.length)];
+}
 
 function strengthIndex(rank){ return RANKS.indexOf(rank); }
 function orderReversed(){ return revolution !== elevenBack; }
@@ -713,7 +736,8 @@ function countOfRank(hand, rank){ return hand.filter(c=>c.rank===rank).length; }
 
 function activeRulesSummary(){
   const active = RULE_DEFS.filter(r=>rules[r.key]).map(r=> r.key==='jokers' ? 'ジョーカー'+(rules.jokerCount||2)+'枚' : r.label);
-  return active.length ? '有効ルール: '+active.join('、') : '追加ルールなし（基本ルールのみ）';
+  const rulesPart = active.length ? '有効ルール: '+active.join('、') : '追加ルールなし（基本ルールのみ）';
+  return 'CPU強さ: '+CPU_LEVEL_LABELS[cpuLevel]+' ／ '+rulesPart;
 }
 
 function computeFinalRanking(){
@@ -1272,11 +1296,88 @@ function groupByRank(hand){
   return map;
 }
 
+// ---- 禁止上がり（最強カード）回避ガード：全ティア共通の安全網 ----
+// forbiddenWin + fwStrongest が有効なとき、そのランクで手札を使い切る手は
+// 代替手がある限り避け、逆に手札に余裕がある間はむしろ優先的に処分させる。
+// こうしないと「弱いカードから機械的に出す」だけで自然と最強カードが最後の1枚に
+// 残り、意図せず禁止上がりで反則負けになってしまう。
+function forbiddenStrongestRankSet(){
+  if(!(rules.forbiddenWin && rules.fwStrongest)) return null;
+  return new Set(['JOKER', orderReversed() ? '3' : '2']);
+}
+function forbiddenFinishClass(hand, rank, playCount){
+  const fs = forbiddenStrongestRankSet();
+  if(!fs || !fs.has(rank)) return 'normal';
+  return (hand.length - playCount === 0) ? 'trap' : 'shed';
+}
+function scoreWithTrapGuard(hand, rank, playCount, baseScore){
+  const cls = forbiddenFinishClass(hand, rank, playCount);
+  if(cls==='trap') return baseScore + 100000;
+  if(cls==='shed') return baseScore - 100000;
+  return baseScore;
+}
+
+// ---- レジェンド用：公開情報のみからの手札推測 ----
+// 他プレイヤーの実際の手札（hands[i]）は絶対に参照しない。自分の手札・捨て札履歴・
+// 場に出ているカードという「見えている情報」だけから未確認カード集合を割り出し、
+// 各相手の残り枚数（公開情報）に比例させた粗い確率推定を行う。
+function fullDeckReference(){
+  const deck=[];
+  for(const s of SUITS) for(const r of RANKS) deck.push({rank:r, suit:s, id:s+'_'+r});
+  if(rules.jokers){
+    const n = rules.jokerCount || 2;
+    for(let i=1;i<=n;i++) deck.push({rank:'JOKER', suit:null, id:'JOKER_'+i});
+  }
+  return deck;
+}
+function unseenCardPool(idx){
+  const seenIds = new Set();
+  hands[idx].forEach(c=>seenIds.add(c.id));
+  discardHistory.forEach(h=> h.cards.forEach(c=>seenIds.add(c.id)));
+  if(field && field.cards) field.cards.forEach(c=>seenIds.add(c.id));
+  return fullDeckReference().filter(c=>!seenIds.has(c.id));
+}
+function estimateOpponentHasRank(idx, opp, rank){
+  const pool = unseenCardPool(idx);
+  if(pool.length===0) return 0;
+  const rankUnseen = pool.filter(c=>c.rank===rank).length;
+  if(rankUnseen===0) return 0;
+  const pThisCardIsRank = rankUnseen/pool.length;
+  return 1 - Math.pow(1-pThisCardIsRank, hands[opp].length);
+}
+function estimateAnyOpponentHasRank(idx, rank){
+  const opponents = activePlayers().filter(i=>i!==idx);
+  let probNone = 1;
+  for(const opp of opponents) probNone *= (1-estimateOpponentHasRank(idx, opp, rank));
+  return 1-probNone;
+}
+function estimateBeatRisk(idx, rank, count){
+  const pool = unseenCardPool(idx);
+  if(pool.length===0) return 0;
+  const strongerCount = pool.filter(c=> c.rank==='JOKER' || effStrength(c.rank) > effStrength(rank)).length;
+  if(strongerCount===0) return 0;
+  const pStrongCard = strongerCount/pool.length;
+  const opponents = activePlayers().filter(i=>i!==idx);
+  let probNoneCanBeat = 1;
+  for(const opp of opponents){
+    const pOppHasEnough = 1 - Math.pow(1-pStrongCard, hands[opp].length);
+    probNoneCanBeat *= (1-pOppHasEnough);
+  }
+  return 1-probNoneCanBeat;
+}
+function estimateOpponentThreat(idx, opp){
+  const topRank = orderReversed() ? '3' : '2';
+  const strongProb = estimateOpponentHasRank(idx, opp, topRank) + (rules.jokers ? estimateOpponentHasRank(idx, opp, 'JOKER') : 0);
+  return strongProb*3 - hands[opp].length*0.3;
+}
+
 function cpuDecideElevenBack(idx){
   const hand = hands[idx];
   if(hand.length===0) return false;
   const avgIdx = hand.reduce((s,c)=> s + (c.rank==='JOKER' ? 12 : strengthIndex(c.rank)), 0) / hand.length;
-  return avgIdx < 6;
+  if(cpuLevel==='normal') return avgIdx < 6;
+  const strongCount = hand.filter(c=> c.rank==='JOKER' || strengthIndex(c.rank)>=9).length;
+  return avgIdx < 6.5 || strongCount<=1;
 }
 function cpuResolvePlay(idx, cardsToPlay){
   let decision;
@@ -1284,6 +1385,123 @@ function cpuResolvePlay(idx, cardsToPlay){
     decision = cpuDecideElevenBack(idx);
   }
   return resolvePlayCore(idx, cardsToPlay, decision);
+}
+
+function gatherLeadCandidates(hand, groups){
+  return Object.keys(groups).map(r=>({rank:r, cards:groups[r].slice(), es:effStrength(r), groupSize:groups[r].length}));
+}
+function gatherFollowCandidates(hand, groups){
+  const out = [];
+  for(const r of Object.keys(groups)){
+    if(groups[r].length < field.count) continue;
+    const isPureJokerR = r==='JOKER';
+    if(rules.numberLock && numberLock && !isPureJokerR){
+      if(r!==numberLock) continue;
+    } else {
+      if(effStrength(r) <= effStrength(field.rank)) continue;
+    }
+    if(rules.suitLock && suitLock && !isPureJokerR){
+      if(!groups[r].some(c=>c.suit===suitLock)) continue;
+    }
+    let cardsToPlay;
+    if(rules.suitLock && suitLock && !isPureJokerR){
+      const suitCard = groups[r].find(c=>c.suit===suitLock);
+      const rest = groups[r].filter(c=>c!==suitCard).slice(0, field.count-1);
+      cardsToPlay = [suitCard, ...rest];
+    } else {
+      cardsToPlay = groups[r].slice(0, field.count);
+    }
+    out.push({rank:r, cards:cardsToPlay, es:effStrength(r), groupSize:groups[r].length});
+  }
+  return out;
+}
+
+function chooseLeadPlay_normal(hand, candidates){
+  let best=null;
+  for(const c of candidates){
+    const score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  return best;
+}
+function chooseLeadPlay_elite(hand, candidates){
+  let best=null;
+  for(const c of candidates){
+    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+    if(c.cards.length===1) score -= 5; // 孤立した単騎を優先的に処分し、役はなるべく温存する
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  return best;
+}
+function chooseLeadPlay_legend(idx, hand, candidates){
+  let best=null;
+  for(const c of candidates){
+    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+    if(c.cards.length===1) score -= 5;
+    score += estimateBeatRisk(idx, c.rank, c.cards.length) * 4;
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  return best;
+}
+function chooseLeadPlay(idx, hand, candidates){
+  if(cpuLevel==='elite') return chooseLeadPlay_elite(hand, candidates);
+  if(cpuLevel==='legend') return chooseLeadPlay_legend(idx, hand, candidates);
+  return chooseLeadPlay_normal(hand, candidates);
+}
+
+function chooseFollowPlay_normal(hand, candidates){
+  if(candidates.length===0) return null;
+  let best=null;
+  for(const c of candidates){
+    const score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  return best;
+}
+function chooseFollowPlay_elite(hand, candidates){
+  if(candidates.length===0) return null;
+  let best=null;
+  for(const c of candidates){
+    const remainder = c.groupSize - c.cards.length;
+    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+    if(remainder>0) score += remainder*2; // ペア・トリプルを崩す手はできるだけ避ける
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  if(best && hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed'){
+    return null; // 強い役を崩してまで返さず、あえて見送る
+  }
+  return best;
+}
+function chooseFollowPlay_legend(idx, hand, candidates){
+  if(candidates.length===0) return null;
+  let best=null;
+  for(const c of candidates){
+    const remainder = c.groupSize - c.cards.length;
+    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+    if(remainder>0) score += remainder*2;
+    if(rules.numberLock && !numberLock && field && c.rank!=='JOKER' && field.rank!=='JOKER'
+       && effStrength(c.rank)===effStrength(field.rank)+1){
+      const nextIdxGuess = strengthIndex(c.rank) + (orderReversed() ? -1 : 1);
+      const nextRankGuess = (nextIdxGuess>=0 && nextIdxGuess<RANKS.length) ? RANKS[nextIdxGuess] : null;
+      if(nextRankGuess){
+        const selfHasNext = hand.some(h=>h.rank===nextRankGuess && !c.cards.includes(h));
+        if(!selfHasNext){
+          score += estimateAnyOpponentHasRank(idx, nextRankGuess) * 6; // 数しばりが相手有利になりそうなら消極的に
+        }
+      }
+    }
+    score += estimateBeatRisk(idx, c.rank, c.cards.length) * 4;
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  if(best && hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed'){
+    return null;
+  }
+  return best;
+}
+function chooseFollowPlay(idx, hand, candidates){
+  if(cpuLevel==='elite') return chooseFollowPlay_elite(hand, candidates);
+  if(cpuLevel==='legend') return chooseFollowPlay_legend(idx, hand, candidates);
+  return chooseFollowPlay_normal(hand, candidates);
 }
 
 function cpuTurn(idx){
@@ -1319,17 +1537,12 @@ function cpuTurn(idx){
   }
 
   const groups = groupByRank(hand);
-  const ranksAvail = Object.keys(groups);
 
   if(field===null){
-    let best=null;
-    for(const r of ranksAvail){
-      const es = effStrength(r);
-      if(best===null || es < best.es){ best = {rank:r, es}; }
-    }
-    if(best){
-      const cardsToPlay = groups[best.rank].slice();
-      const info = cpuResolvePlay(idx, cardsToPlay);
+    const candidates = gatherLeadCandidates(hand, groups);
+    const chosen = candidates.length ? chooseLeadPlay(idx, hand, candidates) : null;
+    if(chosen){
+      const info = cpuResolvePlay(idx, chosen.cards);
       render();
       afterPlayEffects(info);
       return;
@@ -1337,31 +1550,10 @@ function cpuTurn(idx){
     passAction(idx);
     return;
   } else {
-    let best=null;
-    for(const r of ranksAvail){
-      if(groups[r].length < field.count) continue;
-      const isPureJokerR = r==='JOKER';
-      if(rules.numberLock && numberLock && !isPureJokerR){
-        if(r!==numberLock) continue;
-      } else {
-        if(effStrength(r) <= effStrength(field.rank)) continue;
-      }
-      if(rules.suitLock && suitLock && !isPureJokerR){
-        if(!groups[r].some(c=>c.suit===suitLock)) continue;
-      }
-      const es = effStrength(r);
-      if(best===null || es < best.es){ best = {rank:r, es}; }
-    }
-    if(best){
-      let cardsToPlay;
-      if(rules.suitLock && suitLock && best.rank!=='JOKER'){
-        const suitCard = groups[best.rank].find(c=>c.suit===suitLock);
-        const rest = groups[best.rank].filter(c=>c!==suitCard).slice(0, field.count-1);
-        cardsToPlay = [suitCard, ...rest];
-      } else {
-        cardsToPlay = groups[best.rank].slice(0, field.count);
-      }
-      const info = cpuResolvePlay(idx, cardsToPlay);
+    const candidates = gatherFollowCandidates(hand, groups);
+    const chosen = chooseFollowPlay(idx, hand, candidates);
+    if(chosen){
+      const info = cpuResolvePlay(idx, chosen.cards);
       render();
       afterPlayEffects(info);
       return;
@@ -1371,10 +1563,20 @@ function cpuTurn(idx){
   }
 }
 
+function chooseGiveRecipient(idx, others){
+  if(rules.sevenGiveForceLeft) return leftNeighborOf(idx);
+  if(others.length===0) return null;
+  if(cpuLevel==='normal') return others[Math.floor(Math.random()*others.length)];
+  if(cpuLevel==='elite'){
+    return others.slice().sort((a,b)=> hands[b].length-hands[a].length)[0];
+  }
+  return others.slice().sort((a,b)=> estimateOpponentThreat(idx,a)-estimateOpponentThreat(idx,b))[0];
+}
+
 function cpuDoGive(idx, count){
   const others = activePlayers().filter(i=>i!==idx);
   if(others.length===0) return;
-  const recipient = rules.sevenGiveForceLeft ? leftNeighborOf(idx) : others[Math.floor(Math.random()*others.length)];
+  const recipient = chooseGiveRecipient(idx, others);
   const need = Math.min(count, hands[idx].length);
   if(need<=0) return;
   const sorted = hands[idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
@@ -1386,11 +1588,25 @@ function cpuDoGive(idx, count){
   checkGameEndAfterSideEffect('give');
 }
 
+function chooseDiscardCards(idx, need){
+  const hand = hands[idx];
+  if(cpuLevel==='normal'){
+    return hand.slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank)).slice(0, need);
+  }
+  const groups = groupByRank(hand);
+  const scored = hand.map(c=>{
+    let score = effStrength(c.rank);
+    if(groups[c.rank].length>=2) score += 4; // 役を崩してまで捨てるのは避ける
+    return {card:c, score};
+  });
+  scored.sort((a,b)=>a.score-b.score);
+  return scored.slice(0, need).map(s=>s.card);
+}
+
 function cpuDoDiscard(idx, count){
   const need = Math.min(count, hands[idx].length);
   if(need<=0) return;
-  const sorted = hands[idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
-  const discarded = sorted.slice(0, need);
+  const discarded = chooseDiscardCards(idx, need);
   const discardIds = new Set(discarded.map(c=>c.id));
   hands[idx] = hands[idx].filter(c=>!discardIds.has(c.id));
   log(playerName(idx)+'が'+need+'枚のカードを捨てた');
@@ -1398,10 +1614,17 @@ function cpuDoDiscard(idx, count){
   checkGameEndAfterSideEffect('discard');
 }
 
-function cpuChooseBomberRanks(hand, maxCount){
+function cpuChooseBomberRanks(idx, hand, maxCount){
   const priority = bomberPriorityOrder();
   const held = new Set(hand.map(c=>c.rank));
   const zeroHeld = priority.filter(r=>!held.has(r));
+  if(cpuLevel==='legend'){
+    const others = activePlayers().filter(i=>i!==idx);
+    const primaryThreat = others.slice().sort((a,b)=>estimateOpponentThreat(idx,b)-estimateOpponentThreat(idx,a))[0];
+    if(primaryThreat!==undefined){
+      zeroHeld.sort((a,b)=> estimateOpponentHasRank(idx,primaryThreat,b) - estimateOpponentHasRank(idx,primaryThreat,a));
+    }
+  }
   let chosen = zeroHeld.slice(0, maxCount);
   if(chosen.length<maxCount){
     const rest = priority.filter(r=>!chosen.includes(r));
@@ -1412,7 +1635,7 @@ function cpuChooseBomberRanks(hand, maxCount){
 }
 
 function cpuDoBomber(idx, count, onComplete){
-  const chosen = cpuChooseBomberRanks(hands[idx], count);
+  const chosen = cpuChooseBomberRanks(idx, hands[idx], count);
   applyBomber(chosen, onComplete);
 }
 
@@ -2057,6 +2280,9 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
   rules = {};
   RULE_DEFS.forEach(r=> rules[r.key] = document.getElementById('rule_'+r.key).checked);
   rules.jokerCount = jokerCount;
+  const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
+  cpuLevelSetting = levelInput ? levelInput.value : 'normal';
+  cpuLevel = resolveCpuLevel(cpuLevelSetting);
   document.getElementById('setupScreen').style.display='none';
   document.getElementById('gameScreen').style.display='block';
   startGame();
