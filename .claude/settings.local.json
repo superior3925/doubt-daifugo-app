@@ -42,7 +42,16 @@
       "mcp__claude-in-chrome__tabs_context_mcp",
       "PowerShell(git push origin main)",
       "PowerShell(curl.exe -s -o NUL -w \"%{http_code}\" \"https://api.github.com/repos/superior3925/-\" -H \"User-Agent: check\")",
-      "PowerShell(curl.exe -s \"https://api.github.com/repos/superior3925/-\" -H \"User-Agent: check\")"
+      "PowerShell(curl.exe -s \"https://api.github.com/repos/superior3925/-\" -H \"User-Agent: check\")",
+      "Bash(powershell -Command \"Test-Path 'G:\\\\マイドライブ\\\\アプリ\\\\家計簿アプリ\\\\kakeibo-data.json'\")",
+      "Bash(powershell -Command \"\\(Get-Item 'G:\\\\マイドライブ\\\\アプリ\\\\家計簿アプリ\\\\kakeibo-data.json'\\).Length\")",
+      "PowerShell($c = Get-Content 'G:\\\\マイドライブ\\\\アプリ\\\\家計簿アプリ\\\\kakeibo-data.json' -Raw -Encoding UTF8; $c.Substring\\(0, 200\\))",
+      "Read(//c/Users/banag/Documents/claude code/家計簿アプリ/**)",
+      "Bash(python -m http.server 8791 --directory \"C:\\\\Users\\\\banag\\\\Documents\\\\claude code\\\\家計簿アプリ\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8791/kakeibo-dashboard.html)",
+      "Bash(rm \"C:\\\\Users\\\\banag\\\\Documents\\\\claude code\\\\家計簿アプリ\\\\_tmp_kakeibo_data_for_task.json\")",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\('G:\\\\マイドライブ\\\\アプリ\\\\家計簿アプリ\\\\kakeibo-data.json'\\); $b64 = [System.Convert]::ToBase64String\\($bytes\\); $b64.Length)",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\('G:\\\\マイドライブ\\\\アプリ\\\\家計簿アプリ\\\\kakeibo-data.json'\\); $b64 = [System.Convert]::ToBase64String\\($bytes\\); Set-Content -Path 'C:\\\\Users\\\\banag\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-banag-Documents-claude-code-------\\\\3149eb0f-9118-44c5-9c91-46be1ceee0bb\\\\scratchpad\\\\kdata.b64' -Value $b64 -NoNewline -Encoding ascii)"
     ]
   }
 }
