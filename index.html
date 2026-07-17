@@ -18,6 +18,28 @@
     --red-hanko:#a6321f;
     --shadow:rgba(0,0,0,0.45);
     --playable:#5ed9bd;
+    --doubt:#c0392b;
+  }
+  /* ダウト大富豪モードの配色。パレットが全て:rootの変数に集約されているので、
+     ここで変数を上書きするだけでアプリ全体が一段深い色調に切り替わる。 */
+  body.doubt-mode{
+    --felt-dark:#05070a;
+    --felt:#111a1f;
+    --felt-light:#1b2a30;
+    --gold:#8f7b3c;
+    --gold-soft:#c8b98a;
+    --cream:#e8e4da;
+    --red-hanko:#8b1a1a;
+    --shadow:rgba(0,0,0,0.75);
+    --playable:#4aa392;
+    --doubt:#c0392b;
+  }
+  body.doubt-mode::after{
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:2;
+    background:radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.6) 100%);
+  }
+  body.doubt-mode h1.title{
+    text-shadow:0 0 18px rgba(139,26,26,0.8), 0 2px 6px var(--shadow);
   }
   *{box-sizing:border-box;}
   body{
@@ -75,6 +97,28 @@
   }
   .rules-box.show{display:block;}
   .rules-box b{color:var(--gold-soft);}
+
+  .mode-toggle-block{
+    max-width:980px; margin:0 auto 14px; display:flex; align-items:center; gap:16px;
+    background:rgba(0,0,0,0.35); border:1px solid var(--gold); border-radius:14px; padding:14px 20px;
+    text-align:left;
+  }
+  body.doubt-mode .mode-toggle-block{ border-color:var(--red-hanko); box-shadow:0 0 18px rgba(139,26,26,0.35); }
+  .mode-toggle-title{ font-family:'Shippori Mincho',serif; font-weight:800; font-size:15px; color:var(--gold-soft); }
+  .switch{ position:relative; width:52px; height:28px; flex-shrink:0; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .switch .slider{
+    position:absolute; inset:0; cursor:pointer; border-radius:999px;
+    background:rgba(255,255,255,0.1); border:1px solid var(--gold);
+    transition:background .2s, border-color .2s;
+  }
+  .switch .slider::before{
+    content:''; position:absolute; width:20px; height:20px; left:3px; top:3px;
+    border-radius:50%; background:var(--gold-soft);
+    transition:transform .2s, background .2s;
+  }
+  .switch input:checked + .slider{ background:rgba(192,57,43,0.5); border-color:var(--doubt); }
+  .switch input:checked + .slider::before{ transform:translateX(24px); background:#f3d9d2; }
 
   .setup-box{
     max-width:980px; margin:0 auto; background:rgba(0,0,0,0.35); border:1px solid var(--gold);
@@ -182,6 +226,17 @@
   }
   .cardback:first-child{ margin-left:0; }
   .opp .count{ font-size:11px; color:#cfd8d0; margin-top:2px; }
+  .out-row{ display:flex; justify-content:center; gap:4px; margin-top:4px; }
+  .out-pip{
+    width:8px; height:8px; border-radius:50%;
+    border:1px solid var(--doubt); background:transparent;
+  }
+  .out-pip.filled{ background:var(--doubt); box-shadow:0 0 6px rgba(192,57,43,0.9); }
+  .sitout-badge{
+    position:absolute; top:-9px; left:-6px;
+    background:#3a3a3a; color:#e8e2cf; border:1px solid #8f8f8f;
+    border-radius:999px; padding:1px 7px; font-size:9px; font-weight:700;
+  }
   .badge{
     position:absolute; top:-10px; right:-6px;
     background:var(--red-hanko);
@@ -264,6 +319,14 @@
   .card.red{ color:var(--red-hanko); }
   .card.black{ color:#1a1a1a; }
   .card.joker{ color:var(--red-hanko); background:linear-gradient(160deg,#faf6ec 60%,#f0e6c8 100%); }
+  /* 伏せられたカード。中身を一切DOMに出さないことで、DOMを覗いても実札が分からないようにする。 */
+  .card.back{
+    background:repeating-linear-gradient(45deg, #7d2416, #7d2416 4px, #2a0d08 4px, #2a0d08 8px);
+    border:1px solid var(--cream);
+    box-shadow:inset 0 0 0 2px rgba(250,246,236,0.22), 0 2px 4px rgba(0,0,0,0.35);
+    cursor:default;
+  }
+  .card.back:hover{ transform:none; }
   .card.mini{ width:44px; height:64px; }
   .card.mini .rank{ font-size:12px; }
   .card.mini .rank.jokerlabel{ font-size:8px; }
@@ -386,6 +449,8 @@
      dark-on-dark button.pass styling above would be nearly invisible. */
   button.decline{ background:transparent; color:var(--ink); border:1px solid var(--ink); }
   button.decline:hover{ background:rgba(32,27,18,0.08); }
+  button.doubt{ background:var(--doubt); color:#ffeae4; }
+  button.doubt.available{ animation:turnGlow 1.1s ease-in-out infinite; }
   button.action:disabled{ opacity:0.35; cursor:not-allowed; }
   button.restart{
     background:transparent; border:1px solid var(--gold-soft); color:var(--gold-soft);
@@ -397,6 +462,11 @@
     border:1px solid var(--gold); background:transparent; color:var(--gold-soft); cursor:pointer;
   }
   .rank-btn.active{ background:var(--gold); color:#2b2200; }
+  .rank-btn:disabled{ opacity:0.28; cursor:not-allowed; }
+  .decl-note{ font-size:11.5px; font-weight:700; margin:10px 0 2px; }
+  .decl-note.truth{ color:#1d6f52; }
+  .decl-note.lie{ color:var(--red-hanko); }
+  .hint-line{ font-size:10.5px; color:#b9c9be; margin-top:4px; }
 
   .msg-flash{
     text-align:center;
@@ -509,10 +579,17 @@
 </head>
 <body>
 <div class="app">
-  <h1 class="title">大 富 豪</h1>
-  <div class="subtitle">DAIFUGO &mdash; 拡張ルール対応版</div>
+  <h1 class="title" id="appTitle">大 富 豪</h1>
+  <div class="subtitle" id="appSubtitle">DAIFUGO &mdash; 拡張ルール対応版</div>
 
   <div id="setupScreen">
+    <div class="mode-toggle-block">
+      <label class="switch"><input type="checkbox" id="doubtModeToggle"><span class="slider"></span></label>
+      <div>
+        <div class="mode-toggle-title">ダウト大富豪モード</div>
+        <div class="rule-desc">全員が出すカードを宣言したうえで、すべて裏向きに出します。宣言はウソでもかまいません。怪しいと思ったら自分の番に「ダウト」でめくれます。外すとアウト、見抜けば相手にアウト。アウト3つで強制敗北です。</div>
+      </div>
+    </div>
     <div class="setup-box">
       <div class="setup-title">対戦ルール設定</div>
       <div class="setup-desc">今回の対戦で有効にするローカルルールを選んでください。何も選ばなければ基本ルールのみで遊べます。</div>
@@ -548,6 +625,16 @@
       ・強さは弱い順に <b>3,4,5,6,7,8,9,10,J,Q,K,A,2</b>。<br>
       ・<b>8切り</b>・<b>革命</b>を含め、拡張ルールはすべて「ルール設定に戻る」から個別にON/OFFできます。<br>
       ・全員がパスすると場が流れます。手札が0枚になった順に<b>大富豪・富豪・貧民・大貧民</b>が決まります。
+      <div id="doubtRulesBox" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed rgba(231,205,123,0.4);">
+        <b>ダウト大富豪モード</b><br>
+        ・カードは<b>出すカードを宣言したうえで、すべて裏向き</b>に出します。宣言はウソでもかまいません。<br>
+        ・自分の番の選択肢は<b>出す・パス・ダウト</b>の3つ。ダウトは<b>場の一番上の伏せ札</b>にだけ宣言できます。<br>
+        ・ダウトが外れたら<b>アウト1つ</b>と、そのトリック＋次のトリックが<b>休み</b>になります。<br>
+        ・ウソを見抜かれたら、出した札は<b>全部手札に戻り</b>、<b>アウト1つ</b>と1トリック休み。見抜いた人が親になります。<br>
+        ・<b>アウトが3つたまると、その時点で強制敗北</b>（最下位候補）です。<br>
+        ・5スキップや8切りで札が出せない場合でも、<b>ダウトの宣言だけはできます</b>（休み中を除く）。<br>
+        ・<b>4止め・スペ3返し・（4止めなしの）8切り</b>は成立すれば即座に場が流れる効果ですが、ここでも他の全員が一巡パスかダウトを選ぶまでは確定しません。
+      </div>
     </div>
 
     <div class="turn-banner" id="turnBanner"></div>
@@ -568,11 +655,13 @@
               <button class="sort-toggle" id="sortToggleBtn" type="button">並び順: 強い→右</button>
             </div>
             <div class="hand" id="hand"></div>
+            <div class="hint-line" id="handHint" style="display:none;"></div>
           </div>
         </div>
 
         <div class="controls">
           <button class="action pass" id="passBtn">パス</button>
+          <button class="action doubt" id="doubtBtn" style="display:none;">ダウト</button>
           <button class="action play" id="playBtn">出す</button>
         </div>
         <div class="msg-flash" id="msgFlash"></div>
@@ -673,6 +762,18 @@ let jokerCount = 2;
 let nextStartingPlayerOverride = null;
 let turnDirection = 1;
 let lastReceivedCardIds = new Set();
+let currentTrickHiddenIds = new Set();
+let flowingOutFaceDown = false;
+let outs = [0,0,0,0];
+let sitOutTricks = [0,0,0,0];
+let skipQuota = 0;
+let forcedPassOnly = false;
+let revealPending = false;
+// レジェンドCPUがこのゲーム中に学習する「その人はダウトされた時どれくらい正直だったか」の
+// 統計。完全に公開されているダウトの結果（成功/失敗）だけから作るので、他家の手札を覗く
+// カンニングにはならない。
+let liarCaughtCount = [0,0,0,0];
+let provenHonestCount = [0,0,0,0];
 let cpuLevelSetting = 'normal';
 let cpuLevel = 'normal';
 const CPU_LEVEL_LABELS = {normal:'ノーマル', elite:'エリート', legend:'レジェンド'};
@@ -695,6 +796,82 @@ function bomberPriorityOrder(){
   const order = RANKS.slice().reverse();
   if(rules.jokers) order.unshift('JOKER');
   return order;
+}
+
+// ---- ダウト大富豪モードの中核 ----
+// 設計の要は field.cards と field.actual の分離。
+//   field.cards  = 宣言されたカード（公開情報）。既存のエンジン（canBeatField / effStrength /
+//                  updateLocksAfterPlay / 革命・しばり判定）が読むのはこちらだけなので、
+//                  「場のランク＝みんなが信じている宣言」という読み替えだけで全部そのまま動く。
+//   field.actual = 実際に伏せられたカード（秘匿情報）。ダウト解決だけがこれを読む。
+// 通常モードでは両者が同一なので、この分離は既存の挙動に一切影響しない。
+function isDoubtMode(){ return !!rules.doubtMode; }
+// めくり演出の最中は誰の手番でもない。ここを見ないと、自分がダウトした直後の待ち時間に
+// 「出す」「パス」が押せてしまい、解決前の場を触れてしまう。
+function humanCanAct(){ return currentPlayerIndex===0 && !gameOver && !pendingAction && !exchangeInProgress && !revealPending; }
+
+function declLabel(cards){
+  return cards.map(c=> c.rank==='JOKER' ? 'JOKER' : c.rank+c.suit).join(' ');
+}
+
+// 宣言に使える識別子の一覧。ジョーカーは他ランクのワイルドとして宣言に混ぜられる。
+function declPalette(rank){
+  const out = [];
+  if(rank!=='JOKER'){ for(const s of SUITS) out.push({rank, suit:s, id:'decl_'+s+'_'+rank}); }
+  if(rules.jokers){
+    const n = rules.jokerCount || 2;
+    for(let i=1;i<=n;i++) out.push({rank:'JOKER', suit:null, id:'decl_JOKER_'+i});
+  }
+  return out;
+}
+
+// そのランクをcount枚で宣言する場合の代表例を1つ作る。合法性チェック用。
+// スートしばり中はしばられているスートを必ず含む形にして、「含められるのに含めない例」で
+// 誤って不可と判定しないようにする。
+function sampleDecl(rank, count){
+  const palette = declPalette(rank);
+  if(count > palette.length) return null;
+  if(rank==='JOKER') return palette.slice(0, count);
+  let ordered = palette;
+  if(rules.suitLock && suitLock){
+    const locked = palette.filter(c=>c.suit===suitLock);
+    ordered = locked.concat(palette.filter(c=>c.suit!==suitLock));
+  }
+  return ordered.slice(0, count);
+}
+
+function legalDeclRanks(count){
+  return bomberPalette().filter(r=>{
+    const sample = sampleDecl(r, count);
+    return sample && canBeatField(representedRank(sample), count, sample).ok;
+  });
+}
+
+// 実札が宣言どおりか。ジョーカーは「宣言された非ジョーカー1枚」の代役として正直とみなす
+// （ワイルドカードの本来の働き）。逆にJOKERと宣言して実札を出すのは常にウソ。
+function isDeclarationTruthful(declCards, actualCards){
+  if(declCards.length !== actualCards.length) return false;
+  const remaining = actualCards.slice();
+  const unmatched = [];
+  for(const d of declCards){
+    const i = remaining.findIndex(a=>a.rank===d.rank && a.suit===d.suit);
+    if(i>=0) remaining.splice(i,1);
+    else unmatched.push(d);
+  }
+  for(const d of unmatched){
+    if(d.rank==='JOKER') return false;
+    const j = remaining.findIndex(a=>a.rank==='JOKER');
+    if(j<0) return false;
+    remaining.splice(j,1);
+  }
+  return remaining.length===0;
+}
+
+// ダウトは「場の一番上の伏せ札」にしか宣言できず、自分の出した札は対象外。
+// 5スキップや8切りでは奪われないが、ダウト罰の休み中だけは宣告そのものができない。
+function doubtAvailableFor(p){
+  return !!(isDoubtMode() && field && field.faceDown && !field.revealed
+    && field.owner !== p && !finishedOrder.includes(p) && sitOutTricks[p]===0);
 }
 
 function buildDeck(){
@@ -737,16 +914,31 @@ function countOfRank(hand, rank){ return hand.filter(c=>c.rank===rank).length; }
 function activeRulesSummary(){
   const active = RULE_DEFS.filter(r=>rules[r.key]).map(r=> r.key==='jokers' ? 'ジョーカー'+(rules.jokerCount||2)+'枚' : r.label);
   const rulesPart = active.length ? '有効ルール: '+active.join('、') : '追加ルールなし（基本ルールのみ）';
-  return 'CPU強さ: '+CPU_LEVEL_LABELS[cpuLevel]+' ／ '+rulesPart;
+  const modePart = isDoubtMode() ? 'ダウト大富豪モード ／ ' : '';
+  return modePart+'CPU強さ: '+CPU_LEVEL_LABELS[cpuLevel]+' ／ '+rulesPart;
+}
+
+function applyDoubtTheme(on){
+  document.body.classList.toggle('doubt-mode', on);
+  document.getElementById('doubtRulesBox').style.display = on ? 'block' : 'none';
+  document.getElementById('appTitle').textContent = on ? 'ダウト大富豪' : '大 富 豪';
+  document.getElementById('appSubtitle').innerHTML = on
+    ? 'DOUBT DAIFUGO &mdash; 宣言し、伏せ、見抜く'
+    : 'DAIFUGO &mdash; 拡張ルール対応版';
 }
 
 function computeFinalRanking(){
   return legitFinishOrder.concat(violationFinishOrder.slice().reverse());
 }
 
-function recordDiscard(cards, reason){
+// hiddenIds には「伏せられたまま流れて、中身が誰にも公開されていない札」を入れる。
+// 捨て札ビューアの描画とCPUの推定器の両方がこれを見て中身を隠すので、ここを取り違えると
+// そのまま情報漏れになる。
+function recordDiscard(cards, reason, hiddenIds){
   if(!cards || cards.length===0) return;
-  discardHistory.push({cards: cards.slice(), reason});
+  const hidden = new Set();
+  if(hiddenIds) cards.forEach(c=>{ if(hiddenIds.has(c.id)) hidden.add(c.id); });
+  discardHistory.push({cards: cards.slice(), reason, hiddenIds: hidden});
   if(discardHistory.length>50) discardHistory.shift();
   updateDiscardPileButton();
 }
@@ -756,10 +948,19 @@ function updateDiscardPileButton(){
   if(el) el.textContent = discardHistory.reduce((s,h)=>s+h.cards.length,0);
 }
 
+// 「いま巻き戻し可能な、まだ誰にもダウトされていない伏せ札の宣言」が場にあるか。
+// この間に発生した上がり・カードの授受は、その宣言自体がウソだと暴かれたときに
+// undoPlay で巻き戻せるよう journal に記録する。既に失敗ダウトで真実と確定した後
+// （revealed=true）の出来事は無関係な巻き戻し対象になってしまうので記録しない。
+function journalActive(){
+  return isDoubtMode() && !!(field && field.journal && field.faceDown && !field.revealed);
+}
+
 function markLegitFinish(idx){
   const isFirst = legitFinishOrder.length===0;
   legitFinishOrder.push(idx);
   finishedOrder.push(idx);
+  if(journalActive()) field.journal.finishes.push({idx, list:'legit'});
   if(isFirst) maybeTriggerMiyakoOchi(idx);
   checkGameEnd();
 }
@@ -768,6 +969,7 @@ function markViolationFinish(idx, reason){
   violationFinishOrder.push(idx);
   finishedOrder.push(idx);
   violationReasons[idx] = reason;
+  if(journalActive()) field.journal.finishes.push({idx, list:'violation'});
   checkGameEnd();
 }
 
@@ -799,14 +1001,19 @@ function checkForbiddenWin(playerIdx, rank, count, wasSpade3Counter, postToggleR
   return null;
 }
 
-function clearField(){
+// clearField はそのまま「トリックの終わり」を意味するので、ダウト罰の休み（トリック単位）の
+// 消化もここで行う。
+function clearField(discardLabel){
   if(field && field.cards && field.cards.length){
-    flowingOutCards = field.cards;
+    flowingOutCards = field.actual || field.cards;
+    flowingOutFaceDown = !!(field.faceDown && !field.revealed);
     if(currentTrickCards.length>0){
-      const label = '最後は'+playerName(field.owner)+'が出した'+(field.rank==='JOKER'?'ジョーカー':field.rank)+'×'+field.count+'（このトリック全体で'+currentTrickCards.length+'枚）';
-      recordDiscard(currentTrickCards, label);
+      const label = discardLabel
+        || ('最後は'+playerName(field.owner)+'が出した'+(field.rank==='JOKER'?'ジョーカー':field.rank)+'×'+field.count+'（このトリック全体で'+currentTrickCards.length+'枚）');
+      recordDiscard(currentTrickCards, label, currentTrickHiddenIds);
     }
     currentTrickCards = [];
+    currentTrickHiddenIds = new Set();
     if(flowOutTimer) clearTimeout(flowOutTimer);
     flowOutTimer = setTimeout(()=>{ flowingOutCards = null; flowOutTimer = null; render(); }, 600);
   }
@@ -816,6 +1023,11 @@ function clearField(){
   numberLock = null;
   elevenBack = false;
   prevPlaySuits = null;
+  skipQuota = 0;
+  forcedPassOnly = false;
+  if(isDoubtMode()){
+    for(let i=0;i<4;i++) if(sitOutTricks[i]>0) sitOutTricks[i]--;
+  }
 }
 
 function dealFreshHands(){
@@ -841,6 +1053,14 @@ function dealFreshHands(){
   defendingDaifugoIdx = null;
   discardHistory = [];
   currentTrickCards = [];
+  currentTrickHiddenIds = new Set();
+  outs = [0,0,0,0];
+  sitOutTricks = [0,0,0,0];
+  skipQuota = 0;
+  forcedPassOnly = false;
+  revealPending = false;
+  liarCaughtCount = [0,0,0,0];
+  provenHonestCount = [0,0,0,0];
   nextStartingPlayerOverride = null;
   lastReceivedCardIds = new Set();
   gameOver = false;
@@ -985,8 +1205,91 @@ function advanceTurn(){
   } while(finishedOrder.includes(currentPlayerIndex));
 }
 
+// 行動できなかった席は「パス」と同じ重みで場を流すのに寄与する。これを数えないと、場を返せ
+// なかった人が居なかったことになり、親に手番が戻ってもトリックが解決せず膠着する。
+// 戻り値は「この加算で場が流れたか」。
+function pendingClearLabel(kind){
+  if(kind==='eightGiri') return '8切り';
+  if(kind==='fourStop') return '4止め';
+  if(kind==='spade3') return 'スペ3返し';
+  return '';
+}
+
+// 4止め・スペ3返し・（4止めなしの）8切りは「出したら即座に流れる」効果だが、ダウトモードでは
+// これも伏せた宣言である以上、他プレイヤー全員に一巡パスかダウトかを選ばせてから初めて
+// 成立させる（resolvePlayCore側で clearField() を即時に呼ばず field.pendingClear を立てて
+// おくことで、ここに来るまで場が生き続ける＝ダウトの機会が必ず確保される）。
+function resolveFieldClearOnPass(){
+  if(field===null) return false;
+  if(passStreak < passClearThreshold(activePlayers())) return false;
+  const pc = field.pendingClear;
+  const wasEightStanding = field.rank==='8' && rules.fourStop && !pc;
+  clearField();
+  if(wasEightStanding){
+    log('誰も4止めできず、8切りが成立した');
+    showCutIn('8切り成立！！！');
+  } else if(pc){
+    log('誰もダウトせず、'+pendingClearLabel(pc)+'が成立した');
+    showCutIn(pendingClearLabel(pc)+'成立！！');
+  } else {
+    log('場が流れた');
+  }
+  checkGameEnd(); // 保留していたゲーム終了判定を、宣言が確定した今ここで再評価する
+  return true;
+}
+function countSeatAsPass(){
+  if(field===null) return false;
+  passStreak++;
+  return resolveFieldClearOnPass();
+}
+
+// 生存者全員が休みだと場が空のまま誰も行動できず席送りが止まらないので、その時は
+// 1トリック分の休みをまとめて消化する。
+function relieveIfAllSittingOut(){
+  const act = activePlayers();
+  if(act.length===0) return;
+  if(act.every(i=>sitOutTricks[i]>0)){
+    act.forEach(i=>{ sitOutTricks[i]--; });
+    log('全員が休みのため、1トリック分の休みを消化しました');
+  }
+}
+
+// 行動できる席に来るまで進める。
+//   ダウト罰の休み … 完全に関与できない（ダウトも不可）。5スキップの枚数は消費しない。
+//   5スキップの対象 … 札は出せないがダウトはできるので、手番自体は渡す（forcedPassOnly）。
+//                      ダウトしようのない場（既にめくれている等）なら黙って飛ばす。
+function advanceToNextActor(){
+  const act = activePlayers();
+  if(act.length<=1) return;
+  forcedPassOnly = false;
+  relieveIfAllSittingOut();
+  let guard = 0;
+  while(guard++ < 24){
+    advanceTurn();
+    const p = currentPlayerIndex;
+    if(sitOutTricks[p] > 0){
+      log(playerName(p)+'：休み（ダウトの罰）');
+      countSeatAsPass();
+      continue;
+    }
+    if(skipQuota > 0){
+      skipQuota--;
+      if(doubtAvailableFor(p)){ forcedPassOnly = true; return; }
+      log(playerName(p)+'：5スキップで飛ばされた');
+      countSeatAsPass();
+      continue;
+    }
+    return;
+  }
+}
+
 function checkGameEnd(){
   if(gameOver) return;
+  // 場にまだ誰にもダウトされていない伏せ札の宣言が生きている間はゲームを終わらせない。
+  // これが無いと、最後から2人目がウソの札で上がった瞬間にゲームが終わり、残りの
+  // プレイヤーがダウトする機会を永久に失う。宣言が確定（自然に流れる／ダウト失敗で真実
+  // 確定）した時点で resolveFieldClearOnPass / doubtFailed から改めて呼び直される。
+  if(isDoubtMode() && field && field.faceDown && !field.revealed) return;
   const act = activePlayers();
   if(act.length<=1){
     if(act.length===1) markLegitFinish(act[0]);
@@ -1039,6 +1342,10 @@ function isFourStopCounter(count, cards){
 }
 
 function canBeatField(rank, count, cards){
+  // pendingClear は「これはもう誰にも重ねられない、成立を待つだけの宣言」を表す
+  // （4止め成立・スペ3返し成立・4止めなしの8切り）。ここに来る前に、他プレイヤー全員が
+  // 一巡パスかダウトを選ぶ機会を必ず経由させるため、対抗手段は一切認めない。
+  if(field && field.pendingClear) return { ok:false, reason:'この宣言には誰も重ねられません（パスかダウトのみ）' };
   if(isFourStopCounter(count, cards)) return { ok:true };
   if(field && field.rank==='8' && rules.fourStop){
     return { ok:false, reason:'8切りは4止め（4を'+(field.count*2)+'枚、ジョーカー代用可）以外では返せません' };
@@ -1103,16 +1410,31 @@ function updateLocksAfterPlay(prevField, rank, count, cards, wasSpade3Counter, p
   }
 }
 
-function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
+// cardsPlayed は「宣言されたカード」。ダウトモードでは actualCards に実際に伏せる札を渡す
+// （通常モードでは両者同一）。手札から抜くのは actualCards、場のランクになるのは cardsPlayed。
+function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards){
+  const actual = actualCards || cardsPlayed;
   const prevField = field;
   const wasSpade3Counter = isSpade3Counter(cardsPlayed.length, cardsPlayed);
   const wasFourStopCounter = isFourStopCounter(cardsPlayed.length, cardsPlayed);
-  hands[playerIdx] = hands[playerIdx].filter(c=>!cardsPlayed.some(p=>p.id===c.id));
+  hands[playerIdx] = hands[playerIdx].filter(c=>!actual.some(p=>p.id===c.id));
   const rank = representedRank(cardsPlayed);
   const count = cardsPlayed.length;
 
-  field = {rank, count, owner:playerIdx, cards:cardsPlayed, seq: ++fieldSeqCounter};
-  currentTrickCards = currentTrickCards.concat(cardsPlayed);
+  const faceDown = isDoubtMode();
+  // journal はこのプレイ自身の効果だけを巻き戻すための記録。ダウトで嘘が暴かれたときに
+  // undoPlay がこれを読んで、7渡し・10捨て・12ボンバーで動いたカードや、このプレイが
+  // 直接引き起こした上がり（連鎖する都落ち等も含む）、革命・9リバースのトグルを、
+  // このプレイの分だけ正確に戻す。トリック内の他プレイが既に切り替えていた分には触れない。
+  const journal = faceDown ? {
+    revolutionToggled:false, prevRevolution:revolution,
+    directionFlipped:false, prevTurnDirection:turnDirection,
+    finishes:[], gives:[], discards:[], bomberRemovals:[],
+    discardHistoryCountBefore: discardHistory.length
+  } : null;
+  field = {rank, count, owner:playerIdx, cards:cardsPlayed, actual, faceDown, revealed:false, pendingClear:null, journal, seq: ++fieldSeqCounter};
+  currentTrickCards = currentTrickCards.concat(actual);
+  if(faceDown) actual.forEach(c=>currentTrickHiddenIds.add(c.id));
   passStreak = 0;
   pendingDealAnimation = true;
   if(dealAnimationTimer) clearTimeout(dealAnimationTimer);
@@ -1123,6 +1445,9 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
     showCutIn('スペ3返し！！');
   } else if(wasFourStopCounter){
     log(playerName(playerIdx)+'：4止めで8切りを阻止した！（4を'+count+'枚）');
+  } else if(faceDown){
+    log(playerName(playerIdx)+'： 「'+declLabel(cardsPlayed)+'」と宣言して'+count+'枚を伏せた');
+    if(rank==='8' && rules.fourStop) log('4を'+(count*2)+'枚（ジョーカー代用可）出せれば4止めで阻止できます');
   } else {
     log(playerName(playerIdx)+'： '+(rank==='JOKER'?'ジョーカー':rank)+' を'+count+'枚出した');
     if(rank==='8' && rules.fourStop) log('4を'+(count*2)+'枚（ジョーカー代用可）出せれば4止めで阻止できます');
@@ -1138,6 +1463,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
 
   if(willToggleRevolution){
     revolution = postToggleRevolution;
+    if(journal) journal.revolutionToggled = true;
     log('革命が起きた！強さが逆転する');
     showCutIn('革命！！！');
   }
@@ -1151,6 +1477,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
   }
   if(rank==='9' && rules.nineReverse){
     turnDirection = -turnDirection;
+    if(journal) journal.directionFlipped = true;
     log('9リバース発動！プレー順が反転する');
     showCutIn('9リバース！！');
   }
@@ -1169,23 +1496,44 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision){
     }
   }
 
+  // 8切り（4止めなし）・4止め成立・スペ3返しは、本来「出したら即座に場が流れる」効果。
+  // だがダウトモードではこれも伏せた宣言なので、即clearField()してしまうと誰にもダウトの
+  // 機会が無いまま確定してしまう。field.pendingClear を立てるだけに留め、実際に流すのは
+  // 全員が一巡パスするか、ダウトが解決した後（resolveFieldClearOnPass／doubtFailed／
+  // doubtSucceeded）に回す。fieldCleared を false のままにしておくことで、
+  // finalizeTurn は「場は生きている」ものとして通常どおり次のプレイヤーへ手番を渡す。
   let fieldCleared=false;
   if(rank==='8' && rules.eightGiri && !rules.fourStop){
-    clearField();
-    fieldCleared=true;
-    log('8切り！場が流れた');
-    showCutIn('8切り発動！！！');
+    if(faceDown){
+      field.pendingClear = 'eightGiri';
+      log('宣言どおりなら8切りが成立します（他のプレイヤーがダウトしなければ場が流れます）');
+    } else {
+      clearField();
+      fieldCleared=true;
+      log('8切り！場が流れた');
+      showCutIn('8切り発動！！！');
+    }
   } else if(wasFourStopCounter){
-    clearField();
-    fieldCleared=true;
-    log('場が流れた');
-    showCutIn('4止め！！ 8切り阻止！');
+    if(faceDown){
+      field.pendingClear = 'fourStop';
+      log('宣言どおりなら4止めが成立します（他のプレイヤーがダウトしなければ場が流れます）');
+    } else {
+      clearField();
+      fieldCleared=true;
+      log('場が流れた');
+      showCutIn('4止め！！ 8切り阻止！');
+    }
   } else if(wasSpade3Counter){
     // Spade-3 returns always clear the field immediately, same as 8-giri: nobody gets a
     // chance to beat the "3" that was played, and the counterer leads the next trick.
-    clearField();
-    fieldCleared=true;
-    log('スペ3返しで場が流れた');
+    if(faceDown){
+      field.pendingClear = 'spade3';
+      log('宣言どおりならスペ3返しが成立します（他のプレイヤーがダウトしなければ場が流れます）');
+    } else {
+      clearField();
+      fieldCleared=true;
+      log('スペ3返しで場が流れた');
+    }
   }
 
   checkGameEnd();
@@ -1197,25 +1545,14 @@ function finalizeTurn(info, extraSkips){
   extraSkips = extraSkips || 0;
   if(gameOver){ render(); showResults(); return; }
   if(!(info.fieldCleared && !info.finished)){
-    const act = activePlayers();
     // Cap skips at how many players still need to respond to this field (see passClearThreshold):
     // skipping further than that would wrap back around and skip the player who led (or
-    // double-skip someone), which must never happen.
-    const effectiveSkips = Math.min(extraSkips, passClearThreshold(act));
-    advanceTurn();
-    for(let k=0;k<effectiveSkips;k++) advanceTurn();
-    if(effectiveSkips>0 && field!==null){
-      // Skipped players never got a chance to respond, so they count the same as a pass
-      // toward clearing the field (otherwise the trick can stall and wrap back to the
-      // player who led it without ever resolving).
-      passStreak += effectiveSkips;
-      if(passStreak >= passClearThreshold(act)){
-        clearField();
-        log('スキップにより誰も応答できず、場が流れた');
-      }
-    }
+    // double-skip someone), which must never happen. advanceToNextActor consumes the quota
+    // seat by seat, counting each skipped seat as a pass.
+    skipQuota = Math.min(extraSkips, passClearThreshold(activePlayers()));
+    advanceToNextActor();
   } else {
-    if(finishedOrder.includes(currentPlayerIndex)) advanceTurn();
+    if(finishedOrder.includes(currentPlayerIndex)) advanceToNextActor();
   }
   render();
   scheduleNextIfCpu();
@@ -1264,14 +1601,8 @@ function afterPlayEffects(info){
 function passAction(playerIdx){
   passStreak++;
   log(playerName(playerIdx)+'： パス');
-  advanceTurn();
-  const act = activePlayers();
-  if(passStreak >= passClearThreshold(act)){
-    const wasEightStanding = field && field.rank==='8' && rules.fourStop;
-    clearField();
-    log(wasEightStanding ? '誰も4止めできず、8切りが成立した' : '場が流れた');
-    if(wasEightStanding) showCutIn('8切り成立！！！');
-  }
+  resolveFieldClearOnPass();
+  advanceToNextActor();
   render();
   scheduleNextIfCpu();
 }
@@ -1283,7 +1614,7 @@ function scheduleNextIfCpu(){
     const myTurnPlayer = currentPlayerIndex;
     setTimeout(()=>{
       if(myGen!==gameGen) return;
-      if(gameOver || pendingAction || exchangeInProgress) return;
+      if(gameOver || pendingAction || exchangeInProgress || revealPending) return;
       if(currentPlayerIndex!==myTurnPlayer) return;
       cpuTurn(currentPlayerIndex);
     }, 850);
@@ -1330,11 +1661,24 @@ function fullDeckReference(){
   }
   return deck;
 }
+// idx から見て「中身が分かっている」実カードのid。ダウトモードでは、伏せられたままの札
+// （場・捨て札の両方）を絶対にここへ入れてはいけない。入れるとCPUは「宣言されたランクが
+// 未確認プールに残っているか」を数えるだけでウソを100%見抜けてしまい、完全なカンニングになる。
+// 場の宣言カード(field.cards)は実在の札ではない合成オブジェクトなので、これも入れない。
+function seenCardIds(idx){
+  const seen = new Set();
+  hands[idx].forEach(c=>seen.add(c.id));
+  discardHistory.forEach(h=> h.cards.forEach(c=>{
+    if(!(h.hiddenIds && h.hiddenIds.has(c.id))) seen.add(c.id);
+  }));
+  if(field){
+    const known = field.faceDown ? (field.revealed ? field.actual : null) : (field.actual || field.cards);
+    if(known) known.forEach(c=>seen.add(c.id));
+  }
+  return seen;
+}
 function unseenCardPool(idx){
-  const seenIds = new Set();
-  hands[idx].forEach(c=>seenIds.add(c.id));
-  discardHistory.forEach(h=> h.cards.forEach(c=>seenIds.add(c.id)));
-  if(field && field.cards) field.cards.forEach(c=>seenIds.add(c.id));
+  const seenIds = seenCardIds(idx);
   return fullDeckReference().filter(c=>!seenIds.has(c.id));
 }
 function estimateOpponentHasRank(idx, opp, rank){
@@ -1371,6 +1715,222 @@ function estimateOpponentThreat(idx, opp){
   return strongProb*3 - hands[opp].length*0.3;
 }
 
+// ---- ダウトの解決 ----
+function addOut(idx, reason){
+  outs[idx]++;
+  log(playerName(idx)+'にアウト（'+reason+'）　合計 '+outs[idx]+'/3');
+  if(outs[idx]>=3 && !finishedOrder.includes(idx)){
+    log(playerName(idx)+'はアウト3つで強制敗北！ その時点での最下位候補になります');
+    showCutIn('アウト3つ！ 強制敗北！！');
+    // 失格した手札は公開して捨てる。伏せたまま消すと、その札が誰かの手にあるものとして
+    // CPUの推定にも人間の読みにも永久に残ってしまう。
+    const dead = hands[idx].slice();
+    hands[idx] = [];
+    if(dead.length>0) recordDiscard(dead, playerName(idx)+'の没収された手札（アウト3つ）');
+    markViolationFinish(idx, 'アウト3回');
+  }
+}
+
+// 公開情報だけから「その宣言はあり得ない」と断定できるか。
+// 実札は一切見ず、自分の手札と表になっている札だけで判断する。
+// 宣言のうち「自分が見た(＝出し手の手元には無いと分かる)」カードがあっても、それだけで
+// 即・不可能とは言えない：ジョーカーが代役を務めれば正直宣言のまま成立し得るため
+// （isDeclarationTruthfulの代用ルールと同じ考え方）。実際に必要な代役ジョーカー数が、
+// まだ所在の分からないジョーカーの残数を超えて初めて「不可能」と断定できる。
+function declarationImpossible(idx, declCards){
+  const seen = seenCardIds(idx);
+  const declaredJokers = declCards.filter(d=>d.rank==='JOKER').length;
+  const substitutesNeeded = declCards.filter(d=> d.rank!=='JOKER' && seen.has(d.suit+'_'+d.rank)).length;
+  const jokersNeeded = declaredJokers + substitutesNeeded;
+  if(jokersNeeded===0) return false;
+  const totalJokers = rules.jokers ? (rules.jokerCount||2) : 0;
+  let seenJokers = 0;
+  seen.forEach(id=>{ if(id.indexOf('JOKER_')===0) seenJokers++; });
+  return jokersNeeded > (totalJokers - seenJokers);
+}
+
+// 宣言用カード(declPaletteの要素)が表している「実カードの識別子」。ジョーカーはdecl_接頭辞を
+// 剥がすだけ、それ以外はスート_ランクの形に組み直す（実カードのid形式に合わせるため）。
+function declaredItemGoneId(item){
+  return item.rank==='JOKER' ? item.id.replace(/^decl_/, '') : (item.suit+'_'+item.rank);
+}
+
+// 自分から見て「もう存在しない（自分の手札か、公開済みの捨て札・場にある）」と分かる識別子を
+// 避けつつ、宣言用のサンプルを組む。スートしばり中は縛られたスートを優先する（sampleDeclと
+// 同じ考え方）。組めなければ null（そのランクでは安全に宣言できない）。
+function safeDeclSample(idx, rank, count){
+  const seen = seenCardIds(idx);
+  let palette = declPalette(rank).filter(item=>!seen.has(declaredItemGoneId(item)));
+  if(palette.length < count) return null;
+  if(rules.suitLock && suitLock && rank!=='JOKER'){
+    const locked = palette.filter(c=>c.suit===suitLock);
+    const rest = palette.filter(c=>c.suit!==suitLock);
+    palette = locked.concat(rest);
+  }
+  return palette.slice(0, count);
+}
+
+// ブラフ（または安全なジョーカー代用）として実際に場へ出すcount枚を手札から選ぶ。
+// 手元に余裕のあるジョーカーがあれば優先して使う（結果的に正直宣言のまま成立し、
+// ダウトされても怖くない）。残りは最も弱い実カードで埋める。opts.excludeRankを
+// 指定すると、そのランクの実カードは温存目的で除外する（役を崩したくない場合用）。
+function pickPlayCards(hand, count, opts){
+  const excludeRank = opts && opts.excludeRank;
+  const jokers = hand.filter(c=>c.rank==='JOKER');
+  const rest = hand.filter(c=>c.rank!=='JOKER' && c.rank!==excludeRank);
+  const useJokers = jokers.slice(0, count);
+  const remaining = count - useJokers.length;
+  const filler = rest.slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank)).slice(0, remaining);
+  if(useJokers.length + filler.length < count) return null;
+  return useJokers.concat(filler);
+}
+
+// 未確認の識別子について、出し手の手札サイズと未確認プールのサイズから、額面通りである
+// 確率を粗く見積もる（公開情報のみ使用。他家の実際の手札は一切参照しない）。
+function estimateDeclarationTruthProbability(doubterIdx, declCards){
+  const owner = field.owner;
+  const seen = seenCardIds(doubterIdx);
+  const poolSize = unseenCardPool(doubterIdx).length;
+  if(poolSize===0) return 1;
+  const ownerHandSize = hands[owner].length;
+  let logProbTrue = 0;
+  for(const d of declCards){
+    const key = declaredItemGoneId(d);
+    if(seen.has(key)){
+      // 出し手の手元には無いと分かっている＝ジョーカー代用でのみ真になり得る。
+      // 簡略化のため、代用が効いている確率相当の低い一定値として見積もる。
+      logProbTrue += Math.log(0.15);
+      continue;
+    }
+    const p = Math.min(1, ownerHandSize / poolSize);
+    logProbTrue += Math.log(Math.max(p, 0.02));
+  }
+  return Math.exp(logProbTrue);
+}
+
+// レジェンド専用：このゲーム中に学習した「ダウトされた時の正直さ」でベース確率を補正する。
+// サンプル数が少ないうちは基礎確率寄りにブレンドする。
+function legendAdjustedTruthProb(ownerIdx, baseProb){
+  const challenged = provenHonestCount[ownerIdx] + liarCaughtCount[ownerIdx];
+  if(challenged===0) return baseProb;
+  const trust = provenHonestCount[ownerIdx] / challenged;
+  const weight = Math.min(0.6, challenged*0.15);
+  return baseProb*(1-weight) + trust*weight;
+}
+
+function doubtAction(doubterIdx){
+  const f = field;
+  const truthful = isDeclarationTruthful(f.cards, f.actual);
+  f.revealed = true;
+  f.actual.forEach(c=>currentTrickHiddenIds.delete(c.id));
+  log(playerName(doubterIdx)+'：ダウト！　'+playerName(f.owner)+'の宣言「'+declLabel(f.cards)+'」→ 実際は「'+declLabel(f.actual)+'」');
+  showCutIn('ダウト！！');
+  revealPending = true;
+  render();
+  const myGen = gameGen;
+  setTimeout(()=>{
+    if(myGen!==gameGen){ revealPending = false; return; }
+    finishDoubt(doubterIdx, truthful);
+  }, 1500);
+}
+function finishDoubt(doubterIdx, truthful){
+  revealPending = false;
+  if(truthful) doubtFailed(doubterIdx);
+  else doubtSucceeded(doubterIdx);
+}
+
+function doubtFailed(doubterIdx){
+  // 完全に公開されたダウトの結果として、出し手が「立証された正直さ」の統計を積む
+  // （レジェンドCPUの学習材料。誰の手札も覗かない）。
+  if(field) provenHonestCount[field.owner]++;
+  showCutIn('宣言どおり！ ダウト失敗');
+  log(playerName(doubterIdx)+'のダウトは失敗。このトリックと次のトリックは休みです');
+  if(field && field.pendingClear) log(playerName(field.owner)+'の'+pendingClearLabel(field.pendingClear)+'の宣言は本物でした');
+  // 宣言が真実だと確定したので、その宣言（自身の上がり等）にひも付いて保留していた
+  // ゲーム終了判定をここで再評価する。
+  checkGameEnd();
+  if(gameOver){ render(); showResults(); return; }
+  addOut(doubterIdx, 'ダウト失敗');
+  if(gameOver){ render(); showResults(); return; }
+  sitOutTricks[doubterIdx] = 2; // 宣言したトリック＋次のトリック
+  // 失敗ダウトは「場を返せなかった」ので、パスと同じく場を流すのに寄与させる。数えないと
+  // 親に手番が戻ってもトリックが解決しない。ただしアウト3つで退場した場合は、もう
+  // 応答すべき人数に入っていないので数えない。
+  if(!finishedOrder.includes(doubterIdx)){
+    passStreak++;
+    resolveFieldClearOnPass();
+  }
+  advanceToNextActor();
+  render();
+  scheduleNextIfCpu();
+}
+
+function doubtSucceeded(doubterIdx){
+  const f = field;
+  const liar = f.owner;
+  liarCaughtCount[liar]++;
+  showCutIn('ウソつき！！');
+  log(playerName(liar)+'のウソが暴かれた！ 出した'+f.actual.length+'枚は手札に戻ります');
+  annulFieldPlay();
+  addOut(liar, 'ウソ発覚');
+  if(gameOver){ render(); showResults(); return; }
+  // clearField がトリック終了として全員の休みを1減らすので、嘘つきの休みはその後に立てる。
+  if(!finishedOrder.includes(liar)) sitOutTricks[liar] = 1;
+  currentPlayerIndex = doubterIdx;
+  passStreak = 0;
+  log(playerName(doubterIdx)+'が親として次のトリックを始めます');
+  render();
+  scheduleNextIfCpu();
+}
+
+// このプレイ自身の効果だけを巻き戻す。7渡し・10捨て・12ボンバーで動いたカードを元の
+// 持ち主に返し、このプレイが直接・間接（都落ちの連鎖等）に引き起こした上がりを取り消し、
+// このプレイ自身がトグルした革命・9リバースだけを戻す（トリック内の他プレイが既に
+// 切り替えていた分には触れない）。捨て札履歴も、このプレイの開始時点まで巻き戻す。
+function undoPlay(journal){
+  if(journal.revolutionToggled) revolution = journal.prevRevolution;
+  if(journal.directionFlipped) turnDirection = journal.prevTurnDirection;
+
+  journal.gives.forEach(g=>{
+    const ids = new Set(g.cards.map(c=>c.id));
+    hands[g.to] = hands[g.to].filter(c=>!ids.has(c.id));
+    hands[g.from] = hands[g.from].concat(g.cards);
+  });
+  journal.discards.forEach(d=>{ hands[d.idx] = hands[d.idx].concat(d.cards); });
+  journal.bomberRemovals.forEach(b=>{ hands[b.idx] = hands[b.idx].concat(b.cards); });
+
+  journal.finishes.forEach(f=>{
+    finishedOrder = finishedOrder.filter(x=>x!==f.idx);
+    if(f.list==='legit') legitFinishOrder = legitFinishOrder.filter(x=>x!==f.idx);
+    else violationFinishOrder = violationFinishOrder.filter(x=>x!==f.idx);
+    delete violationReasons[f.idx];
+  });
+
+  discardHistory.length = journal.discardHistoryCountBefore;
+  updateDiscardPileButton();
+}
+
+// ウソが暴かれたプレイを無効化する。まずこのプレイ自身の効果（革命・9リバース・
+// 7渡し／10捨て／12ボンバーで動いたカード・このプレイで生じた上がり）を巻き戻し、
+// 次に出した札を全部手札へ戻し、そのトリックの他の札は捨て札へ流して、
+// ダウトした人が親になる。
+function annulFieldPlay(){
+  const f = field;
+  const liar = f.owner;
+  if(f.journal) undoPlay(f.journal);
+  hands[liar] = hands[liar].concat(f.actual);
+  f.actual.forEach(c=>{
+    const i = currentTrickCards.findIndex(t=>t.id===c.id);
+    if(i>=0) currentTrickCards.splice(i,1);
+    currentTrickHiddenIds.delete(c.id);
+  });
+  clearField('ダウト成立により流れた札（'+playerName(liar)+'の出した札は手札に戻りました）');
+  // 戻した札が場から飛び出す演出をしてしまわないように、流れる札の指定は取り消す。
+  if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer = null; }
+  flowingOutCards = null;
+  flowingOutFaceDown = false;
+}
+
 function cpuDecideElevenBack(idx){
   const hand = hands[idx];
   if(hand.length===0) return false;
@@ -1379,12 +1939,14 @@ function cpuDecideElevenBack(idx){
   const strongCount = hand.filter(c=> c.rank==='JOKER' || strengthIndex(c.rank)>=9).length;
   return avgIdx < 6.5 || strongCount<=1;
 }
-function cpuResolvePlay(idx, cardsToPlay){
+// declCardsが宣言、actualCardsが実際に伏せる札（省略時は宣言どおり＝正直、通常モードと同じ）。
+// 11バックの発動判断は宣言されたランクで行う（効果は宣言に対して発火する設計のため）。
+function cpuResolvePlay(idx, declCards, actualCards){
   let decision;
-  if(rules.elevenBack && rules.elevenBackChoice && representedRank(cardsToPlay)==='J'){
+  if(rules.elevenBack && rules.elevenBackChoice && representedRank(declCards)==='J'){
     decision = cpuDecideElevenBack(idx);
   }
-  return resolvePlayCore(idx, cardsToPlay, decision);
+  return resolvePlayCore(idx, declCards, decision, actualCards);
 }
 
 function gatherLeadCandidates(hand, groups){
@@ -1392,6 +1954,10 @@ function gatherLeadCandidates(hand, groups){
 }
 function gatherFollowCandidates(hand, groups){
   const out = [];
+  // pendingClear（4止め成立／スペ3返し成立／4止めなしの8切り）には誰も重ねられない。
+  // canBeatField側にも同じガードがあるが、CPUのこの候補集めはcanBeatFieldを経由しない
+  // 独自ロジックなので、ここでも明示的に空を返す必要がある。
+  if(field.pendingClear) return out;
   for(const r of Object.keys(groups)){
     if(groups[r].length < field.count) continue;
     const isPureJokerR = r==='JOKER';
@@ -1504,8 +2070,177 @@ function chooseFollowPlay(idx, hand, candidates){
   return chooseFollowPlay_normal(hand, candidates);
 }
 
+// ---- ダウトモード専用のCPU判断（正直宣言／ブラフ／ダウト） ----
+// 通常モードのcpuTurnロジック（下のほう）は一切変更しない。ダウトモードはここで完全に
+// 分岐し、専用の関数群だけで完結させる。
+
+// ダウトするかどうか。
+//   ステップ1：公開情報から「あり得ない」と断定できる宣言（ノーマルは半々、エリート以上は必ず）
+//   ステップ2：断定できなくても、公開情報（手札枚数・未確認プールの大きさ）から見て
+//              「額面通りである確率」を粗く見積もり、低ければダウトする（エリート以上のみ）。
+//              レジェンドはさらに、このゲーム中に学習した「その人はダウトされた時どれくらい
+//              正直だったか」の統計で確率を補正する。
+//   自分のアウトが2ならこれ以上のリスクを避け、閾値をぐっと下げる（確実な時しか賭けない）。
+function cpuChooseDoubt(idx){
+  if(declarationImpossible(idx, field.cards)){
+    return cpuLevel==='normal' ? Math.random()<0.5 : true;
+  }
+  if(cpuLevel==='normal') return false;
+  const baseProb = estimateDeclarationTruthProbability(idx, field.cards);
+  const truthProb = cpuLevel==='legend' ? legendAdjustedTruthProb(field.owner, baseProb) : baseProb;
+  let threshold = cpuLevel==='legend' ? 0.42 : 0.28;
+  if(outs[idx]>=2) threshold *= 0.35;
+  return truthProb < threshold;
+}
+
+// ---- リード時の宣言 ----
+// ノーマルは常に正直（手札にあるランクをそのまま宣言）。
+// エリート／レジェンドは、手札に無いトリガーランクの効果（8切り・7渡し・5スキップ・
+// 10捨て・12ボンバー）を、安全に（自分から見て反証不能な形で）横取りできる機会を探す。
+// pickPlayCardsが手元の余りジョーカーを優先して使うので、運が良ければ正直宣言のまま
+// 効果だけ得られることもある。
+const BLUFF_TRIGGER_RANKS = [
+  {rank:'8', ruleKey:'eightGiri', count:()=>1},
+  {rank:'7', ruleKey:'sevenGive', count:()=>1},
+  {rank:'Q', ruleKey:'twelveBomber', count:()=>1},
+  {rank:'5', ruleKey:'fiveSkip', count:()=>Math.min(2, Math.max(1, activePlayers().length-1))},
+  {rank:'10', ruleKey:'tenDiscard', count:()=>1}
+];
+function bluffLeadTriggerOpportunity(idx, hand){
+  if(outs[idx]>=2) return null;
+  for(const t of BLUFF_TRIGGER_RANKS){
+    if(!rules[t.ruleKey]) continue;
+    if(countOfRank(hand, t.rank)>0) continue; // 本当に持っているなら正直に出せばいい
+    if(t.rank==='7' && !activePlayers().some(i=>i!==idx && hands[i].length<=3)) continue; // 渡す価値が薄い
+    const count = t.count();
+    if(count > hand.length) continue;
+    const decl = safeDeclSample(idx, t.rank, count);
+    if(!decl) continue;
+    const actual = pickPlayCards(hand, count, {});
+    if(!actual) continue;
+    return {decl, actual};
+  }
+  return null;
+}
+function cpuDeclareLead(idx, hand, groups){
+  const candidates = gatherLeadCandidates(hand, groups);
+  const honest = candidates.length ? chooseLeadPlay(idx, hand, candidates) : null;
+  if(cpuLevel!=='normal'){
+    const chance = cpuLevel==='legend' ? 0.45 : 0.3;
+    if(Math.random()<chance){
+      const bluff = bluffLeadTriggerOpportunity(idx, hand);
+      if(bluff) return bluff;
+    }
+  }
+  if(honest) return {decl: honest.cards, actual: honest.cards};
+  return null;
+}
+
+// ---- フォロー時の宣言 ----
+// 合法な正直フォローがあればそれを使う。ただし役（ペア・トリプル等）を崩してまで
+// 追随するのを避けたい場合（既存のchooseFollowPlay_elite/_legendの温存ロジックと同じ判定）は、
+// 同じランク・枚数を安全なブラフで宣言し、実物の代わりにジャンクを出して役を守る。
+// 合法な正直フォローが無いときも、パスの代わりにブラフで場をつなぐことがある。
+function bluffFollowFallback(idx, hand){
+  if(outs[idx]>=2) return null;
+  const chance = cpuLevel==='legend' ? 0.6 : (cpuLevel==='elite' ? 0.45 : 0.12);
+  if(Math.random()>=chance) return null;
+  const legal = legalDeclRanks(field.count);
+  for(const r of legal){
+    const decl = safeDeclSample(idx, r, field.count);
+    if(!decl) continue;
+    const actual = pickPlayCards(hand, field.count, {});
+    if(!actual) continue;
+    return {decl, actual};
+  }
+  return null;
+}
+function cpuDeclareFollow(idx, hand, groups){
+  const candidates = gatherFollowCandidates(hand, groups);
+  if(cpuLevel==='normal'){
+    const chosen = chooseFollowPlay_normal(hand, candidates);
+    if(chosen) return {decl: chosen.cards, actual: chosen.cards};
+    return bluffFollowFallback(idx, hand);
+  }
+  // エリート／レジェンドは、chooseFollowPlay_*が「役を崩したくないので見送る」と判断した
+  // ケースを自前で検出し、崩す代わりにブラフで凌げないか試す。
+  let best=null;
+  for(const c of candidates){
+    const remainder = c.groupSize - c.cards.length;
+    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+    if(remainder>0) score += remainder*2;
+    if(cpuLevel==='legend'){
+      if(rules.numberLock && !numberLock && field && c.rank!=='JOKER' && field.rank!=='JOKER'
+         && effStrength(c.rank)===effStrength(field.rank)+1){
+        const nextIdxGuess = strengthIndex(c.rank) + (orderReversed() ? -1 : 1);
+        const nextRankGuess = (nextIdxGuess>=0 && nextIdxGuess<RANKS.length) ? RANKS[nextIdxGuess] : null;
+        if(nextRankGuess){
+          const selfHasNext = hand.some(h=>h.rank===nextRankGuess && !c.cards.includes(h));
+          if(!selfHasNext) score += estimateAnyOpponentHasRank(idx, nextRankGuess) * 6;
+        }
+      }
+      score += estimateBeatRisk(idx, c.rank, c.cards.length) * 4;
+    }
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  if(best===null) return bluffFollowFallback(idx, hand);
+  const wantsToPreserve = hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed';
+  if(!wantsToPreserve) return {decl: best.cards, actual: best.cards};
+  if(outs[idx]<2){
+    const decl = safeDeclSample(idx, best.rank, best.cards.length);
+    if(decl){
+      const actual = pickPlayCards(hand, best.cards.length, {excludeRank: best.rank});
+      if(actual) return {decl, actual};
+    }
+  }
+  return bluffFollowFallback(idx, hand);
+}
+
 function cpuTurn(idx){
   if(gameOver) return;
+  if(isDoubtMode()){
+    if(doubtAvailableFor(idx) && cpuChooseDoubt(idx)){ doubtAction(idx); return; }
+    if(forcedPassOnly){ log(playerName(idx)+'：5スキップの対象のため出せない'); passAction(idx); return; }
+
+    const hand = hands[idx];
+    // スペ3返し・4止めは、この2つの狭い戦術カウンターに限っては全ティア正直のまま
+    // （実装スコープの都合。持っていなければ素直にパス）。
+    if(rules.spade3Return && field && field.rank==='JOKER' && field.count===1){
+      const spade3 = hand.find(c=>c.rank==='3' && c.suit==='♠');
+      if(spade3){
+        const info = cpuResolvePlay(idx, [spade3]);
+        render();
+        afterPlayEffects(info);
+        return;
+      }
+    }
+    if(field && field.rank==='8' && rules.fourStop){
+      const needed = field.count*2;
+      const fours = hand.filter(c=>c.rank==='4');
+      const jokers = hand.filter(c=>c.rank==='JOKER');
+      if(fours.length>=1 && fours.length + jokers.length >= needed){
+        const cardsToPlay = fours.concat(jokers).slice(0, needed);
+        const info = cpuResolvePlay(idx, cardsToPlay);
+        render();
+        afterPlayEffects(info);
+        return;
+      }
+      passAction(idx);
+      return;
+    }
+
+    const groups = groupByRank(hand);
+    const declared = (field===null) ? cpuDeclareLead(idx, hand, groups) : cpuDeclareFollow(idx, hand, groups);
+    if(declared){
+      const info = cpuResolvePlay(idx, declared.decl, declared.actual);
+      render();
+      afterPlayEffects(info);
+      return;
+    }
+    passAction(idx);
+    return;
+  }
+
   const hand = hands[idx];
 
   if(rules.spade3Return && field && field.rank==='JOKER' && field.count===1){
@@ -1585,6 +2320,7 @@ function cpuDoGive(idx, count){
   hands[idx] = hands[idx].filter(c=>!giveIds.has(c.id));
   hands[recipient] = hands[recipient].concat(giveCards);
   log(playerName(idx)+'が'+playerName(recipient)+'に'+giveCards.length+'枚渡した');
+  if(journalActive()) field.journal.gives.push({from:idx, to:recipient, cards:giveCards.slice()});
   checkGameEndAfterSideEffect('give');
 }
 
@@ -1611,6 +2347,7 @@ function cpuDoDiscard(idx, count){
   hands[idx] = hands[idx].filter(c=>!discardIds.has(c.id));
   log(playerName(idx)+'が'+need+'枚のカードを捨てた');
   recordDiscard(discarded, playerName(idx)+'が10捨てで捨てた');
+  if(journalActive()) field.journal.discards.push({idx, cards:discarded.slice()});
   checkGameEndAfterSideEffect('discard');
 }
 
@@ -1650,12 +2387,14 @@ function applyBomber(ranksChosen, onComplete){
   showCutIn(label+' を没収！！');
   setTimeout(()=>{
     const allRemoved = [];
+    const stillActive = journalActive();
     for(let i=0;i<4;i++){
       const removedCards = hands[i].filter(c=>ranksChosen.includes(c.rank));
       if(removedCards.length>0){
         allRemoved.push(...removedCards);
         hands[i] = hands[i].filter(c=>!ranksChosen.includes(c.rank));
         log(playerName(i)+'が'+removedCards.length+'枚捨てた');
+        if(stillActive) field.journal.bomberRemovals.push({idx:i, cards:removedCards.slice()});
       }
     }
     if(allRemoved.length===0){
@@ -1768,12 +2507,21 @@ function openDiscardHistoryModal(){
   const html = discardHistory.length===0
     ? '<h2>捨て札</h2><p>まだ捨て札はありません。</p>'
     : '<h2>捨て札</h2><div style="max-height:55vh;overflow-y:auto;">'
-      + discardHistory.slice().reverse().map(h=>
-          '<div style="margin-bottom:12px;text-align:left;">'
-          + '<div style="font-size:11px;color:#6b5f3f;margin-bottom:4px;">'+h.reason+'</div>'
-          + '<div class="hand" style="justify-content:flex-start;">'+h.cards.map(c=>cardHtml(c,'mini',false,false)).join('')+'</div>'
-          + '</div>'
-        ).join('')
+      + discardHistory.slice().reverse().map(h=>{
+          // 伏せられたまま流れた札は、捨て札ビューアでも裏のまま。ここを表にすると
+          // 「ダウトせずに流したのに中身が全部見える」という致命的な情報漏れになる。
+          const hiddenCount = h.hiddenIds ? h.hiddenIds.size : 0;
+          const note = hiddenCount>0
+            ? '<span style="color:var(--red-hanko);">（うち'+hiddenCount+'枚は伏せたまま流れたので中身は不明）</span>'
+            : '';
+          return '<div style="margin-bottom:12px;text-align:left;">'
+            + '<div style="font-size:11px;color:#6b5f3f;margin-bottom:4px;">'+h.reason+note+'</div>'
+            + '<div class="hand" style="justify-content:flex-start;">'
+            + h.cards.map(c=> (h.hiddenIds && h.hiddenIds.has(c.id))
+                ? cardBackHtml('mini')
+                : cardHtml(c,'mini',false,false)).join('')
+            + '</div></div>';
+        }).join('')
       + '</div>';
   showHistoryModal(html);
 }
@@ -1818,6 +2566,7 @@ function confirmGive(){
   hands[pa.idx] = hands[pa.idx].filter(c=>!pa.chosen.has(c.id));
   hands[pa.recipient] = hands[pa.recipient].concat(giveCards);
   log(playerName(pa.idx)+'が'+playerName(pa.recipient)+'に'+giveCards.length+'枚渡した');
+  if(journalActive()) field.journal.gives.push({from:pa.idx, to:pa.recipient, cards:giveCards.slice()});
   checkGameEndAfterSideEffect('give');
   hideActionModal();
   const info=pa.info, extraSkips=pa.extraSkips;
@@ -1851,6 +2600,7 @@ function confirmDiscard(){
   hands[pa.idx] = hands[pa.idx].filter(c=>!pa.chosen.has(c.id));
   log(playerName(pa.idx)+'が'+discarded.length+'枚のカードを捨てた');
   recordDiscard(discarded, playerName(pa.idx)+'が10捨てで捨てた');
+  if(journalActive()) field.journal.discards.push({idx:pa.idx, cards:discarded.slice()});
   checkGameEndAfterSideEffect('discard');
   hideActionModal();
   const info=pa.info, extraSkips=pa.extraSkips;
@@ -1889,8 +2639,8 @@ function confirmBomber(){
   applyBomber(Array.from(pa.chosen), ()=>{ finalizeTurn(info, extraSkips); });
 }
 
-function openElevenBackChoiceModal(cards){
-  pendingAction = {type:'elevenBackChoice', idx:0, cards};
+function openElevenBackChoiceModal(cards, actual){
+  pendingAction = {type:'elevenBackChoice', idx:0, cards, actual: actual||cards};
   render();
   showActionModal('<h2>11バック</h2><p>Jを出しました。強さの順序を反転させますか？</p>'
     + '<div style="display:flex;gap:14px;justify-content:center;margin-top:10px;">'
@@ -1900,9 +2650,103 @@ function openElevenBackChoiceModal(cards){
 }
 function confirmElevenBackChoice(decision){
   const cards = pendingAction.cards;
+  const actual = pendingAction.actual;
   hideActionModal();
   pendingAction = null;
-  const info = resolvePlayCore(0, cards, decision);
+  const info = resolvePlayCore(0, cards, decision, actual);
+  render();
+  afterPlayEffects(info);
+}
+
+// ---- 宣言モーダル（ダウトモード）----
+// 手順は「ランクを選ぶ → スートを枚数分選ぶ」。持っていないカードでも、既に公開済みの
+// カードでも宣言できる。ただし同じカードを2枚宣言することはできない（明白に不可能な宣言は
+// そもそも作らせない）。
+function openDeclareModal(actualCards){
+  pendingAction = {type:'declare', idx:0, actual:actualCards, rank:null, chosen:[]};
+  render();
+  renderDeclareModal();
+}
+function renderDeclareModal(){
+  const pa = pendingAction;
+  const count = pa.actual.length;
+  const cancelBtn = '<button class="action decline" style="margin-top:12px;" onclick="cancelDeclare()">やめる</button>';
+
+  if(pa.rank===null){
+    const legal = legalDeclRanks(count);
+    const btns = bomberPalette().map(r=>
+      '<button type="button" class="rank-btn" '+(legal.includes(r)?'':'disabled')
+      + ' onclick="declChooseRank(\''+r+'\')">'+(r==='JOKER'?'JOKER':r)+'</button>'
+    ).join('');
+    showActionModal('<h2>宣言</h2><p>'+count+'枚を裏向きに出します。何として宣言しますか？<br>'
+      + '<span style="font-size:11px;">場に出せないランクは選べません。実際に持っていなくても宣言できます。</span></p>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:280px;margin:0 auto;">'+btns+'</div>'
+      + cancelBtn);
+    return;
+  }
+
+  const palette = declPalette(pa.rank);
+  const chosenCards = palette.filter(c=>pa.chosen.includes(c.id));
+  const cardsHtml = palette.map(c=>cardHtml(c, 'mini', true, pa.chosen.includes(c.id), 'declToggleCard')).join('');
+  const enough = chosenCards.length===count;
+  const check = enough ? canBeatField(representedRank(chosenCards), count, chosenCards) : {ok:false, reason:''};
+  const truthful = enough && isDeclarationTruthful(chosenCards, pa.actual);
+  let note = '';
+  if(enough && check.ok){
+    note = truthful
+      ? '<div class="decl-note truth">この宣言は正直です</div>'
+      : '<div class="decl-note lie">この宣言はウソです。ダウトされると暴かれます</div>';
+  } else if(enough && !check.ok){
+    note = '<div class="decl-note lie">'+check.reason+'</div>';
+  }
+  showActionModal('<h2>宣言</h2><p>「'+(pa.rank==='JOKER'?'JOKER':pa.rank)+'」としてどのカードを宣言しますか？（'+chosenCards.length+'/'+count+'）</p>'
+    + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
+    + note
+    + '<div style="display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap;">'
+    + '<button class="action play" '+(enough && check.ok?'':'disabled')+' onclick="confirmDeclare()">宣言して伏せる</button>'
+    + '<button class="action decline" onclick="declBackToRank()">ランクを選び直す</button>'
+    + '</div>'
+    + cancelBtn);
+}
+function declChooseRank(r){
+  const pa = pendingAction;
+  pa.rank = r;
+  pa.chosen = [];
+  // 選択肢が1通りしかない（ジョーカー宣言など）ときは、そのまま埋めて手数を減らす。
+  const palette = declPalette(r);
+  if(palette.length===pa.actual.length) pa.chosen = palette.map(c=>c.id);
+  renderDeclareModal();
+}
+function declBackToRank(){
+  pendingAction.rank = null;
+  pendingAction.chosen = [];
+  renderDeclareModal();
+}
+function declToggleCard(id){
+  const pa = pendingAction;
+  const i = pa.chosen.indexOf(id);
+  if(i>=0) pa.chosen.splice(i,1);
+  else if(pa.chosen.length < pa.actual.length) pa.chosen.push(id);
+  renderDeclareModal();
+}
+function cancelDeclare(){
+  hideActionModal();
+  pendingAction = null;
+  render();
+}
+function confirmDeclare(){
+  const pa = pendingAction;
+  const declCards = declPalette(pa.rank).filter(c=>pa.chosen.includes(c.id));
+  const actual = pa.actual;
+  hideActionModal();
+  pendingAction = null;
+  selected.clear();
+  const declRank = representedRank(declCards);
+  if(declRank==='J' && rules.elevenBack && rules.elevenBackChoice){
+    openElevenBackChoiceModal(declCards, actual);
+    return;
+  }
+  const info = resolvePlayCore(0, declCards, undefined, actual);
   render();
   afterPlayEffects(info);
 }
@@ -1982,7 +2826,7 @@ function computePlayableCardIds(){
 }
 
 function toggleSelect(id){
-  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return;
+  if(!humanCanAct()) return;
   if(selected.has(id)){
     selected.delete(id);
     render();
@@ -1990,6 +2834,13 @@ function toggleSelect(id){
   }
   const card = hands[0].find(c=>c.id===id);
   if(!card) return;
+  // ダウトモードでは伏せて出す以上、実札は何の組み合わせでもよい（同じランクである必要は
+  // ない）。合法性は実札ではなく宣言のほうで判定する。
+  if(isDoubtMode()){
+    selected.add(id);
+    render();
+    return;
+  }
   const currentCards = currentSelectionCards();
   const wouldBeCards = currentCards.concat([card]);
   if(currentCards.length>0 && !isValidGroup(wouldBeCards)){
@@ -2011,9 +2862,21 @@ function flashMsg(msg){
 }
 
 function humanPlay(){
-  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return;
+  if(!humanCanAct()) return;
   const cards = currentSelectionCards();
   if(cards.length===0){ flashMsg('カードを選んでください'); return; }
+  if(isDoubtMode()){
+    if(forcedPassOnly){ flashMsg('5スキップの対象です。ダウトかパスしかできません'); return; }
+    // 必要枚数は legalDeclRanks（内部でcanBeatFieldを使う）に一任する。4止めは場の枚数の
+    // 2倍が必要、pendingClear中はどの枚数も不可、といった例外はそちらに既に実装済みなので、
+    // ここで「場と同じ枚数」を決め打ちすると4止めの正当な宣言まで弾いてしまう。
+    if(legalDeclRanks(cards.length).length===0){
+      flashMsg(field===null ? 'その枚数では宣言できるランクがありません' : 'その枚数では場に対して宣言できるランクがありません（4止めは4を場の2倍の枚数で）');
+      return;
+    }
+    openDeclareModal(cards);
+    return;
+  }
   if(!isValidGroup(cards)){ flashMsg('同じランクのカードを選んでください（ジョーカーはワイルドとして使えます）'); return; }
   const rank = representedRank(cards);
   const count = cards.length;
@@ -2030,10 +2893,17 @@ function humanPlay(){
 }
 
 function humanPass(){
-  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return;
+  if(!humanCanAct()) return;
   if(field===null){ flashMsg('場が空の時はパスできません'); return; }
   selected.clear();
   passAction(0);
+}
+
+function humanDoubt(){
+  if(!humanCanAct()) return;
+  if(!doubtAvailableFor(0)){ flashMsg('いまダウトは宣言できません'); return; }
+  selected.clear();
+  doubtAction(0);
 }
 
 function showResults(){
@@ -2053,6 +2923,12 @@ function suitClass(card){
   return (card.suit==='♥'||card.suit==='♦') ? 'red' : 'black';
 }
 
+// 伏せ札は中身をDOMに一切出さない。ここでうっかり実カードを埋め込むと、
+// 見た目が裏でもDOMを覗くだけで全部分かってしまう。
+function cardBackHtml(extraClass){
+  return '<div class="card back '+(extraClass||'')+'"></div>';
+}
+
 function cardHtml(card, extraClass, clickable, selectedFlag, onclickFn){
   onclickFn = onclickFn || 'toggleSelect';
   const displaySuit = card.rank==='JOKER' ? '★' : card.suit;
@@ -2060,6 +2936,13 @@ function cardHtml(card, extraClass, clickable, selectedFlag, onclickFn){
   return '<div class="card '+suitClass(card)+' '+(extraClass||'')+' '+(selectedFlag?'selected':'')+'" '
     + (clickable? 'onclick="'+onclickFn+'(\''+card.id+'\')"' : '')
     + '><div class="rank'+(card.rank==='JOKER'?' jokerlabel':'')+'">'+displayRank+'</div><div class="suit">'+displaySuit+'</div></div>';
+}
+
+function outPipsHtml(i){
+  if(!isDoubtMode()) return '';
+  let pips = '';
+  for(let k=0;k<3;k++) pips += '<span class="out-pip'+(k<outs[i]?' filled':'')+'"></span>';
+  return '<div class="out-row" title="アウト '+outs[i]+'/3">'+pips+'</div>';
 }
 
 function render(){
@@ -2079,9 +2962,12 @@ function render(){
     }
     const backs = hands[i].map(()=>'<div class="cardback"></div>').join('');
     const activeClass = (currentPlayerIndex===i && !gameOver && !pendingAction && !exchangeInProgress) ? 'active' : '';
-    return '<div class="opp '+activeClass+'">'+badge+'<div class="name">'+playerName(i)+'</div>'
+    const sitOut = (isDoubtMode() && sitOutTricks[i]>0 && !finishedOrder.includes(i))
+      ? '<div class="sitout-badge">休み</div>' : '';
+    return '<div class="opp '+activeClass+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
       + '<div class="cardback-row">'+(backs||'&nbsp;')+'</div>'
-      + '<div class="count">残り '+hands[i].length+'枚</div></div>';
+      + '<div class="count">残り '+hands[i].length+'枚</div>'
+      + outPipsHtml(i)+'</div>';
   }).join('');
   document.getElementById('opponents').innerHTML = oppHtml;
 
@@ -2091,18 +2977,27 @@ function render(){
   if(turnDirection===-1) flagParts.push('<div class="flag">プレー順：逆回り</div>');
   if(rules.suitLock && suitLock) flagParts.push('<div class="flag">スートしばり：'+suitLock+'</div>');
   if(rules.numberLock && numberLock) flagParts.push('<div class="flag">数しばり：次は'+numberLock+'</div>');
-  if(field && field.rank==='8' && rules.fourStop) flagParts.push('<div class="flag">8切り成立待ち（4止め：4×'+(field.count*2)+'）</div>');
+  if(field && field.rank==='8' && rules.fourStop && !field.pendingClear) flagParts.push('<div class="flag">8切り成立待ち（4止め：4×'+(field.count*2)+'）</div>');
+  if(field && field.pendingClear) flagParts.push('<div class="flag">'+pendingClearLabel(field.pendingClear)+'成立待ち（他の人がダウトかパスをするまで確定しません）</div>');
   document.getElementById('flags').innerHTML = flagParts.join('');
 
   const isNewField = field !== null && pendingDealAnimation;
+  const pendingSuffix = (field && field.pendingClear) ? '（成立待ち・'+pendingClearLabel(field.pendingClear)+'）' : '';
   if(field===null){
     if(flowingOutCards){
       document.getElementById('fieldOwner').textContent = '場が流れました';
-      document.getElementById('fieldCards').innerHTML = flowingOutCards.map(c=>cardHtml(c,'mini flow-out',false,false)).join('');
+      document.getElementById('fieldCards').innerHTML = flowingOutCards.map(c=>
+        flowingOutFaceDown ? cardBackHtml('mini flow-out') : cardHtml(c,'mini flow-out',false,false)).join('');
     } else {
       document.getElementById('fieldOwner').textContent = '';
       document.getElementById('fieldCards').innerHTML = '<div class="field-empty">場は空です &mdash; 好きなカードを出せます</div>';
     }
+  } else if(field.faceDown && !field.revealed){
+    document.getElementById('fieldOwner').textContent = playerName(field.owner)+' の宣言： '+declLabel(field.cards)+pendingSuffix;
+    document.getElementById('fieldCards').innerHTML = field.actual.map(()=>cardBackHtml('mini'+(isNewField?' deal-in':''))).join('');
+  } else if(field.faceDown){
+    document.getElementById('fieldOwner').textContent = playerName(field.owner)+' の宣言： '+declLabel(field.cards)+'（ダウトでめくれた）'+pendingSuffix;
+    document.getElementById('fieldCards').innerHTML = field.actual.map(c=>cardHtml(c,'mini',false,false)).join('');
   } else {
     const label = field.rank==='JOKER' ? 'ジョーカー' : field.rank;
     document.getElementById('fieldOwner').textContent = playerName(field.owner)+' が出した '+label+' × '+field.count;
@@ -2130,20 +3025,40 @@ function render(){
       youBadgeText = '反則（順位確定待ち）';
     }
   }
-  document.getElementById('youLabel').textContent = youBadgeText
+  if(isDoubtMode() && sitOutTricks[0]>0 && !finishedOrder.includes(0)) youBadgeText = '休み（ダウトの罰）';
+  document.getElementById('youLabel').innerHTML = (youBadgeText
     ? 'あなたの手札 （'+youBadgeText+'）'
-    : 'あなたの手札';
+    : 'あなたの手札') + outPipsHtml(0);
 
   document.getElementById('youRow').classList.toggle('active-turn', isYourTurn);
 
-  document.getElementById('playBtn').disabled = !isYourTurn;
-  const noLegalPlay = isYourTurn && field!==null && playableIds.size===0;
+  const handHint = document.getElementById('handHint');
+  if(isDoubtMode()){
+    handHint.style.display = 'block';
+    handHint.textContent = forcedPassOnly
+      ? '5スキップの対象です。カードは出せませんが、ダウトは宣言できます'
+      : '緑枠＝正直に出せる札。ウソをつくならどの札を選んでもかまいません';
+  } else {
+    handHint.style.display = 'none';
+  }
+
+  const canDoubt = isYourTurn && doubtAvailableFor(0);
+  const doubtBtn = document.getElementById('doubtBtn');
+  doubtBtn.style.display = isDoubtMode() ? 'inline-block' : 'none';
+  doubtBtn.disabled = !canDoubt;
+  doubtBtn.classList.toggle('available', canDoubt);
+
+  document.getElementById('playBtn').disabled = !isYourTurn || forcedPassOnly;
+  const noLegalPlay = isYourTurn && field!==null && (forcedPassOnly || playableIds.size===0);
   document.getElementById('passBtn').disabled = !isYourTurn || field===null;
-  document.getElementById('passBtn').classList.toggle('highlight-pass', noLegalPlay);
+  document.getElementById('passBtn').classList.toggle('highlight-pass', noLegalPlay && !canDoubt);
 
   const banner = document.getElementById('turnBanner');
   if(gameOver){
     banner.textContent = '結果を確認してください';
+    banner.className = 'turn-banner neutral';
+  } else if(revealPending){
+    banner.textContent = 'ダウト！ カードをめくっています…';
     banner.className = 'turn-banner neutral';
   } else if(exchangeInProgress){
     banner.textContent = (pendingAction && pendingAction.type==='exchange') ? 'あなたが渡すカードを選んでください' : 'カード交換中…';
@@ -2276,10 +3191,16 @@ document.getElementById('selectNoneBtn').addEventListener('click', ()=>{
   syncSubRuleStates();
   syncJokerStepperState();
 });
+document.getElementById('doubtModeToggle').addEventListener('change', (e)=>{
+  applyDoubtTheme(e.target.checked);
+});
+document.getElementById('doubtBtn').addEventListener('click', humanDoubt);
 document.getElementById('startGameBtn').addEventListener('click', ()=>{
   rules = {};
   RULE_DEFS.forEach(r=> rules[r.key] = document.getElementById('rule_'+r.key).checked);
   rules.jokerCount = jokerCount;
+  rules.doubtMode = document.getElementById('doubtModeToggle').checked;
+  applyDoubtTheme(rules.doubtMode);
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
   cpuLevelSetting = levelInput ? levelInput.value : 'normal';
   cpuLevel = resolveCpuLevel(cpuLevelSetting);
