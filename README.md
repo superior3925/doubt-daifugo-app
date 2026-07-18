@@ -91,3 +91,42 @@ BGMを鳴らすには、以下の名前で mp3 を `assets/bgm/` に置いてく
 - HTML / CSS / JavaScript（フレームワーク・ビルドツールなし）
 - すべて [index.html](index.html) 一つに完結しており、ブラウザで開くだけで動作します
 - BGM音源のみ `assets/bgm/` に配置（リポジトリ管理外）
+
+## Android版（Capacitor）
+
+Web版のソース（[index.html](index.html)）はそのまま残し、[Capacitor](https://capacitorjs.com/) でネイティブのAndroidプロジェクト（`android/`）をラップする構成にしています。`index.html` を書き換えれば、Web版・Android版の両方に反映されます。
+
+### 構成
+
+- `index.html` … 唯一のソース（Web版はこれを直接開くだけで動作、これは変わりません）
+- `scripts/sync-web.js` … `index.html` と `assets/bgm/` を `www/`（Capacitorのビルド用フォルダ）にコピーするだけの最小スクリプト。`www/` は生成物なのでリポジトリには含めません
+- `android/` … Capacitorが生成したネイティブAndroidプロジェクト（Gradle）。ビルド成果物（`build/`・`.gradle/`・`local.properties`）以外はリポジトリにコミットする方針です
+- `capacitor.config.json` … App ID・アプリ名・webDirの設定（App ID: `io.github.superior3925.doubtdaifugo`）
+
+### 必要な環境
+
+- Node.js（LTS）／npm
+- JDK 17
+- Android Studio（Android SDKのインストールに必要。SDKだけ単体で入れても構いません）
+
+### セットアップ
+
+```
+npm install
+```
+
+### ビルド・実機/エミュレータ確認
+
+```
+npm run android:sync   # index.html を www/ に反映してから Capacitor を同期
+npm run android:open   # Android Studio で android/ プロジェクトを開く
+```
+
+Android Studioで開いたあとは、通常のAndroidアプリと同様に実行（▶）ボタンでエミュレータ or 実機にインストールして動作確認できます。コマンドラインだけでAPKをビルドする場合は、Android SDKのインストール後に以下を実行してください。
+
+```
+cd android
+./gradlew assembleDebug
+```
+
+`index.html` を編集した後は、必ず `npm run android:sync`（または `npm run sync:web`）を実行してから Android Studio 側をビルドし直してください。忘れると古い内容のままになります。

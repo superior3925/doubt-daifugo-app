@@ -1,0 +1,29 @@
+{
+  "name": "doubt-daifugo-app",
+  "version": "1.0.0",
+  "description": "ブラウザだけで遊べる、CPU対戦（1人 vs CPU3人）の大富豪（大貧民）Webアプリ。Capacitorでラップし、Android版としても配信予定。",
+  "scripts": {
+    "sync:web": "node scripts/sync-web.js",
+    "android:sync": "npm run sync:web && npx cap sync android",
+    "android:open": "npm run sync:web && npx cap open android"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/superior3925/doubt-daifugo-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/superior3925/doubt-daifugo-app/issues"
+  },
+  "homepage": "https://github.com/superior3925/doubt-daifugo-app#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2"
+  }
+}

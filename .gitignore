@@ -4,3 +4,9 @@ assets/bgm/
 # OS / エディタ
 Thumbs.db
 .DS_Store
+
+# Node / Capacitor
+# index.html が唯一のWeb版ソース。www/ は scripts/sync-web.js が index.html と
+# assets/bgm/ から毎回生成するビルド出力なので、リポジトリには含めない。
+node_modules/
+www/
