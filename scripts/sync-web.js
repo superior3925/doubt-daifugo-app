@@ -25,7 +25,7 @@ for (const file of ['manifest.webmanifest', 'service-worker.js']) {
   }
 }
 fs.mkdirSync(path.join(wwwDir, 'assets'), { recursive: true });
-for (const file of ['pwa-icon-192.png', 'pwa-icon-512.png']) {
+for (const file of ['pwa-icon-192.png', 'pwa-icon-512.png', 'favicon-32.png']) {
   const src = path.join(root, 'assets', file);
   if (fs.existsSync(src)) {
     fs.copyFileSync(src, path.join(wwwDir, 'assets', file));

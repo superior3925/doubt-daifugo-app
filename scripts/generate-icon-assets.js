@@ -73,6 +73,8 @@ async function main(){
   // PWA（ホーム画面に追加）用のマニフェストアイコン。フラット版（iconOnly）を流用する。
   await sharp(Buffer.from(iconOnly)).resize(192,192).png().toFile(path.join(outDir, 'pwa-icon-192.png'));
   await sharp(Buffer.from(iconOnly)).resize(512,512).png().toFile(path.join(outDir, 'pwa-icon-512.png'));
-  console.log('generated icon-background.png, icon-foreground.png, icon-only.png, splash.png, pwa-icon-192.png, pwa-icon-512.png in assets/');
+  // ブラウザタブ用favicon（Webページ側）。同じくiconOnlyを流用。
+  await sharp(Buffer.from(iconOnly)).resize(32,32).png().toFile(path.join(outDir, 'favicon-32.png'));
+  console.log('generated icon-background.png, icon-foreground.png, icon-only.png, splash.png, pwa-icon-192.png, pwa-icon-512.png, favicon-32.png in assets/');
 }
 main().catch(e=>{ console.error(e); process.exit(1); });
