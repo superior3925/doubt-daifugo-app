@@ -618,6 +618,24 @@
   }
   .skip-btn.active{ background:var(--gold); color:#2b2200; }
 
+  /* PWA更新通知トースト */
+  .update-toast{
+    position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+    z-index:200; display:flex; align-items:center; gap:10px;
+    background:rgba(12,30,24,0.96); border:1px solid var(--gold); border-radius:12px;
+    color:var(--cream); font-size:12.5px; padding:10px 14px;
+    box-shadow:0 8px 30px rgba(0,0,0,0.6);
+    max-width:calc(100vw - 24px);
+  }
+  .update-toast button{
+    background:var(--gold); color:#2b2200; border:none; border-radius:999px;
+    padding:5px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;
+    white-space:nowrap;
+  }
+  .update-toast button.update-toast-close{
+    background:transparent; color:var(--gold-soft); border:1px solid var(--gold); font-weight:400;
+  }
+
   /* クラウド同期＆成績バー（セットアップ画面上部） */
   .cloud-bar{
     max-width:980px; margin:0 auto 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
@@ -1383,6 +1401,8 @@ const DECL_HISTORY_LIMIT = 5;
 // あなたが上がった後、CPUだけの消化試合をスキップボタンで高速処理するためのフラグ。
 // 新しいゲームが始まるたびdealFreshHandsでfalseに戻す。
 let fastForward = false;
+// このゲームのスコア・通算成績を加算済みか（showResultsの二重呼び出し保険）。
+let resultsRecorded = false;
 function turboMs(ms){ return fastForward ? 20 : ms; }
 
 // ---- スコア制度：大富豪+3・富豪+1・貧民0・大貧民-1を対戦ごとに合算し、ブラウザに保存する ----
@@ -1426,7 +1446,9 @@ function renderScoreBoard(lastRanking){
     const cls = val>0 ? 'score-plus' : (val<0 ? 'score-minus' : '');
     const delta = deltaByIdx[i]!==undefined
       ? ' <span class="score-delta">('+(deltaByIdx[i]>=0?'+':'')+deltaByIdx[i]+')</span>' : '';
-    return '<div class="score-row"><span>'+playerName(i)+'</span><span class="score-total '+cls+'">'+(val>0?'+':'')+val+'</span>'+delta+'</div>';
+    // deltaは合計値のspan内に入れ、行を常に「名前／数値」の2カラムに保つ
+    // （外に置くとflexのspace-betweenで3分割され、行ごとに合計値の位置がずれる）。
+    return '<div class="score-row"><span>'+playerName(i)+'</span><span class="score-total '+cls+'">'+(val>0?'+':'')+val+delta+'</span></div>';
   }).join('');
   board.innerHTML = '<div class="score-board-title">総合成績（'+seasonGames+'戦）</div>'+rows
     +'<button class="score-reset-btn" type="button" onclick="resetSeasonScores()">スコアをリセット</button>';
@@ -1611,6 +1633,7 @@ const CloudSync = (function(){
   let pushTimer = null;
   let pushInFlight = false;
   let pushQueued = false;
+  let lastPushedVersion = -1; // 最後にDriveへ書き込めた（or Driveと一致確認できた）version
 
   // --- 外部依存を差し替え可能にする層（テスト用） ---
   async function driveFetchDoc(){
@@ -1622,13 +1645,14 @@ const CloudSync = (function(){
     const json = await res.json();
     return normalizeCloudDoc(json);
   }
-  async function drivePushDoc(doc){
+  async function drivePushDoc(doc, extraOpts){
     const body = JSON.stringify(doc);
+    const extra = extraOpts || {}; // keepalive:true（ページ破棄間際の送信）等をfetchへ伝える
     let fileId = localStorage.getItem(LS_CLOUD_FILEID) || null;
     if(fileId){
       const res = await driveApi(
         'https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',
-        {method:'PATCH', headers:{'Content-Type':'application/json'}, body});
+        Object.assign({method:'PATCH', headers:{'Content-Type':'application/json'}, body}, extra));
       if(res.status===404){ localStorage.removeItem(LS_CLOUD_FILEID); fileId=null; }
       else if(!res.ok) throw new Error('drive update '+res.status);
     }
@@ -1640,7 +1664,7 @@ const CloudSync = (function(){
         '\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+body+'\r\n--'+boundary+'--';
       const res = await driveApi(
         'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
-        {method:'POST', headers:{'Content-Type':'multipart/related; boundary='+boundary}, body:multipart});
+        Object.assign({method:'POST', headers:{'Content-Type':'multipart/related; boundary='+boundary}, body:multipart}, extra));
       if(!res.ok) throw new Error('drive create '+res.status);
       const j = await res.json();
       if(j.id) localStorage.setItem(LS_CLOUD_FILEID, j.id);
@@ -1774,35 +1798,57 @@ const CloudSync = (function(){
     if(res.action==='adopt'){
       cloudDoc = normalizeCloudDoc(res.data);
       saveCloudDocLocal();
+      lastPushedVersion = cloudDoc.version||0; // Driveと一致した状態
       if(document.getElementById('setupScreen').style.display!=='none') applyRulesFromDoc();
       renderStatsBody();
     } else if(res.action==='push'){
       cloudDoc = normalizeCloudDoc(res.data);
       saveCloudDocLocal();
       await drivePushDoc(cloudDoc);
+      lastPushedVersion = cloudDoc.version||0;
     }
   }
 
   // ローカル変更をDriveへ（デバウンス）。多重防止つき。
+  // 注意：トークンの有効期限が切れていても予約は受け付ける。Googleのアクセストークンは
+  // 約1時間で失効するので、有効期限をゲートにすると「1時間遊んだら以降の成績が
+  // ログイン中の表示のまま同期されない」というサイレント故障になる。失効時は
+  // flushPush側で無音の再取得を試み、それも失敗したら正直にログアウト状態へ落とす。
   function schedulePush(){
-    if(!isReady()) return;
+    if(!cloudConfigured() || !accessToken) return;
     if(pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(()=>{ pushTimer=null; flushPush(); }, 1200);
   }
   async function flushPush(){
-    if(!isReady()) return;
+    if(!cloudConfigured() || !accessToken) return;
     if(pushInFlight){ pushQueued=true; return; }
     pushInFlight = true;
     try{
+      if(Date.now()>=tokenExpiry){
+        await requestToken(false); // 無音でトークンを取り直す（失敗はcatchへ）
+      }
       setState('syncing', '同期中…');
       await drivePushDoc(cloudDoc);
+      lastPushedVersion = cloudDoc.version||0;
       setState('signed_in', '');
     }catch(e){
-      setState('error', '保存に失敗しました');
+      // 再取得も失敗＝実質サインアウト状態。データはローカルに残っており、
+      // 次回ログインでversion比較により正しくDriveへ反映される。
+      accessToken = null;
+      setState('signed_out', '再ログインが必要です（成績はこの端末に保存されています）');
     }finally{
       pushInFlight = false;
       if(pushQueued){ pushQueued=false; flushPush(); }
     }
+  }
+  // タブを閉じる・ホームに戻る直前に、デバウンス待ちの変更を即時送信する。
+  // 通常のfetchはページ破棄で中断されるため keepalive を立てて送る。
+  function flushOnPageHide(){
+    if(!cloudConfigured() || !accessToken || Date.now()>=tokenExpiry) return;
+    if((cloudDoc.version||0)===lastPushedVersion) return;
+    if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; }
+    lastPushedVersion = cloudDoc.version||0;
+    try{ drivePushDoc(cloudDoc, {keepalive:true}); }catch(e){/* 破棄間際なので黙って諦める */}
   }
   function isReady(){ return cloudConfigured() && !!accessToken && Date.now()<tokenExpiry; }
 
@@ -1810,11 +1856,13 @@ const CloudSync = (function(){
 
   // テスト用シーム：Drive I/Oを差し替えて同期ロジックだけを検証できるようにする。
   return {
-    init, signIn, signOut, schedulePush, syncPull,
+    init, signIn, signOut, schedulePush, syncPull, flushOnPageHide,
     getStatus,
     _reconcile: reconcileCloudDoc,
     _setDriveIO(f, p){ driveFetchDoc = f; drivePushDoc = p; },
-    _forceReady(tok){ accessToken = tok || 'test'; tokenExpiry = Date.now()+3600000; }
+    _forceReady(tok){ accessToken = tok || 'test'; tokenExpiry = Date.now()+3600000; },
+    _forceExpired(){ tokenExpiry = 0; },
+    _getInternal(){ return {hasToken: !!accessToken, tokenExpiry, lastPushedVersion}; }
   };
 })();
 
@@ -2213,6 +2261,7 @@ function dealFreshHands(){
   nextStartingPlayerOverride = null;
   lastReceivedCardIds = new Set();
   fastForward = false;
+  resultsRecorded = false;
   gameOver = false;
   selected = new Set();
   logLines = [];
@@ -2930,7 +2979,12 @@ function safeDeclSample(idx, rank, count){
     const rest = palette.filter(c=>!suitLock.includes(c.suit));
     palette = locked.concat(rest);
   }
-  return palette.slice(0, count);
+  const sample = palette.slice(0, count);
+  // 「安全な（seenを避けた）」構成にした結果、しばり等の合法性を満たせなくなる場合がある
+  // （例：しばられたスートのその札が既に公開済みで避けざるを得ない）。非合法な宣言を
+  // CPUが場に出してしまわないよう、最後に必ずルールエンジン本体で検証する。
+  if(!canBeatField(rank, count, sample).ok) return null;
+  return sample;
 }
 
 // ブラフ（または安全なジョーカー代用）として実際に場へ出すcount枚を手札から選ぶ。
@@ -4145,8 +4199,14 @@ function humanDoubt(){
 function showResults(){
   const finalRanking = computeFinalRanking();
   previousFinishedOrder = finalRanking.slice();
-  addSeasonScore(finalRanking);
-  recordCareerResult(finalRanking); // 通算成績を更新し、Driveへ同期
+  // スコア加算は1ゲームにつき厳密に1回。showResultsはゲーム終了検出の複数経路
+  // （通常の上がり・ダウト解決・宣言確定時の保留解除など）から呼ばれるため、
+  // 万一同じゲームで二重に呼ばれても通算成績（永続データ）を汚さないようにする。
+  if(!resultsRecorded){
+    resultsRecorded = true;
+    addSeasonScore(finalRanking);
+    recordCareerResult(finalRanking); // 通算成績を更新し、Driveへ同期
+  }
   const list = document.getElementById('resultList');
   list.innerHTML = finalRanking.map((pIdx, i)=>{
     const title = RANK_TITLES[i] || '';
@@ -4523,6 +4583,10 @@ function returnToSetupScreen(){
   document.getElementById('actionOverlay').classList.remove('show');
   document.getElementById('restoreTab').style.display = 'none';
   pendingAction = null;
+  // 対戦中に別端末の新しい設定をDriveから取り込んだ場合（syncPullは対戦画面表示中の
+  // UI書き換えを保留する）、ここで最新のcloudDoc.rulesをUIへ反映して整合させる。
+  // 通常時は「UI→doc→同じUI」の恒等変換なので副作用はない。
+  if(cloudDoc.rules) applyRulesFromDoc();
   Feedback.setTrack('menu');
 }
 
@@ -4593,9 +4657,29 @@ function initServiceWorker(){
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('service-worker.js').catch(()=>{});
   });
+  // Cache First戦略のため、新バージョン配信後の初回アクセスでは旧キャッシュが表示される。
+  // 新しいService Workerが制御権を取った（＝新キャッシュの準備ができた）タイミングで
+  // 再読み込みを促すトーストを出し、「いつの間にか古いまま遊んでいた」を防ぐ。
+  // controllerchangeは初回インストール時にも発火するので、既に制御中だった場合に限る。
+  const hadController = !!navigator.serviceWorker.controller;
+  if(hadController){
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      showUpdateToast();
+    });
+  }
   if (navigator.storage && navigator.storage.persist) {
     navigator.storage.persist().catch(()=>{});
   }
+}
+function showUpdateToast(){
+  if(document.getElementById('updateToast')) return;
+  const el = document.createElement('div');
+  el.id = 'updateToast';
+  el.className = 'update-toast';
+  el.innerHTML = '新しいバージョンがあります　'
+    + '<button type="button" onclick="location.reload()">再読み込み</button>'
+    + '<button type="button" class="update-toast-close" onclick="this.parentNode.remove()">後で</button>';
+  document.body.appendChild(el);
 }
 
 renderRuleSetup();
@@ -4606,6 +4690,13 @@ loadCloudDoc();
 if(cloudDoc.rules) applyRulesFromDoc();
 renderStatsBody();
 CloudSync.init();
+// タブを閉じる／ホーム画面に戻る直前に、デバウンス待ちの同期を即時送信する
+// （試合終了の1.2秒後にDrive送信が予約されるため、直後に閉じるとその1戦が
+// 乗らない、を防ぐ。pagehideはモバイルSafari含め破棄前に最も確実に飛ぶ）。
+window.addEventListener('pagehide', ()=>{ CloudSync.flushOnPageHide(); });
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden') CloudSync.flushOnPageHide();
+});
 Feedback.init();
 initTapFeedback();
 initErrorScreen();
