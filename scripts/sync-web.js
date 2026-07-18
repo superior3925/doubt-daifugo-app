@@ -14,6 +14,25 @@ fs.mkdirSync(wwwDir, { recursive: true });
 fs.copyFileSync(path.join(root, 'index.html'), path.join(wwwDir, 'index.html'));
 console.log('copied index.html -> www/index.html');
 
+// PWA関連ファイル（manifest・Service Worker）。ネイティブアプリ側では
+// index.html内のガードにより登録されないが、www/ をリポジトリの内容の
+// 忠実なミラーにしておくため一応コピーしておく。
+for (const file of ['manifest.webmanifest', 'service-worker.js']) {
+  const src = path.join(root, file);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.join(wwwDir, file));
+    console.log('copied ' + file);
+  }
+}
+fs.mkdirSync(path.join(wwwDir, 'assets'), { recursive: true });
+for (const file of ['pwa-icon-192.png', 'pwa-icon-512.png']) {
+  const src = path.join(root, 'assets', file);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.join(wwwDir, 'assets', file));
+    console.log('copied assets/' + file);
+  }
+}
+
 if (fs.existsSync(bgmSrc)) {
   fs.mkdirSync(bgmDest, { recursive: true });
   for (const file of fs.readdirSync(bgmSrc)) {

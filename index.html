@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>大富豪</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0c3a2c">
+<link rel="apple-touch-icon" href="assets/pwa-icon-512.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -3891,11 +3894,26 @@ function initAndroidBackButton(){
   CapApp.addListener('backButton', handleAndroidBackButton);
 }
 
+// オフラインプレイ対応のService Worker登録。Capacitorのネイティブアプリは
+// 既にファイル一式がローカルに同梱されているためこの仕組みは不要かつ無関係な
+// ものなので、そちらでは登録しない（Web版／PWA版だけの機能）。
+function initServiceWorker(){
+  const isNative = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+  if (isNative || !('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(()=>{});
+  }
+}
+
 renderRuleSetup();
 Feedback.init();
 initTapFeedback();
 initErrorScreen();
 initAndroidBackButton();
+initServiceWorker();
 Feedback.setTrack('menu');  // 最初のユーザー操作で実際に再生が始まる
 </script>
 </body>

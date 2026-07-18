@@ -1,0 +1,15 @@
+{
+  "name": "ダウト大富豪",
+  "short_name": "ダウト大富豪",
+  "description": "宣言し、伏せ、見抜く。CPU3人と対戦する大富豪アプリ（ダウト大富豪モード搭載）",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c3a2c",
+  "theme_color": "#0c3a2c",
+  "lang": "ja",
+  "icons": [
+    { "src": "assets/pwa-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/pwa-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

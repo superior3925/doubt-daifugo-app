@@ -6,7 +6,8 @@
     "sync:web": "node scripts/sync-web.js",
     "android:sync": "npm run sync:web && npx cap sync android",
     "android:open": "npm run sync:web && npx cap open android",
-    "assets:generate": "node scripts/generate-icon-assets.js && npx capacitor-assets generate --android"
+    "assets:generate": "node scripts/generate-icon-assets.js && npx capacitor-assets generate --android",
+    "dev": "node scripts/dev-server.js"
   },
   "repository": {
     "type": "git",

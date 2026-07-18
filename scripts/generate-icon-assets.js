@@ -70,6 +70,9 @@ async function main(){
   await sharp(Buffer.from(iconForeground)).resize(1024,1024).png().toFile(path.join(outDir, 'icon-foreground.png'));
   await sharp(Buffer.from(iconOnly)).resize(1024,1024).png().toFile(path.join(outDir, 'icon-only.png'));
   await sharp(Buffer.from(splash)).resize(2732,2732).png().toFile(path.join(outDir, 'splash.png'));
-  console.log('generated icon-background.png, icon-foreground.png, icon-only.png, splash.png in assets/');
+  // PWA（ホーム画面に追加）用のマニフェストアイコン。フラット版（iconOnly）を流用する。
+  await sharp(Buffer.from(iconOnly)).resize(192,192).png().toFile(path.join(outDir, 'pwa-icon-192.png'));
+  await sharp(Buffer.from(iconOnly)).resize(512,512).png().toFile(path.join(outDir, 'pwa-icon-512.png'));
+  console.log('generated icon-background.png, icon-foreground.png, icon-only.png, splash.png, pwa-icon-192.png, pwa-icon-512.png in assets/');
 }
 main().catch(e=>{ console.error(e); process.exit(1); });

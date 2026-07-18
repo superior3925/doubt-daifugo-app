@@ -92,6 +92,31 @@ BGMを鳴らすには、以下の名前で mp3 を `assets/bgm/` に置いてく
 - すべて [index.html](index.html) 一つに完結しており、ブラウザで開くだけで動作します
 - BGM音源のみ `assets/bgm/` に配置（リポジトリ管理外）
 
+## PWA対応（オフラインプレイ・ホーム画面への追加）
+
+Mac・Xcode・App Storeを使わずにiPhone等でも遊べるよう、Webデプロイ版（例: Vercel）はPWA（Progressive Web App）としてオフラインプレイに対応しています。
+
+- `manifest.webmanifest` … アプリ名・アイコン・起動時の見た目（standalone表示）を定義
+- `service-worker.js` … Cache First戦略でHTML本体とアイコンをキャッシュ。一度読み込めば、機内モードなどネットが無い状態でも起動・プレイできます
+- キャッシュは日数経過で自動的には失効しません。デザインやロジックを更新して配信し直した場合は、`service-worker.js` 内の `CACHE_NAME` の値を変更してください（変更するとactivate時に古いキャッシュが破棄され、次回オンライン時に新しい内容が取り込まれます）
+- Capacitor経由のネイティブAndroidアプリ側では、この仕組みは無関係のため登録されません（`index.html`内の`initServiceWorker()`が`Capacitor.isNativePlatform()`を見て自動的にスキップします）
+
+### 使い方（iPhone / Safari）
+
+1. デプロイ済みのURLをSafariで開く
+2. 共有メニューから「ホーム画面に追加」
+3. ホーム画面のアイコンから起動すればOK（以降はオフラインでも起動できます）
+
+### ローカルでの動作確認
+
+Service Workerは`file://`では動作しないため（http(s)オリジンが必要）、簡易サーバーを用意しています。
+
+```
+npm run dev
+```
+
+`http://localhost:5500` で確認できます（`scripts/dev-server.js`、依存ライブラリなしの最小限の静的ファイルサーバーです）。
+
 ## Android版（Capacitor）
 
 Web版のソース（[index.html](index.html)）はそのまま残し、[Capacitor](https://capacitorjs.com/) でネイティブのAndroidプロジェクト（`android/`）をラップする構成にしています。`index.html` を書き換えれば、Web版・Android版の両方に反映されます。
