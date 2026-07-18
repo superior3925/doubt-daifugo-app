@@ -1324,7 +1324,7 @@ const RULE_DEFS = [
   {key:'revolutionRule', label:'革命', desc:'同じランクを4枚出すと、強さの順序が逆転します（特定の数字に限らないため番号なし）。', category:'number'},
 
   // しばり・特殊ルール系
-  {key:'suitLock', label:'スートしばり', desc:'直前のプレイと今回のプレイが共通のスートを含むと（2枚出し等でも片方一致でOK）、以降そのトリック中は該当スートを含めないと出せなくなります。', category:'lock'},
+  {key:'suitLock', label:'スートしばり', desc:'直前のプレイと今回のプレイが共通のスートを含むと（2枚出し等でも一致した分だけ）、以降そのトリック中は共通したスートすべてを含めないと出せなくなります。共通スートが増えると縛りも増えます。', category:'lock'},
   {key:'numberLock', label:'数しばり', desc:'連続する数字が出されると、次は一つ上の数字しか出せません（11バックや革命中は逆方向）。', category:'lock'},
   {key:'jokers', label:'ジョーカー', desc:'山札にジョーカーを1〜8枚（デフォルト2枚）追加。単騎最強、組み合わせではワイルドカードとしても使えます。', category:'lock'},
   {key:'forbiddenWin', label:'禁止上がり', desc:'特定条件で上がると反則になり、その時点で最下位候補になります（複数人反則時、後の反則ほど上位）。下から条件を選べます。', category:'lock'},
@@ -1947,8 +1947,8 @@ function sampleDecl(rank, count){
   if(rank==='JOKER') return palette.slice(0, count);
   let ordered = palette;
   if(rules.suitLock && suitLock){
-    const locked = palette.filter(c=>c.suit===suitLock);
-    ordered = locked.concat(palette.filter(c=>c.suit!==suitLock));
+    const locked = palette.filter(c=>suitLock.includes(c.suit));
+    ordered = locked.concat(palette.filter(c=>!suitLock.includes(c.suit)));
   }
   return ordered.slice(0, count);
 }
@@ -2515,7 +2515,9 @@ function canBeatField(rank, count, cards){
     if(effStrength(rank) <= effStrength(field.rank)) return { ok:false, reason:'その組み合わせは出せません' };
   }
   if(rules.suitLock && suitLock && !isPureJoker){
-    if(!cards.some(c=>c.suit===suitLock)) return { ok:false, reason:'スートしばり中：'+suitLock+'を含めて出してください' };
+    // 複数スートがロックされている場合は、そのすべてを実カードで含める必要がある。
+    const missing = suitLock.filter(s=>!cards.some(c=>c.suit===s));
+    if(missing.length>0) return { ok:false, reason:'スートしばり中：'+suitLock.join('と')+'を含めて出してください' };
   }
   return { ok:true };
 }
@@ -2526,19 +2528,20 @@ function updateLocksAfterPlay(prevField, rank, count, cards, wasSpade3Counter, p
     return;
   }
 
-  // Suit lock: activates as soon as this play shares at least one suit with the play it beat
-  // (from the 2nd matching play onward), regardless of how many cards are in each play. A pair
-  // of [3♦,3♣] followed by a pair of [5♦,5♥] locks ♦ specifically, since that's the suit both
-  // plays have in common. Once locked, any later play just needs to include that suit somewhere.
+  // Suit lock: activates as soon as this play shares suits with the play it beat (from the 2nd
+  // matching play onward), regardless of how many cards are in each play. The lock is the FULL
+  // set of suits the two consecutive plays have in common - not just one of them. A pair of
+  // [3♦,3♠] beaten by [5♦,5♣] shares only ♦, so ♦ locks; if that is then beaten by [7♦,7♣]
+  // (which shares both ♦ and ♣ with the [5♦,5♣] before it) the lock grows to {♦,♣}, and every
+  // later play must include all locked suits.
   const thisSuits = new Set(cards.filter(c=>c.suit).map(c=>c.suit));
   if(rules.suitLock){
     if(prevPlaySuits){
       const common = [...thisSuits].filter(s=>prevPlaySuits.has(s));
       if(common.length>0){
-        if(!(suitLock && common.includes(suitLock))){
-          suitLock = common[0];
-          log('スートしばり発動：'+suitLock+'を含めて出してください');
-        }
+        const changed = !suitLock || suitLock.length!==common.length || common.some(s=>!suitLock.includes(s));
+        suitLock = common;
+        if(changed) log('スートしばり発動：'+suitLock.join('と')+'を含めて出してください');
       } else {
         suitLock = null;
       }
@@ -2923,8 +2926,8 @@ function safeDeclSample(idx, rank, count){
   let palette = declPalette(rank).filter(item=>!seen.has(declaredItemGoneId(item)));
   if(palette.length < count) return null;
   if(rules.suitLock && suitLock && rank!=='JOKER'){
-    const locked = palette.filter(c=>c.suit===suitLock);
-    const rest = palette.filter(c=>c.suit!==suitLock);
+    const locked = palette.filter(c=>suitLock.includes(c.suit));
+    const rest = palette.filter(c=>!suitLock.includes(c.suit));
     palette = locked.concat(rest);
   }
   return palette.slice(0, count);
@@ -3132,13 +3135,15 @@ function gatherFollowCandidates(hand, groups){
       if(effStrength(r) <= effStrength(field.rank)) continue;
     }
     if(rules.suitLock && suitLock && !isPureJokerR){
-      if(!groups[r].some(c=>c.suit===suitLock)) continue;
+      // ロックされたスートすべてを、このランクの実カードで賄えなければ出せない。
+      if(!suitLock.every(s=>groups[r].some(c=>c.suit===s))) continue;
     }
     let cardsToPlay;
     if(rules.suitLock && suitLock && !isPureJokerR){
-      const suitCard = groups[r].find(c=>c.suit===suitLock);
-      const rest = groups[r].filter(c=>c!==suitCard).slice(0, field.count-1);
-      cardsToPlay = [suitCard, ...rest];
+      // ロックされた各スートを1枚ずつ確保し、残り枚数を他の札で埋める。
+      const lockedCards = suitLock.map(s=>groups[r].find(c=>c.suit===s));
+      const rest = groups[r].filter(c=>!lockedCards.includes(c)).slice(0, field.count-lockedCards.length);
+      cardsToPlay = lockedCards.concat(rest);
     } else {
       cardsToPlay = groups[r].slice(0, field.count);
     }
@@ -4008,10 +4013,11 @@ function computePlayableCardIds(){
         // includes a locked-suit card when one is available for this rank.
         let realPart;
         if(rules.suitLock && suitLock){
-          const suitCard = realCards.find(c=>c.suit===suitLock);
-          realPart = suitCard
-            ? [suitCard].concat(realCards.filter(c=>c!==suitCard).slice(0, count-neededJokers-1))
-            : realCards.slice(0, count-neededJokers);
+          // ロックされた各スートの実カードを優先的に確保してからサンプルを組む。
+          // 揃わない（＝そのスートを持っていない）場合はそのままcanBeatFieldで弾かれる。
+          const lockedCards = suitLock.map(s=>realCards.find(c=>c.suit===s)).filter(Boolean);
+          const rest = realCards.filter(c=>!lockedCards.includes(c)).slice(0, Math.max(0, count-neededJokers-lockedCards.length));
+          realPart = lockedCards.concat(rest);
         } else {
           realPart = realCards.slice(0, count-neededJokers);
         }
@@ -4208,7 +4214,7 @@ function render(){
   if(revolution) flagParts.push('<div class="flag">革命中（強さ逆転）</div>');
   if(elevenBack) flagParts.push('<div class="flag">11バック中</div>');
   if(turnDirection===-1) flagParts.push('<div class="flag">プレー順：逆回り</div>');
-  if(rules.suitLock && suitLock) flagParts.push('<div class="flag">スートしばり：'+suitLock+'</div>');
+  if(rules.suitLock && suitLock) flagParts.push('<div class="flag">スートしばり：'+suitLock.join('・')+'</div>');
   if(rules.numberLock && numberLock) flagParts.push('<div class="flag">数しばり：次は'+numberLock+'</div>');
   if(field && field.rank==='8' && rules.fourStop && !field.pendingClear) flagParts.push('<div class="flag">8切り成立待ち（4止め：4×'+(field.count*2)+'）</div>');
   if(field && field.pendingClear) flagParts.push('<div class="flag">'+pendingClearLabel(field.pendingClear)+'成立待ち（他の人がダウトかパスをするまで確定しません）</div>');
