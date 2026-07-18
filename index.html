@@ -618,6 +618,45 @@
   }
   .skip-btn.active{ background:var(--gold); color:#2b2200; }
 
+  /* クラウド同期＆成績バー（セットアップ画面上部） */
+  .cloud-bar{
+    max-width:980px; margin:0 auto 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    justify-content:space-between;
+    background:rgba(0,0,0,0.35); border:1px solid var(--gold); border-radius:14px; padding:10px 18px;
+  }
+  .cloud-status{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:#e8e2cf; min-width:0; }
+  .cloud-dot{ width:9px; height:9px; border-radius:50%; background:#7d7d7d; flex-shrink:0; }
+  .cloud-dot.on{ background:#3ecf8e; box-shadow:0 0 7px rgba(62,207,142,0.8); }
+  .cloud-dot.syncing{ background:var(--gold-soft); box-shadow:0 0 7px rgba(231,205,123,0.8); animation:cloudPulse 1s ease-in-out infinite; }
+  .cloud-dot.err{ background:var(--doubt); box-shadow:0 0 7px rgba(192,57,43,0.8); }
+  @keyframes cloudPulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+  .cloud-status-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cloud-status-text b{ color:var(--gold-soft); }
+  .cloud-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cloud-btn{
+    background:transparent; border:1px solid var(--gold); color:var(--gold-soft);
+    padding:5px 14px; border-radius:999px; font-size:11.5px; cursor:pointer; font-family:inherit; white-space:nowrap;
+  }
+  .cloud-btn.primary{ background:var(--gold); color:#2b2200; font-weight:700; }
+  .cloud-btn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  .stats-card{ width:360px; }
+  .stats-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:8px 0 4px;
+  }
+  .stat-tile{
+    background:rgba(166,50,31,0.06); border:1px solid #e0d6bc; border-radius:10px; padding:10px 8px; text-align:center;
+  }
+  .stat-tile .stat-num{ font-family:'Shippori Mincho', serif; font-weight:800; font-size:22px; color:var(--red-hanko); line-height:1.1; }
+  .stat-tile .stat-label{ font-size:11px; color:#6d6250; margin-top:3px; }
+  .stats-ranks{ margin-top:10px; }
+  .stats-rank-row{
+    display:flex; justify-content:space-between; padding:5px 6px; font-size:13px; border-bottom:1px solid #eadfc6;
+  }
+  .stats-rank-row:last-child{ border-bottom:none; }
+  .stats-rank-row .stats-rank-name{ font-family:'Shippori Mincho', serif; font-weight:700; }
+  .stats-sync-note{ font-size:11px; color:#8a7c55; margin-top:12px; line-height:1.5; text-align:center; }
+
   .modal-minimize{
     position:absolute; top:10px; right:12px;
     width:26px; height:26px; border-radius:50%;
@@ -807,6 +846,17 @@
   <div class="subtitle" id="appSubtitle">DAIFUGO &mdash; 拡張ルール対応版</div>
 
   <div id="setupScreen">
+    <div class="cloud-bar">
+      <div class="cloud-status">
+        <span class="cloud-dot" id="cloudDot"></span>
+        <span class="cloud-status-text" id="cloudStatusText">対戦成績はこの端末に保存されます</span>
+      </div>
+      <div class="cloud-actions" id="cloudActions">
+        <button class="cloud-btn" id="statsBtn" type="button">📊 成績を見る</button>
+        <button class="cloud-btn primary" id="cloudSignInBtn" type="button" style="display:none;">Googleでログイン</button>
+        <button class="cloud-btn" id="cloudSignOutBtn" type="button" style="display:none;">ログアウト</button>
+      </div>
+    </div>
     <div class="mode-toggle-block">
       <label class="switch"><input type="checkbox" id="doubtModeToggle"><span class="slider"></span></label>
       <div>
@@ -927,6 +977,14 @@
 
 <div class="overlay" id="historyOverlay">
   <div class="result-card" id="historyCard"></div>
+</div>
+
+<div class="overlay" id="statsOverlay">
+  <div class="result-card stats-card">
+    <h2>あなたの通算成績</h2>
+    <div id="statsBody"></div>
+    <button class="action play" id="statsCloseBtn" type="button" style="margin-top:16px;">閉じる</button>
+  </div>
 </div>
 
 <div class="cut-in" id="cutInHost"></div>
@@ -1373,6 +1431,462 @@ function renderScoreBoard(lastRanking){
   board.innerHTML = '<div class="score-board-title">総合成績（'+seasonGames+'戦）</div>'+rows
     +'<button class="score-reset-btn" type="button" onclick="resetSeasonScores()">スコアをリセット</button>';
 }
+
+/* =====================================================================
+   通算成績（キャリア統計）＋ Google Drive 同期
+   -------------------------------------------------------------------
+   ・cloudDoc … 端末に保存し、Google Driveへ同期する唯一のデータ本体。
+       { schema, version, updatedAt, career:{games,score,rankCounts[4]},
+         rules:{doubtMode,cpuLevel,jokerCount,flags:{...}} }
+   ・version は「ローカルで何か変わるたびに +1」する単調増加カウンタ。
+       これと「読み込み中にローカルが変わったか（dirty）」の2つで、
+       Driveの古いデータがローカルの新しい変更を上書きする事故を防ぐ。
+   ・Drive I/O（driveFetchDoc / drivePushDoc）は差し替え可能にしてあり、
+       OAuthを使わずに同期ロジックだけを単体テストできるようにしている。
+   ===================================================================== */
+
+// ▼▼▼ Google Cloud Console で発行したOAuthクライアントID（ウェブアプリ）を貼り付けてください ▼▼▼
+//     未設定（空 or プレースホルダのまま）ならクラウド同期は自動的に無効化され、
+//     成績はこの端末のlocalStorageにのみ保存されます（ゲームは通常どおり動作）。
+//     設定手順は README「Google Drive連携（対戦成績のクラウド保存）」を参照。
+const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const DRIVE_FILENAME = 'doubt-daifugo-save.json';
+const LS_CLOUD_DOC = 'ddf_cloud_doc';
+const LS_CLOUD_OPTIN = 'ddf_cloud_optin';   // '1'なら次回起動時に自動ログインを試みる
+const LS_CLOUD_FILEID = 'ddf_cloud_fileid';
+
+function cloudConfigured(){
+  return typeof GOOGLE_CLIENT_ID==='string'
+    && GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE_CLIENT_ID')!==0
+    && GOOGLE_CLIENT_ID.indexOf('.apps.googleusercontent.com')>0;
+}
+
+function emptyCareer(){ return {games:0, score:0, rankCounts:[0,0,0,0]}; }
+function newCloudDoc(){
+  return {schema:1, version:0, updatedAt:0, career:emptyCareer(), rules:null};
+}
+let cloudDoc = newCloudDoc();
+
+function loadCloudDoc(){
+  try{
+    const raw = localStorage.getItem(LS_CLOUD_DOC);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed && typeof parsed==='object'){
+        cloudDoc = normalizeCloudDoc(parsed);
+        return;
+      }
+    }
+  }catch(e){/* 壊れていたら作り直す */}
+  cloudDoc = newCloudDoc();
+}
+// 外部（Drive）由来の可能性もあるデータを、期待する形に整える。想定外の値で
+// UIやスコア加算が壊れないための防御。
+function normalizeCloudDoc(d){
+  const out = newCloudDoc();
+  out.schema = 1;
+  out.version = Number.isFinite(d.version) ? d.version : 0;
+  out.updatedAt = Number.isFinite(d.updatedAt) ? d.updatedAt : 0;
+  const c = d.career || {};
+  out.career = {
+    games: Number.isFinite(c.games) ? c.games : 0,
+    score: Number.isFinite(c.score) ? c.score : 0,
+    rankCounts: (Array.isArray(c.rankCounts) && c.rankCounts.length===4)
+      ? c.rankCounts.map(n=>Number.isFinite(n)?n:0) : [0,0,0,0]
+  };
+  out.rules = (d.rules && typeof d.rules==='object') ? d.rules : null;
+  return out;
+}
+function saveCloudDocLocal(){
+  try{ localStorage.setItem(LS_CLOUD_DOC, JSON.stringify(cloudDoc)); }catch(e){/* 無視 */}
+}
+// ローカルで何かが変わった時に呼ぶ。version を進め、保存し、Driveへ（デバウンスで）送る。
+function markCloudDocChanged(){
+  cloudDoc.version = (cloudDoc.version||0) + 1;
+  cloudDoc.updatedAt = Date.now();
+  saveCloudDocLocal();
+  CloudSync.schedulePush();
+}
+
+// ---- 通算成績の記録 ----
+function recordCareerResult(finalRanking){
+  const pos = finalRanking.indexOf(0); // 人間プレイヤーの最終順位（0=大富豪）
+  if(pos<0) return;
+  cloudDoc.career.games += 1;
+  cloudDoc.career.score += SCORE_BY_RANK[pos];
+  cloudDoc.career.rankCounts[pos] += 1;
+  markCloudDocChanged();
+}
+function resetCareerStats(){
+  cloudDoc.career = emptyCareer();
+  markCloudDocChanged();
+  renderStatsBody();
+}
+
+// ---- ルール設定 <-> cloudDoc.rules ----
+function captureRulesToDoc(){
+  const flags = {};
+  RULE_DEFS.forEach(r=>{
+    const cb = document.getElementById('rule_'+r.key);
+    if(cb) flags[r.key] = cb.checked;
+  });
+  const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
+  cloudDoc.rules = {
+    doubtMode: document.getElementById('doubtModeToggle').checked,
+    cpuLevel: levelInput ? levelInput.value : 'normal',
+    jokerCount: jokerCount,
+    flags: flags
+  };
+}
+// cloudDoc.rules を UI（チェックボックス・トグル・CPUレベル・ジョーカー数）へ反映。
+// Driveから新しい設定を受け入れた時などに使う。
+function applyRulesFromDoc(){
+  const r = cloudDoc.rules;
+  if(!r) return;
+  if(r.flags){
+    RULE_DEFS.forEach(rd=>{
+      const cb = document.getElementById('rule_'+rd.key);
+      if(cb && typeof r.flags[rd.key]==='boolean') cb.checked = r.flags[rd.key];
+    });
+  }
+  if(typeof r.jokerCount==='number'){
+    jokerCount = Math.max(1, Math.min(8, r.jokerCount));
+    const disp = document.getElementById('jokerCountDisplay');
+    if(disp) disp.textContent = jokerCount;
+  }
+  if(typeof r.doubtMode==='boolean'){
+    document.getElementById('doubtModeToggle').checked = r.doubtMode;
+    applyDoubtTheme(r.doubtMode);
+  }
+  if(r.cpuLevel){
+    const radio = document.querySelector('input[name="cpuLevelChoice"][value="'+r.cpuLevel+'"]');
+    if(radio) radio.checked = true;
+  }
+  syncSubRuleStates();
+  syncJokerStepperState();
+}
+// ルール設定が変わった時（チェックボックス等）に呼ぶ共通ハンドラ。
+function onRulesChanged(){
+  captureRulesToDoc();
+  markCloudDocChanged();
+}
+
+/* ---- 同期の中核：純粋関数として切り出し、あらゆる競合パターンを単体テストする ----
+   local  … いま端末が持っている cloudDoc
+   remote … Driveから読んだ cloudDoc（無ければ null）
+   dirty  … 「Driveを読んでいる最中にローカルが変更されたか」
+   返り値 … { action:'push'|'adopt'|'none', data: 反映すべきdoc }
+     push  … data をDriveへ書き込む（ローカルの変更を守る）
+     adopt … data をローカルへ取り込む（別端末の新しい成績・設定を受け入れる）
+     none  … 何もしない（既に一致） */
+function reconcileCloudDoc(local, remote, dirty){
+  if(!remote) return {action:'push', data: local};
+  if(!local)  return {action:'adopt', data: remote};
+  const lv = local.version||0, rv = remote.version||0;
+  if(dirty){
+    // 読み込み中にユーザーが操作した＝ローカルの意思を絶対に消さない。
+    // ただし別端末で進んだ試合数は失いたくないので、成績だけは多い方を採用する。
+    const data = JSON.parse(JSON.stringify(local));
+    if(remote.career && (!data.career || remote.career.games > data.career.games)){
+      data.career = remote.career;
+    }
+    data.version = Math.max(lv, rv) + 1;
+    return {action:'push', data};
+  }
+  if(rv > lv) return {action:'adopt', data: remote};
+  if(lv > rv) return {action:'push', data: local};
+  // バージョン同値かつローカル未変更 → クラウドを正とみなして収束させる（安全）。
+  return {action:'adopt', data: remote};
+}
+
+const CloudSync = (function(){
+  let gisLoaded = false;
+  let tokenClient = null;
+  let accessToken = null;
+  let tokenExpiry = 0;
+  let account = null;         // {email} 表示用
+  let state = 'idle';         // idle|signed_out|syncing|signed_in|error
+  let statusDetail = '';
+  let pushTimer = null;
+  let pushInFlight = false;
+  let pushQueued = false;
+
+  // --- 外部依存を差し替え可能にする層（テスト用） ---
+  async function driveFetchDoc(){
+    const fileId = await findFileId();
+    if(!fileId) return null;
+    const res = await driveApi('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media');
+    if(res.status===404){ localStorage.removeItem(LS_CLOUD_FILEID); return null; }
+    if(!res.ok) throw new Error('drive fetch '+res.status);
+    const json = await res.json();
+    return normalizeCloudDoc(json);
+  }
+  async function drivePushDoc(doc){
+    const body = JSON.stringify(doc);
+    let fileId = localStorage.getItem(LS_CLOUD_FILEID) || null;
+    if(fileId){
+      const res = await driveApi(
+        'https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',
+        {method:'PATCH', headers:{'Content-Type':'application/json'}, body});
+      if(res.status===404){ localStorage.removeItem(LS_CLOUD_FILEID); fileId=null; }
+      else if(!res.ok) throw new Error('drive update '+res.status);
+    }
+    if(!fileId){
+      const boundary = 'ddf'+Math.random().toString(36).slice(2);
+      const meta = {name: DRIVE_FILENAME, parents:['appDataFolder']};
+      const multipart =
+        '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta)+
+        '\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+body+'\r\n--'+boundary+'--';
+      const res = await driveApi(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+        {method:'POST', headers:{'Content-Type':'multipart/related; boundary='+boundary}, body:multipart});
+      if(!res.ok) throw new Error('drive create '+res.status);
+      const j = await res.json();
+      if(j.id) localStorage.setItem(LS_CLOUD_FILEID, j.id);
+    }
+  }
+  async function findFileId(){
+    const cached = localStorage.getItem(LS_CLOUD_FILEID);
+    if(cached) return cached;
+    const res = await driveApi('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder'
+      +'&fields=files(id,modifiedTime)&q='+encodeURIComponent("name='"+DRIVE_FILENAME+"'")+'&orderBy=modifiedTime desc');
+    if(!res.ok) throw new Error('drive list '+res.status);
+    const j = await res.json();
+    if(j.files && j.files.length){ localStorage.setItem(LS_CLOUD_FILEID, j.files[0].id); return j.files[0].id; }
+    return null;
+  }
+  // 401なら一度だけ静かにトークンを取り直して再試行する。
+  async function driveApi(url, opts, _retried){
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers, {Authorization:'Bearer '+accessToken});
+    const res = await fetch(url, opts);
+    if(res.status===401 && !_retried){
+      try{ await requestToken(false); return driveApi(url, {method:opts.method, headers:opts.headers, body:opts.body}, true); }
+      catch(e){/* 落ちればそのまま401を返す */}
+    }
+    return res;
+  }
+
+  function loadGis(){
+    if(gisLoaded) return Promise.resolve();
+    return new Promise((resolve,reject)=>{
+      if(window.google && google.accounts && google.accounts.oauth2){ gisLoaded=true; return resolve(); }
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true; s.defer = true;
+      s.onload = ()=>{ gisLoaded=true; resolve(); };
+      s.onerror = ()=>reject(new Error('GIS読み込み失敗'));
+      document.head.appendChild(s);
+    });
+  }
+  function ensureTokenClient(){
+    if(tokenClient) return;
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID, scope: DRIVE_SCOPE, callback: ()=>{}
+    });
+  }
+  // interactive=true でユーザー操作あり（同意画面が出得る）、false で無音の再取得。
+  function requestToken(interactive){
+    return new Promise((resolve,reject)=>{
+      ensureTokenClient();
+      tokenClient.callback = (resp)=>{
+        if(resp && resp.access_token){
+          accessToken = resp.access_token;
+          tokenExpiry = Date.now() + ((resp.expires_in?resp.expires_in:3600)*1000) - 60000;
+          resolve(accessToken);
+        } else { reject(new Error(resp && resp.error ? resp.error : 'no_token')); }
+      };
+      tokenClient.error_callback = (err)=>reject(err || new Error('token_error'));
+      try{ tokenClient.requestAccessToken({prompt: interactive ? '' : 'none'}); }
+      catch(e){ reject(e); }
+    });
+  }
+  async function fetchAccount(){
+    try{
+      const res = await driveApi('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)');
+      if(res.ok){ const j = await res.json(); if(j.user) account = {email: j.user.emailAddress || j.user.displayName || 'ログイン中'}; }
+    }catch(e){/* 表示名が取れなくても致命的ではない */}
+  }
+
+  function setState(s, detail){ state=s; statusDetail=detail||''; renderCloudStatus(); }
+
+  // 起動時：opt-in済みなら無音ログイン→同期。未opt-inでも設定済みならボタンだけ出す。
+  async function init(){
+    renderCloudStatus();
+    if(!cloudConfigured()){ renderCloudStatus(); return; }
+    if(localStorage.getItem(LS_CLOUD_OPTIN)!=='1'){ setState('signed_out'); return; }
+    if(typeof navigator!=='undefined' && navigator.onLine===false){
+      setState('signed_out', 'オフライン中（成績はこの端末に保存されます）');
+      return;
+    }
+    try{
+      setState('syncing', 'ログイン中…');
+      await loadGis();
+      await requestToken(false);
+      await afterSignedIn();
+    }catch(e){
+      // 無音ログインに失敗（セッション切れ・オフライン等）→ 手動ログインを促す。
+      const offline = (typeof navigator!=='undefined' && navigator.onLine===false);
+      setState('signed_out', offline ? 'オフライン中（成績はこの端末に保存されます）' : '再ログインが必要です');
+    }
+  }
+  async function signIn(){
+    if(!cloudConfigured()) return;
+    try{
+      setState('syncing', 'ログイン中…');
+      await loadGis();
+      await requestToken(true);
+      localStorage.setItem(LS_CLOUD_OPTIN, '1');
+      await afterSignedIn();
+    }catch(e){
+      setState('error', 'ログインできませんでした');
+    }
+  }
+  function signOut(){
+    if(accessToken && window.google && google.accounts && google.accounts.oauth2){
+      try{ google.accounts.oauth2.revoke(accessToken, ()=>{}); }catch(e){/* 無視 */}
+    }
+    accessToken = null; tokenExpiry = 0; account = null;
+    localStorage.removeItem(LS_CLOUD_OPTIN);
+    localStorage.removeItem(LS_CLOUD_FILEID);
+    setState('signed_out', '');
+  }
+  async function afterSignedIn(){
+    setState('syncing', '同期中…');
+    // ダウンロード系の非同期を始める前に基準バージョンを固定する。これ以降に
+    // ユーザーが設定を変えたら（version が動く）dirty と判定し、Driveの内容で
+    // ローカルの新しい変更を上書きしない。fetchAccount中の操作も取りこぼさない。
+    const baseline = cloudDoc.version||0;
+    await fetchAccount();
+    await syncPull(baseline);
+    if(state!=='error') setState('signed_in', '');
+    renderStatsBody();
+  }
+
+  // Driveから読み、reconcileして、必要なら取り込み or 書き込みする。
+  // baseline を渡すと「その時点以降にローカルが変わったか」をdirty判定に使う。
+  async function syncPull(baseline){
+    const verBefore = (typeof baseline==='number') ? baseline : (cloudDoc.version||0);
+    const remote = await driveFetchDoc();
+    const dirty = (cloudDoc.version||0) !== verBefore; // 読み込み中にローカルが変わった
+    const res = reconcileCloudDoc(cloudDoc, remote, dirty);
+    if(res.action==='adopt'){
+      cloudDoc = normalizeCloudDoc(res.data);
+      saveCloudDocLocal();
+      if(document.getElementById('setupScreen').style.display!=='none') applyRulesFromDoc();
+      renderStatsBody();
+    } else if(res.action==='push'){
+      cloudDoc = normalizeCloudDoc(res.data);
+      saveCloudDocLocal();
+      await drivePushDoc(cloudDoc);
+    }
+  }
+
+  // ローカル変更をDriveへ（デバウンス）。多重防止つき。
+  function schedulePush(){
+    if(!isReady()) return;
+    if(pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(()=>{ pushTimer=null; flushPush(); }, 1200);
+  }
+  async function flushPush(){
+    if(!isReady()) return;
+    if(pushInFlight){ pushQueued=true; return; }
+    pushInFlight = true;
+    try{
+      setState('syncing', '同期中…');
+      await drivePushDoc(cloudDoc);
+      setState('signed_in', '');
+    }catch(e){
+      setState('error', '保存に失敗しました');
+    }finally{
+      pushInFlight = false;
+      if(pushQueued){ pushQueued=false; flushPush(); }
+    }
+  }
+  function isReady(){ return cloudConfigured() && !!accessToken && Date.now()<tokenExpiry; }
+
+  function getStatus(){ return {state, detail:statusDetail, account}; }
+
+  // テスト用シーム：Drive I/Oを差し替えて同期ロジックだけを検証できるようにする。
+  return {
+    init, signIn, signOut, schedulePush, syncPull,
+    getStatus,
+    _reconcile: reconcileCloudDoc,
+    _setDriveIO(f, p){ driveFetchDoc = f; drivePushDoc = p; },
+    _forceReady(tok){ accessToken = tok || 'test'; tokenExpiry = Date.now()+3600000; }
+  };
+})();
+
+function renderCloudStatus(){
+  const dot = document.getElementById('cloudDot');
+  const text = document.getElementById('cloudStatusText');
+  const signInBtn = document.getElementById('cloudSignInBtn');
+  const signOutBtn = document.getElementById('cloudSignOutBtn');
+  if(!dot || !text) return;
+  const st = CloudSync.getStatus();
+  dot.className = 'cloud-dot';
+  if(!cloudConfigured()){
+    text.innerHTML = '対戦成績はこの端末に保存されます <span style="opacity:0.7;">（Google連携は未設定）</span>';
+    signInBtn.style.display = 'none';
+    signOutBtn.style.display = 'none';
+    return;
+  }
+  if(st.state==='signed_in'){
+    dot.classList.add('on');
+    text.innerHTML = 'ログイン中: <b>'+(st.account && st.account.email ? st.account.email : 'Googleアカウント')+'</b>・成績はGoogle Driveに同期されます';
+    signInBtn.style.display = 'none';
+    signOutBtn.style.display = 'inline-block';
+  } else if(st.state==='syncing'){
+    dot.classList.add('syncing');
+    text.textContent = st.detail || '同期中…';
+    signInBtn.style.display = 'none';
+    signOutBtn.style.display = 'none';
+  } else if(st.state==='error'){
+    dot.classList.add('err');
+    text.textContent = st.detail || 'エラーが発生しました';
+    signInBtn.style.display = 'inline-block';
+    signOutBtn.style.display = 'none';
+  } else {
+    text.innerHTML = 'Googleでログインすると、成績を複数端末で引き継げます'
+      + (st.detail ? ' <span style="opacity:0.7;">（'+st.detail+'）</span>' : '');
+    signInBtn.style.display = 'inline-block';
+    signOutBtn.style.display = 'none';
+  }
+}
+
+function renderStatsBody(){
+  const el = document.getElementById('statsBody');
+  if(!el) return;
+  const c = cloudDoc.career;
+  const games = c.games||0;
+  const daifugoRate = games>0 ? Math.round((c.rankCounts[0]/games)*100) : 0;
+  const scoreStr = (c.score>0?'+':'')+c.score;
+  const tiles = [
+    {num: games, label:'総プレイ数'},
+    {num: scoreStr, label:'総合点'},
+    {num: daifugoRate+'%', label:'大富豪率'},
+    {num: (games>0?Math.round((c.rankCounts[3]/games)*100):0)+'%', label:'大貧民率'}
+  ];
+  const tilesHtml = tiles.map(t=>'<div class="stat-tile"><div class="stat-num">'+t.num+'</div><div class="stat-label">'+t.label+'</div></div>').join('');
+  const ranksHtml = RANK_TITLES.map((title,i)=>
+    '<div class="stats-rank-row"><span class="stats-rank-name">'+title+'</span><span>'+(c.rankCounts[i]||0)+' 回</span></div>'
+  ).join('');
+  const st = CloudSync.getStatus();
+  let note;
+  if(!cloudConfigured()){
+    note = 'この成績はお使いのブラウザに保存されています。Google連携を設定すると、複数の端末で引き継げます（READMEを参照）。';
+  } else if(st.state==='signed_in'){
+    note = 'Google Driveに同期済み。別の端末で同じGoogleアカウントにログインすると、この成績を引き継げます。';
+  } else {
+    note = 'いまはこの端末にのみ保存されています。Googleでログインすると複数端末で共有できます。';
+  }
+  el.innerHTML = '<div class="stats-grid">'+tilesHtml+'</div>'
+    + '<div class="stats-ranks">'+ranksHtml+'</div>'
+    + '<div class="stats-sync-note">'+note+'</div>'
+    + '<button class="score-reset-btn" type="button" onclick="if(confirm(\'通算成績をすべて消去します。よろしいですか？\'))resetCareerStats()">通算成績をリセット</button>';
+}
+
 let cpuLevelSetting = 'normal';
 let cpuLevel = 'normal';
 const CPU_LEVEL_LABELS = {normal:'ノーマル', elite:'エリート', legend:'レジェンド'};
@@ -3626,6 +4140,7 @@ function showResults(){
   const finalRanking = computeFinalRanking();
   previousFinishedOrder = finalRanking.slice();
   addSeasonScore(finalRanking);
+  recordCareerResult(finalRanking); // 通算成績を更新し、Driveへ同期
   const list = document.getElementById('resultList');
   list.innerHTML = finalRanking.map((pIdx, i)=>{
     const title = RANK_TITLES[i] || '';
@@ -3830,9 +4345,11 @@ function syncSubRuleStates(){
 }
 
 function adjustJokerCount(delta){
+  const before = jokerCount;
   jokerCount = Math.max(1, Math.min(8, jokerCount + delta));
   const disp = document.getElementById('jokerCountDisplay');
   if(disp) disp.textContent = jokerCount;
+  if(jokerCount!==before && typeof onRulesChanged==='function') onRulesChanged();
 }
 function syncJokerStepperState(){
   const cb = document.getElementById('rule_jokers');
@@ -3896,6 +4413,9 @@ function renderRuleSetup(){
     document.getElementById('rule_'+r.dependsOn).addEventListener('change', syncSubRuleStates);
   });
   document.getElementById('rule_jokers').addEventListener('change', syncJokerStepperState);
+  // ルール系のチェックボックス変更をまとめて拾い、cloudDocへ反映してDriveへ同期する
+  // （イベント委任。個々のcheckboxのchangeはここへバブリングしてくる）。
+  document.getElementById('ruleList').addEventListener('change', onRulesChanged);
   syncSubRuleStates();
   syncJokerStepperState();
 }
@@ -3931,15 +4451,32 @@ document.getElementById('selectAllBtn').addEventListener('click', ()=>{
   RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = true);
   syncSubRuleStates();
   syncJokerStepperState();
+  onRulesChanged();
 });
 document.getElementById('selectNoneBtn').addEventListener('click', ()=>{
   RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = false);
   syncSubRuleStates();
   syncJokerStepperState();
+  onRulesChanged();
 });
 document.getElementById('doubtModeToggle').addEventListener('change', (e)=>{
   applyDoubtTheme(e.target.checked);
+  onRulesChanged();
 });
+// CPUの強さ（ラジオ）の変更もクラウド同期対象。
+document.querySelectorAll('input[name="cpuLevelChoice"]').forEach(radio=>{
+  radio.addEventListener('change', onRulesChanged);
+});
+// 成績・ログイン関連のボタン。
+document.getElementById('statsBtn').addEventListener('click', ()=>{
+  renderStatsBody();
+  document.getElementById('statsOverlay').classList.add('show');
+});
+document.getElementById('statsCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('statsOverlay').classList.remove('show');
+});
+document.getElementById('cloudSignInBtn').addEventListener('click', ()=>{ CloudSync.signIn(); });
+document.getElementById('cloudSignOutBtn').addEventListener('click', ()=>{ CloudSync.signOut(); });
 document.getElementById('doubtBtn').addEventListener('click', humanDoubt);
 document.getElementById('startGameBtn').addEventListener('click', ()=>{
   rules = {};
@@ -4003,6 +4540,9 @@ function handleAndroidBackButton(){
   const historyOv = document.getElementById('historyOverlay');
   if(historyOv.classList.contains('show')){ closeHistoryModal(); return; }
 
+  const statsOv = document.getElementById('statsOverlay');
+  if(statsOv.classList.contains('show')){ statsOv.classList.remove('show'); return; }
+
   const resultOv = document.getElementById('overlay');
   if(resultOv.classList.contains('show')){
     resultOv.classList.remove('show');
@@ -4054,6 +4594,12 @@ function initServiceWorker(){
 
 renderRuleSetup();
 loadSeasonScores();
+loadCloudDoc();
+// 前回この端末で使ったルール設定があれば復元（オフラインでも効く。Driveログイン時は
+// このあとの CloudSync.init() が別端末の最新設定でさらに上書きし得る）。
+if(cloudDoc.rules) applyRulesFromDoc();
+renderStatsBody();
+CloudSync.init();
 Feedback.init();
 initTapFeedback();
 initErrorScreen();
