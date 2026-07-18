@@ -2273,9 +2273,10 @@ function groupByRank(hand){
 
 // ---- 禁止上がり（最強カード）回避ガード：全ティア共通の安全網 ----
 // forbiddenWin + fwStrongest が有効なとき、そのランクで手札を使い切る手は
-// 代替手がある限り避け、逆に手札に余裕がある間はむしろ優先的に処分させる。
-// こうしないと「弱いカードから機械的に出す」だけで自然と最強カードが最後の1枚に
-// 残り、意図せず禁止上がりで反則負けになってしまう。
+// 代替手がある限り避ける。処分（shed）を促すのは終盤の入り口（残り6枚以下）からに
+// 限定する：早くから-100000で処分を強制すると「いきなり2やジョーカーを切る」不自然で
+// 弱いプレイになるし、かといって全く促さないと「弱いカードから機械的に出す」だけで
+// 最強カードが最後の1枚に残り、意図せず禁止上がりで反則負けになってしまう。
 function forbiddenStrongestRankSet(){
   if(!(rules.forbiddenWin && rules.fwStrongest)) return null;
   return new Set(['JOKER', orderReversed() ? '3' : '2']);
@@ -2288,7 +2289,7 @@ function forbiddenFinishClass(hand, rank, playCount){
 function scoreWithTrapGuard(hand, rank, playCount, baseScore){
   const cls = forbiddenFinishClass(hand, rank, playCount);
   if(cls==='trap') return baseScore + 100000;
-  if(cls==='shed') return baseScore - 100000;
+  if(cls==='shed') return (hand.length<=6) ? baseScore - 100000 : baseScore;
   return baseScore;
 }
 
@@ -2447,8 +2448,12 @@ function estimateDeclarationTruthProbability(doubterIdx, declCards){
       logProbTrue += Math.log(0.15);
       continue;
     }
+    // 素の所持確率（手札枚数/未確認プール）だけだと、正直な出し手が「実際に持っている札を
+    // 選んで宣言している」という選択バイアスを無視して正直宣言を大幅に過小評価してしまう
+    // （序盤の単騎ですら3割程度になり、昔はこれが無根拠ダウトの乱発を招いていた）。
+    // 基礎正直率0.6にブレンドして補正する。反証（seenの0.15）はそのまま鋭く効かせる。
     const p = Math.min(1, ownerHandSize / poolSize);
-    logProbTrue += Math.log(Math.max(p, 0.02));
+    logProbTrue += Math.log(0.6 + 0.4*Math.max(p, 0.02));
   }
   return Math.exp(logProbTrue);
 }
@@ -2646,11 +2651,15 @@ function chooseLeadPlay_elite(hand, candidates){
   return best;
 }
 function chooseLeadPlay_legend(idx, hand, candidates){
+  // 残り2枚以下の相手がいる状況で弱い単騎をリードすると、そのまま相手の上がりの
+  // 起点になりやすい。複数枚や強めのリードで蓋をする。
+  const oppNearOut = activePlayers().some(i=>i!==idx && hands[i].length<=2);
   let best=null;
   for(const c of candidates){
     let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
     if(c.cards.length===1) score -= 5;
     score += estimateBeatRisk(idx, c.rank, c.cards.length) * 4;
+    if(oppNearOut && c.cards.length===1 && c.es<=6) score += 10;
     if(best===null || score < best.score) best = Object.assign({}, c, {score});
   }
   return best;
@@ -2720,12 +2729,42 @@ function chooseFollowPlay(idx, hand, candidates){
 // 通常モードのcpuTurnロジック（下のほう）は一切変更しない。ダウトモードはここで完全に
 // 分岐し、専用の関数群だけで完結させる。
 
+// その宣言を見逃した場合の「痛さ」＝出し手がウソをつく動機の強さ。効果も強さもない
+// 宣言（例：素のダイヤの3）でウソをつく理由はほぼ無く、そこにダウトを外すとアウト＋
+// 2トリック休みの方がずっと高くつく。逆に8切り・上がり絡み・最強級の宣言はブラフの
+// 定番なので、疑う価値が跳ね上がる。
+function declarationStakes(f){
+  const declRank = f.rank;
+  let stakes = 0;
+  // 上がり絡み：この宣言が通ると出し手が上がる／リーチ圏内
+  if(hands[f.owner].length===0) stakes += 3;
+  else if(hands[f.owner].length<=2) stakes += 1.5;
+  // 効果持ちランクの宣言は「効果の横取りブラフ」の定番
+  if(declRank==='8' && rules.eightGiri) stakes += 2;
+  if(declRank==='Q' && rules.twelveBomber) stakes += 1.5;
+  if(declRank==='5' && rules.fiveSkip) stakes += 1.2;
+  if(declRank==='7' && rules.sevenGive) stakes += 1;
+  if(declRank==='10' && rules.tenDiscard) stakes += 1;
+  if(declRank==='9' && rules.nineReverse) stakes += 0.5;
+  if(declRank==='J' && rules.elevenBack) stakes += 0.5;
+  // 場を取り切る最強級の宣言
+  if(declRank==='JOKER') stakes += 1.5;
+  if(declRank===(orderReversed() ? '3' : '2')) stakes += 1;
+  // 革命級の枚数、および「成立すれば場が流れる」効果の確定待ち
+  if(f.count>=4) stakes += 2;
+  if(f.pendingClear) stakes += 1.5;
+  return stakes;
+}
+
 // ダウトするかどうか。
 //   ステップ1：公開情報から「あり得ない」と断定できる宣言（ノーマルは半々、エリート以上は必ず）
-//   ステップ2：断定できなくても、公開情報（手札枚数・未確認プールの大きさ）から見て
-//              「額面通りである確率」を粗く見積もり、低ければダウトする（エリート以上のみ）。
+//   ステップ2：断定できなくても、まず「その宣言でウソをつく動機があるか」（declarationStakes）を
+//              見る。動機の薄い宣言は基本スルーし、公開情報から強い反証がある時だけ、たまに
+//              安いウソも咎めて牽制する（エリート以上のみ）。
+//   ステップ3：動機のある宣言は「額面通りである確率」の見積もりと比べてダウトする。
+//              動機が強いほど（＝見逃すコストが高いほど）閾値を上げて踏み込む。
 //              レジェンドはさらに、このゲーム中に学習した「その人はダウトされた時どれくらい
-//              正直だったか」の統計で確率を補正する。
+//              正直だったか」の統計で確率を補正し、出し手がアウト2なら即退場も狙いにいく。
 //   自分のアウトが2ならこれ以上のリスクを避け、閾値をぐっと下げる（確実な時しか賭けない）。
 function cpuChooseDoubt(idx){
   if(declarationImpossible(idx, field.cards)){
@@ -2734,7 +2773,13 @@ function cpuChooseDoubt(idx){
   if(cpuLevel==='normal') return false;
   const baseProb = estimateDeclarationTruthProbability(idx, field.cards);
   const truthProb = cpuLevel==='legend' ? legendAdjustedTruthProb(field.owner, baseProb) : baseProb;
-  let threshold = cpuLevel==='legend' ? 0.42 : 0.28;
+  const stakes = declarationStakes(field);
+  if(stakes < 0.9){
+    const evidenceDoubtChance = cpuLevel==='legend' ? 0.25 : 0.15;
+    return truthProb < 0.3 && Math.random() < evidenceDoubtChance;
+  }
+  let threshold = (cpuLevel==='legend' ? 0.30 : 0.22) + Math.min(0.35, stakes*0.08);
+  if(cpuLevel==='legend' && outs[field.owner]>=2) threshold += 0.08;
   if(outs[idx]>=2) threshold *= 0.35;
   return truthProb < threshold;
 }
@@ -2772,7 +2817,8 @@ function cpuDeclareLead(idx, hand, groups){
   const candidates = gatherLeadCandidates(hand, groups);
   const honest = candidates.length ? chooseLeadPlay(idx, hand, candidates) : null;
   if(cpuLevel!=='normal'){
-    const chance = cpuLevel==='legend' ? 0.45 : 0.3;
+    let chance = cpuLevel==='legend' ? 0.45 : 0.3;
+    if(outs[idx]===1) chance *= 0.6; // アウトを抱えたら博打の頻度を落とす
     if(Math.random()<chance){
       const bluff = bluffLeadTriggerOpportunity(idx, hand);
       if(bluff) return bluff;
@@ -2789,7 +2835,8 @@ function cpuDeclareLead(idx, hand, groups){
 // 合法な正直フォローが無いときも、パスの代わりにブラフで場をつなぐことがある。
 function bluffFollowFallback(idx, hand){
   if(outs[idx]>=2) return null;
-  const chance = cpuLevel==='legend' ? 0.6 : (cpuLevel==='elite' ? 0.45 : 0.12);
+  let chance = cpuLevel==='legend' ? 0.6 : (cpuLevel==='elite' ? 0.45 : 0.12);
+  if(outs[idx]===1) chance *= 0.6; // アウトを抱えたら博打の頻度を落とす
   if(Math.random()>=chance) return null;
   const legal = legalDeclRanks(field.count);
   for(const r of legal){
