@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>大富豪</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
@@ -42,6 +42,13 @@
     text-shadow:0 0 18px rgba(139,26,26,0.8), 0 2px 6px var(--shadow);
   }
   *{box-sizing:border-box;}
+  /* タッチ操作の基本改善：タップ時の青いハイライトを消し、ダブルタップ由来の
+     300ms遅延を無くし、UI要素の不用意なテキスト選択・長押しメニューを抑止する。 */
+  button, .card, .switch, .rule-item, .audio-mini-switch, .discard-pile{
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  button, .card{ -webkit-user-select:none; user-select:none; }
   body{
     margin:0;
     font-family:'Zen Kaku Gothic New', sans-serif;
@@ -97,6 +104,11 @@
   }
   .rules-box.show{display:block;}
   .rules-box b{color:var(--gold-soft);}
+  .rules-box-summary{
+    font-size:12px; font-weight:700; color:var(--gold-soft);
+    margin:-2px 0 10px; padding-bottom:10px;
+    border-bottom:1px dashed rgba(231,205,123,0.4);
+  }
 
   .mode-toggle-block{
     max-width:980px; margin:0 auto 14px; display:flex; align-items:center; gap:16px;
@@ -119,6 +131,14 @@
   }
   .switch input:checked + .slider{ background:rgba(192,57,43,0.5); border-color:var(--doubt); }
   .switch input:checked + .slider::before{ transform:translateX(24px); background:#f3d9d2; }
+
+  .setup-actions-top{
+    max-width:980px; margin:0 auto 14px; display:flex; justify-content:center;
+    align-items:center; gap:12px; flex-wrap:wrap;
+    background:rgba(0,0,0,0.35); border:1px solid var(--gold); border-radius:14px; padding:14px 20px;
+  }
+  .setup-actions-top .rules-toggle{ display:inline-block; margin:0; }
+  .setup-actions-top button.action{ margin:0; }
 
   .setup-box{
     max-width:980px; margin:0 auto; background:rgba(0,0,0,0.35); border:1px solid var(--gold);
@@ -167,7 +187,6 @@
   }
   .joker-step-btn:disabled{ opacity:0.35; cursor:not-allowed; }
   #jokerCountDisplay{ font-size:13px; font-weight:700; color:var(--gold-soft); min-width:14px; text-align:center; }
-  .setup-actions{ display:flex; justify-content:center; gap:10px; margin-top:14px; flex-wrap:wrap; }
   @media (max-width:760px){
     .rule-columns{ grid-template-columns:1fr; }
   }
@@ -438,6 +457,7 @@
   .controls{
     display:flex;
     justify-content:center;
+    flex-wrap:wrap;
     gap:12px;
     margin-top:16px;
   }
@@ -465,6 +485,8 @@
   button.decline:hover{ background:rgba(32,27,18,0.08); }
   button.doubt{ background:var(--doubt); color:#ffeae4; }
   button.doubt.available{ animation:turnGlow 1.1s ease-in-out infinite; }
+  button.honest{ background:transparent; color:var(--playable); border:1px solid var(--playable); }
+  button.honest:hover:not(:disabled){ background:rgba(94,217,189,0.12); }
   button.action:disabled{ opacity:0.35; cursor:not-allowed; }
   button.restart{
     background:transparent; border:1px solid var(--gold-soft); color:var(--gold-soft);
@@ -480,6 +502,7 @@
   .decl-note{ font-size:11.5px; font-weight:700; margin:10px 0 2px; }
   .decl-note.truth{ color:#1d6f52; }
   .decl-note.lie{ color:var(--red-hanko); }
+  .decl-note.lie.risky{ color:#b8590a; background:rgba(184,89,10,0.1); padding:4px 8px; border-radius:6px; border:1px solid rgba(184,89,10,0.35); }
   .hint-line{ font-size:10.5px; color:#b9c9be; margin-top:4px; }
 
   .msg-flash{
@@ -504,6 +527,8 @@
     display:flex; justify-content:space-between; align-items:center;
     font-size:12px; color:var(--gold-soft); font-weight:700; margin-bottom:6px;
   }
+  .log-hint{ font-size:10px; color:#9db8a8; margin:-3px 0 6px; }
+  .log-sidebar.collapsed .log-hint{ margin-bottom:0; }
   .log-collapse-btn{
     background:transparent; border:1px solid var(--gold); color:var(--gold-soft);
     border-radius:6px; width:24px; height:24px; cursor:pointer; font-family:inherit;
@@ -598,9 +623,9 @@
   .audio-panel.show{ display:flex; }
   .audio-panel h3{ margin:0 0 2px; font-size:13px; color:var(--gold-soft); font-weight:700; }
   .audio-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
-  .audio-row label{ flex:1; }
+  .audio-row label:not(.audio-mini-switch){ flex:1; }
   .audio-row input[type=range]{ width:96px; accent-color:var(--gold); }
-  .audio-mini-switch{ position:relative; width:38px; height:20px; flex-shrink:0; cursor:pointer; }
+  .audio-mini-switch{ position:relative; width:38px; height:20px; flex:0 0 38px; cursor:pointer; }
   .audio-mini-switch input{ opacity:0; width:0; height:0; }
   .audio-mini-track{
     position:absolute; inset:0; border-radius:999px;
@@ -678,13 +703,69 @@
     .log-sidebar{ width:100%; max-height:220px; }
   }
   @media (max-width:600px){
+    body{ padding:14px 8px 40px; }
     h1.title{ font-size:28px; }
-    .card{ width:44px; height:64px; padding:3px 4px;}
+    .card{ width:46px; height:66px; padding:3px 4px;}
     .card .rank{ font-size:12px;}
     .card .suit{ font-size:16px;}
     .opp{ min-width:76px; padding:6px 8px; }
-    .table{ border-radius:60px; padding:14px 10px; }
+    .table{ border-radius:36px; padding:14px 8px; }
     .setup-box{ padding:16px 14px; }
+
+    /* --- タップしやすいサイズへ底上げ（推奨44px以上） --- */
+    button.action{ font-size:15px; padding:13px 24px; min-height:48px; }
+    /* 画面下部の操作バー内のボタンだけは横幅を均等に広げる（設定画面や結果画面の
+       ボタンは全幅のまま活かしたいのでここでは対象にしない）。ダウトモードは
+       パス/ダウト/正直に出す/出すの4個になるため、文字を折り返させず
+       flex-basisを40%にして2個×2段のグリッドへ自然に折り返させる。 */
+    .controls button.action{
+      flex:1 1 40%; max-width:170px; white-space:nowrap;
+      font-size:13.5px; padding:12px 10px;
+    }
+    .rules-toggle{ min-height:42px; padding:9px 16px; font-size:13px; }
+    .sort-toggle{ min-height:38px; padding:8px 14px; }
+    .log-collapse-btn{ width:38px; height:38px; font-size:18px; }
+    .discard-pile{ min-width:52px; min-height:44px; font-size:18px; }
+    .rank-btn{ min-height:40px; min-width:40px; font-size:14px; }
+    .joker-step-btn{ width:40px; height:40px; font-size:18px; }
+    .audio-mini-switch{ width:46px; height:26px; flex-basis:46px; }
+    .audio-mini-track::before{ width:20px; height:20px; }
+    .audio-mini-switch input:checked + .audio-mini-track::before{ transform:translateX(20px); }
+    .audio-panel input[type=range]{ height:26px; }
+
+    /* --- 操作ボタンを画面下部に固定して常に押せるようにする --- */
+    .controls{
+      position:sticky;
+      bottom:0;
+      z-index:40;
+      margin:10px -8px 0;
+      padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+      gap:10px;
+      background:linear-gradient(to top, var(--felt-dark) 55%, transparent);
+      backdrop-filter:blur(2px);
+    }
+    body.doubt-mode .controls{
+      background:linear-gradient(to top, #04060a 55%, transparent);
+    }
+
+    /* 操作モーダル（宣言・結果・捨て札履歴など）が、画面下部に固定した操作バーと
+       重なって誤操作につながらないよう、上寄せにしたうえで操作バー分の高さを
+       常に空けておく。 */
+    .overlay{ align-items:flex-start; padding-top:20px; }
+    .result-card{ max-height:calc(100vh - 200px); }
+
+    /* 設定FABはやや小さく・半透明にして、盤面に重なっても邪魔しにくくする */
+    .audio-fab{
+      width:40px; height:40px; font-size:17px;
+      top:calc(8px + env(safe-area-inset-top));
+      right:calc(8px + env(safe-area-inset-right));
+      opacity:0.82;
+    }
+    .audio-panel{
+      top:calc(54px + env(safe-area-inset-top));
+      right:calc(8px + env(safe-area-inset-right));
+      width:min(250px, calc(100vw - 16px));
+    }
   }
 </style>
 </head>
@@ -701,6 +782,11 @@
         <div class="rule-desc">全員が出すカードを宣言したうえで、すべて裏向きに出します。宣言はウソでもかまいません。怪しいと思ったら自分の番に「ダウト」でめくれます。外すとアウト、見抜けば相手にアウト。アウト3つで強制敗北です。</div>
       </div>
     </div>
+    <div class="setup-actions-top">
+      <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
+      <button class="rules-toggle" id="selectNoneBtn" type="button">すべて解除</button>
+      <button class="action play" id="startGameBtn" type="button">この設定でゲーム開始</button>
+    </div>
     <div class="setup-box">
       <div class="setup-title">対戦ルール設定</div>
       <div class="setup-desc">今回の対戦で有効にするローカルルールを選んでください。何も選ばなければ基本ルールのみで遊べます。</div>
@@ -716,21 +802,16 @@
       </div>
 
       <div class="rule-list" id="ruleList"></div>
-      <div class="setup-actions">
-        <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
-        <button class="rules-toggle" id="selectNoneBtn" type="button">すべて解除</button>
-      </div>
-      <button class="action play" id="startGameBtn" style="margin-top:16px;">この設定でゲーム開始</button>
     </div>
   </div>
 
   <div id="gameScreen" style="display:none;">
-    <div class="subtitle" id="activeRulesLine"></div>
     <div style="display:flex; justify-content:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
       <button class="rules-toggle" id="rulesBtn">ルールを見る</button>
       <button class="rules-toggle" id="backToSetupBtn">ルール設定に戻る</button>
     </div>
     <div class="rules-box" id="rulesBox">
+      <div class="rules-box-summary" id="activeRulesLine"></div>
       ・4人（あなた + CPU3人）で配ります。<br>
       ・場に出ているカードより<b>同じ枚数・強いランク</b>のカードを出します（ペア・トリプルもOK）。<br>
       ・強さは弱い順に <b>3,4,5,6,7,8,9,10,J,Q,K,A,2</b>。<br>
@@ -777,16 +858,18 @@
         <div class="controls">
           <button class="action pass" id="passBtn">パス</button>
           <button class="action doubt" id="doubtBtn" style="display:none;">ダウト</button>
+          <button class="action honest" id="honestBtn" style="display:none;" title="選んだカードをそのまま正直に宣言して伏せます">正直に出す</button>
           <button class="action play" id="playBtn">出す</button>
         </div>
         <div class="msg-flash" id="msgFlash"></div>
       </div>
 
-      <div class="log-sidebar" id="logSidebar">
+      <div class="log-sidebar collapsed" id="logSidebar">
         <div class="log-header">
           <span>ゲームログ</span>
-          <button class="log-collapse-btn" id="logCollapseBtn" type="button">－</button>
+          <button class="log-collapse-btn" id="logCollapseBtn" type="button">＋</button>
         </div>
+        <div class="log-hint">見ると記憶頼りの読み合いが弱くなります</div>
         <div class="log-panel" id="logPanel"></div>
       </div>
     </div>
@@ -822,7 +905,7 @@
   <h3>サウンド設定</h3>
   <div class="audio-row">
     <label for="bgmToggle">BGM</label>
-    <span class="audio-mini-switch"><input type="checkbox" id="bgmToggle"><span class="audio-mini-track"></span></span>
+    <label class="audio-mini-switch"><input type="checkbox" id="bgmToggle"><span class="audio-mini-track"></span></label>
   </div>
   <div class="audio-row">
     <label for="bgmVol">BGM音量</label>
@@ -830,7 +913,7 @@
   </div>
   <div class="audio-row">
     <label for="sfxToggle">効果音</label>
-    <span class="audio-mini-switch"><input type="checkbox" id="sfxToggle"><span class="audio-mini-track"></span></span>
+    <label class="audio-mini-switch"><input type="checkbox" id="sfxToggle"><span class="audio-mini-track"></span></label>
   </div>
   <div class="audio-row">
     <label for="sfxVol">効果音音量</label>
@@ -838,7 +921,7 @@
   </div>
   <div class="audio-row">
     <label for="hapticToggle">触覚（バイブ）</label>
-    <span class="audio-mini-switch"><input type="checkbox" id="hapticToggle"><span class="audio-mini-track"></span></span>
+    <label class="audio-mini-switch"><input type="checkbox" id="hapticToggle"><span class="audio-mini-track"></span></label>
   </div>
   <div class="audio-note" id="audioNote"></div>
 </div>
@@ -1296,6 +1379,36 @@ function isDeclarationTruthful(declCards, actualCards){
     remaining.splice(j,1);
   }
   return remaining.length===0;
+}
+
+// 宣言のうち「実際に出すカードでは説明がつかない部分（＝ウソの部分）」が、既に公開済み
+// （捨て札・めくれた場）のカードと同じ識別子（ランク＋スート）を名乗っていないかを見る。
+// 重なっていれば、それを見ている全員から一発で「あり得ない宣言」と分かってしまうため、
+// 宣言者本人にだけ分かるヒントとして警告する。
+// 注意：自分の手元に残っている（今回出さない）カードと同じ識別子を騙るのは、ここでは
+// 対象外にする。ダウトする側が根拠にできるのは「自分の手札」＋「公開情報」だけであり、
+// 宣言者の手札の中身は他の誰からも見えない。つまりそのカードが自分の手元にあるという
+// ことは、裏を返せば他の誰の手札にも無いということでもあり、むしろ絶対に「その札は私が
+// 持っています」と名乗り出られる相手がいない、一番安全な部類の嘘になる。
+// 出すカード自身との一致（＝正直な部分）はここでは対象外なので、先に消費してから
+// 残りだけを判定する。
+function declarationRiskyIdentity(declCards, actualCards){
+  const actualRemaining = actualCards.slice();
+  const known = new Set();
+  discardHistory.forEach(h=> h.cards.forEach(c=>{
+    if(!(h.hiddenIds && h.hiddenIds.has(c.id))) known.add(c.suit+'_'+c.rank);
+  }));
+  if(field){
+    const revealedCards = field.faceDown ? (field.revealed ? field.actual : null) : (field.actual || field.cards);
+    if(revealedCards) revealedCards.forEach(c=>known.add(c.suit+'_'+c.rank));
+  }
+  for(const d of declCards){
+    if(d.rank==='JOKER') continue;
+    const i = actualRemaining.findIndex(a=>a.rank===d.rank && a.suit===d.suit);
+    if(i>=0){ actualRemaining.splice(i,1); continue; }
+    if(known.has(d.suit+'_'+d.rank)) return true;
+  }
+  return false;
 }
 
 // ダウトは「場の一番上の伏せ札」にしか宣言できず、自分の出した札は対象外。
@@ -3141,9 +3254,13 @@ function renderDeclareModal(){
   const truthful = enough && isDeclarationTruthful(chosenCards, pa.actual);
   let note = '';
   if(enough && check.ok){
-    note = truthful
-      ? '<div class="decl-note truth">この宣言は正直です</div>'
-      : '<div class="decl-note lie">この宣言はウソです。ダウトされると暴かれます</div>';
+    if(truthful){
+      note = '<div class="decl-note truth">この宣言は正直です</div>';
+    } else if(declarationRiskyIdentity(chosenCards, pa.actual)){
+      note = '<div class="decl-note lie risky">この宣言はウソです。しかも手持ちのカードではない宣言をしようとしているため、ダウトされる確率が高くなります</div>';
+    } else {
+      note = '<div class="decl-note lie">この宣言はウソです。ダウトされると暴かれます</div>';
+    }
   } else if(enough && !check.ok){
     note = '<div class="decl-note lie">'+check.reason+'</div>';
   }
@@ -3325,6 +3442,14 @@ function humanPlay(){
     openDeclareModal(cards);
     return;
   }
+  tryPlayCardsAsIs(cards);
+}
+
+// 選んだカードをそのまま単一ランクの組として出す（非ダウトモードの「出す」、および
+// ダウトモードの「正直に出す」の両方が使う共通ロジック）。ダウトモードのときはisDoubtMode()
+// によりresolvePlayCore内でfaceDown=trueになるだけで、宣言＝実カードのまま伏せて出る
+// （actualCardsを渡さず cardsPlayed=actual にすることで、常に完全に正直な宣言になる）。
+function tryPlayCardsAsIs(cards){
   if(!isValidGroup(cards)){ flashMsg('同じランクのカードを選んでください（ジョーカーはワイルドとして使えます）'); return; }
   const rank = representedRank(cards);
   const count = cards.length;
@@ -3338,6 +3463,16 @@ function humanPlay(){
   const info = resolvePlayCore(0, cards);
   render();
   afterPlayEffects(info);
+}
+
+// ダウトモード専用：宣言モーダルを経由せず、選んだカードをそのまま正直に宣言して伏せる。
+function humanHonestPlay(){
+  if(!humanCanAct()) return;
+  if(!isDoubtMode()) return;
+  if(forcedPassOnly){ flashMsg('5スキップの対象です。ダウトかパスしかできません'); return; }
+  const cards = currentSelectionCards();
+  if(cards.length===0){ flashMsg('カードを選んでください'); return; }
+  tryPlayCardsAsIs(cards);
 }
 
 function humanPass(){
@@ -3511,6 +3646,9 @@ function render(){
   doubtBtn.classList.toggle('available', canDoubt);
 
   document.getElementById('playBtn').disabled = !isYourTurn || forcedPassOnly;
+  const honestBtn = document.getElementById('honestBtn');
+  honestBtn.style.display = isDoubtMode() ? 'inline-block' : 'none';
+  honestBtn.disabled = !isYourTurn || forcedPassOnly;
   const noLegalPlay = isYourTurn && field!==null && (forcedPassOnly || playableIds.size===0);
   document.getElementById('passBtn').disabled = !isYourTurn || field===null;
   document.getElementById('passBtn').classList.toggle('highlight-pass', noLegalPlay && !canDoubt);
@@ -3620,6 +3758,7 @@ function renderRuleSetup(){
 }
 
 document.getElementById('playBtn').addEventListener('click', humanPlay);
+document.getElementById('honestBtn').addEventListener('click', humanHonestPlay);
 document.getElementById('passBtn').addEventListener('click', humanPass);
 document.getElementById('rulesBtn').addEventListener('click', ()=>{
   const box=document.getElementById('rulesBox');
@@ -3631,15 +3770,11 @@ document.getElementById('backToSetupBtn').addEventListener('click', ()=>{
   if(!gameOver){
     if(!confirm('現在のゲームを中断してルール設定に戻りますか？')) return;
   }
-  document.getElementById('gameScreen').style.display='none';
-  document.getElementById('setupScreen').style.display='block';
-  Feedback.setTrack('menu');
+  returnToSetupScreen();
 });
 document.getElementById('restartBtn2').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
-  document.getElementById('gameScreen').style.display='none';
-  document.getElementById('setupScreen').style.display='block';
-  Feedback.setTrack('menu');
+  returnToSetupScreen();
 });
 document.getElementById('nextGameBtn').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
@@ -3689,10 +3824,78 @@ document.getElementById('logCollapseBtn').addEventListener('click', ()=>{
   document.getElementById('logCollapseBtn').textContent = collapsed ? '＋' : '－';
 });
 
+// ゲーム画面からセットアップ画面へ戻る共通処理。宣言モーダル等を最小化した状態のまま
+// （＝pendingActionが残ったまま）戻ると、「操作画面に戻る」タブがセットアップ画面にまで
+// 表示され続けてしまうため、actionOverlay・restoreTab・pendingActionもあわせてリセットする。
+function returnToSetupScreen(){
+  document.getElementById('gameScreen').style.display = 'none';
+  document.getElementById('setupScreen').style.display = 'block';
+  document.getElementById('actionOverlay').classList.remove('show');
+  document.getElementById('restoreTab').style.display = 'none';
+  pendingAction = null;
+  Feedback.setTrack('menu');
+}
+
+// ===== Android実機の「戻る」ボタン対応 =====
+// Capacitorでは backButton にリスナーを付けた時点でデフォルト動作（WebViewの履歴を
+// 戻る／無ければアプリを閉じる）が完全に無効になる。このアプリは1ページ完結で
+// ブラウザ履歴を積まないため、何もしないと「戻る」を押しても反応がなくなってしまう。
+// そこで開いているオーバーレイ／モーダルを優先的に閉じ、何も開いていなければ
+// 対戦画面なら「ルール設定に戻る」と同じ確認フローへ、セットアップ画面（最上位）
+// まで来たらアプリを最小化する、という優先順位で処理する。
+function handleAndroidBackButton(){
+  const errorOv = document.getElementById('errorOverlay');
+  if(errorOv.classList.contains('show')){ location.reload(); return; }
+
+  const audioPanel = document.getElementById('audioPanel');
+  if(audioPanel.classList.contains('show')){ audioPanel.classList.remove('show'); return; }
+
+  const actionOv = document.getElementById('actionOverlay');
+  if(actionOv.classList.contains('show')){ minimizeActionModal(); return; }
+
+  const historyOv = document.getElementById('historyOverlay');
+  if(historyOv.classList.contains('show')){ closeHistoryModal(); return; }
+
+  const resultOv = document.getElementById('overlay');
+  if(resultOv.classList.contains('show')){
+    resultOv.classList.remove('show');
+    returnToSetupScreen();
+    return;
+  }
+
+  const rulesBox = document.getElementById('rulesBox');
+  if(rulesBox.classList.contains('show')){
+    rulesBox.dataset.open = '0';
+    rulesBox.classList.remove('show');
+    return;
+  }
+
+  const gameScreen = document.getElementById('gameScreen');
+  if(gameScreen.style.display !== 'none'){
+    if(!gameOver){
+      if(!confirm('現在のゲームを中断してルール設定に戻りますか？')) return;
+    }
+    returnToSetupScreen();
+    return;
+  }
+
+  // セットアップ画面（最上位）まで来たら、標準的なAndroidの挙動に合わせてアプリを
+  // 最小化する（プロセスを強制終了するexitApp()は使わない。状態を保ったまま
+  // バックグラウンドに回るほうが復帰時に自然）。
+  const CapApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if(CapApp) CapApp.minimizeApp();
+}
+function initAndroidBackButton(){
+  const CapApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if(!CapApp || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) return;
+  CapApp.addListener('backButton', handleAndroidBackButton);
+}
+
 renderRuleSetup();
 Feedback.init();
 initTapFeedback();
 initErrorScreen();
+initAndroidBackButton();
 Feedback.setTrack('menu');  // 最初のユーザー操作で実際に再生が始まる
 </script>
 </body>

@@ -64,6 +64,9 @@
 - 4止め・スペ3返し・（4止めなしの）8切りのように「成立すれば即座に場が流れる」効果も、ダウトモードでは他の全プレイヤーが一巡パスかダウトを選ぶまでは確定しません。
 - ダウトが外れて宣言が本物だと証明されたカードは、その後捨て札に流れた時点で**表向きのまま恒久的に記録**されます（伏せたまま流れた札は中身不明のまま）。これにより「ダウト失敗を覚悟のうえで相手の手の内を確認し、二度とそのカードで嘘をつかせないようにする」という駆け引きが可能です。
 - CPUの強さもこのモードに対応しており、ノーマルはほとんどダウトしません。エリート以上は公開情報から矛盾を検出してダウトし、手札にないランクの効果を安全な宣言で横取りするブラフも行います。レジェンドはさらに、そのゲーム中に暴かれたウソ・証明された正直さを学習してダウトの精度を上げ、駆け引きを仕掛けてきます。
+- **正直に出す**ボタンで、選んだカードをそのままの数字・スートで一括宣言できます（宣言モーダルでランク・スートを選び直す手間を省けます）。ウソをつきたい場合は従来どおり「出す」から宣言モーダルを開いてください。
+- 宣言モーダルには「この宣言は正直です」「この宣言はウソです」に加えて、**手持ちにない・既に公開済みのカードを騙ろうとしている場合は「ダウトされる確率が高くなります」という追加警告**が出ます（宣言者本人にしか見えないヒントで、相手の情報を覗くものではありません）。
+- **ゲームログはデフォルトで折りたたみ**にしています。開けば従来どおり全プレイ履歴を確認できますが、なるべく記憶を頼りにした読み合いを楽しめるよう、初期状態では見えないようにしています。
 
 ## サウンド・演出
 
@@ -88,3 +91,72 @@ BGMを鳴らすには、以下の名前で mp3 を `assets/bgm/` に置いてく
 - HTML / CSS / JavaScript（フレームワーク・ビルドツールなし）
 - すべて [index.html](index.html) 一つに完結しており、ブラウザで開くだけで動作します
 - BGM音源のみ `assets/bgm/` に配置（リポジトリ管理外）
+
+## Android版（Capacitor）
+
+Web版のソース（[index.html](index.html)）はそのまま残し、[Capacitor](https://capacitorjs.com/) でネイティブのAndroidプロジェクト（`android/`）をラップする構成にしています。`index.html` を書き換えれば、Web版・Android版の両方に反映されます。
+
+### 構成
+
+- `index.html` … 唯一のソース（Web版はこれを直接開くだけで動作、これは変わりません）
+- `scripts/sync-web.js` … `index.html` と `assets/bgm/` を `www/`（Capacitorのビルド用フォルダ）にコピーするだけの最小スクリプト。`www/` は生成物なのでリポジトリには含めません
+- `android/` … Capacitorが生成したネイティブAndroidプロジェクト（Gradle）。ビルド成果物（`build/`・`.gradle/`・`local.properties`）以外はリポジトリにコミットする方針です
+- `capacitor.config.json` … App ID・アプリ名・webDirの設定（App ID: `io.github.superior3925.doubtdaifugo`）
+
+### アプリアイコン・スプラッシュ画面
+
+- `scripts/generate-icon-assets.js` … SVGで描いたデザイン（濃緑のグラデーション背景＋金縁のカード＋スペード＋「？」の赤いダウトバッジ）から `assets/icon-background.png`・`icon-foreground.png`・`icon-only.png`・`splash.png` を生成するスクリプト
+- デザインを変更したい場合は `scripts/generate-icon-assets.js` を編集し、以下を実行してください（`@capacitor/assets` パッケージが実際の解像度展開とAndroidプロジェクトへの反映を行います）。
+
+```
+npm run assets:generate
+```
+
+- `assets/icon-*.png`・`assets/splash.png` はこのアプリ専用に作成したオリジナル素材なので、`assets/bgm/`（著作権上の理由で除外）とは異なりリポジトリに含めています。
+
+### リリースビルド（署名済みAPK）
+
+Google Play Storeには当面出さず、まずはGitHub Releasesで配布する方針のため、署名鍵は以下の手順でリポジトリの外に保管しています。
+
+- 署名鍵（`.jks`）はリポジトリ外（ローカル＋クラウド2箇所）で保管し、`android/keystore.properties`（gitignore対象、鍵のパスとパスワードを記載）経由で`android/app/build.gradle`から参照する構成
+- `keystore.properties` が存在しない環境（このリポジトリをcloneしただけの人）でも、署名なしでdebugビルドは問題なく動きます
+- リリースビルドのコマンド:
+
+```
+cd android
+./gradlew assembleRelease
+```
+
+生成されたAPK（`android/app/build/outputs/apk/release/app-release.apk`）はGitHub Releasesに手動でアップロードします。
+
+### Android実機の「戻る」ボタン対応
+
+このアプリは1ページ完結でブラウザ履歴を積まないため、Capacitorの`@capacitor/app`プラグインで`backButton`イベントを直接ハンドリングしています（`index.html`内の`handleAndroidBackButton()`）。優先順位は、開いているオーバーレイ／モーダルを閉じる → 対戦中なら「ルール設定に戻る」と同じ確認ダイアログ → セットアップ画面（最上位）まで戻ったらアプリを最小化、の順です。Web版ではこのプラグインが存在しないため何も起きず、影響はありません。
+
+### 必要な環境
+
+- Node.js（LTS）／npm
+- JDK 21（`@capacitor/android` 8系がJava 21でのコンパイルを要求します。Android Studioは内蔵JDKを使うため意識せず動きますが、コマンドラインで`gradlew`を直接叩く場合はJDK 21が必要です）
+- Android Studio（Android SDKのインストールに必要。SDKだけ単体で入れても構いません）
+
+### セットアップ
+
+```
+npm install
+```
+
+### ビルド・実機/エミュレータ確認
+
+```
+npm run android:sync   # index.html を www/ に反映してから Capacitor を同期
+npm run android:open   # Android Studio で android/ プロジェクトを開く
+```
+
+Android Studioで開いたあとは、通常のAndroidアプリと同様に実行（▶）ボタンでエミュレータ or 実機にインストールして動作確認できます。コマンドラインだけでAPKをビルドする場合は、Android SDKのインストール後に以下を実行してください。
+
+```
+cd android
+./gradlew assembleDebug
+```
+
+`index.html` を編集した後は、必ず `npm run android:sync`（または `npm run sync:web`）を実行してから Android Studio 側をビルドし直してください。忘れると古い内容のままになります。
