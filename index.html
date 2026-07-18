@@ -591,6 +591,33 @@
     color:var(--red-hanko);
   }
 
+  .score-board{
+    margin-top:14px; padding-top:12px; border-top:1px dashed #ddd3b8; text-align:left;
+  }
+  .score-board-title{
+    font-family:'Shippori Mincho', serif; font-weight:800; font-size:13px;
+    color:var(--red-hanko); margin-bottom:6px; text-align:center;
+  }
+  .score-row{
+    display:flex; justify-content:space-between; padding:3px 4px; font-size:13px;
+  }
+  .score-total{ font-weight:700; }
+  .score-total.score-plus{ color:#1b7a3c; }
+  .score-total.score-minus{ color:var(--red-hanko); }
+  .score-delta{ font-size:11px; font-weight:400; color:#8a7c55; }
+  .score-reset-btn{
+    display:block; margin:10px auto 0; background:transparent; border:1px solid #c9bd94; color:#8a7c55;
+    border-radius:999px; padding:4px 14px; font-size:11px; cursor:pointer; font-family:inherit;
+  }
+
+  .skip-btn{
+    display:block; margin:0 auto 12px; background:transparent;
+    border:1px solid var(--gold); color:var(--gold-soft);
+    padding:6px 18px; border-radius:999px; font-size:12px; cursor:pointer; font-family:inherit;
+    font-weight:700;
+  }
+  .skip-btn.active{ background:var(--gold); color:#2b2200; }
+
   .modal-minimize{
     position:absolute; top:10px; right:12px;
     width:26px; height:26px; border-radius:50%;
@@ -835,6 +862,7 @@
     </div>
 
     <div class="turn-banner" id="turnBanner"></div>
+    <button class="skip-btn" id="skipBtn" type="button" style="display:none;"></button>
 
     <div class="game-layout">
       <div class="game-main">
@@ -885,6 +913,7 @@
   <div class="result-card">
     <h2>ゲーム終了</h2>
     <div id="resultList"></div>
+    <div class="score-board" id="scoreBoard"></div>
     <div style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
       <button class="action play" id="nextGameBtn">次のゲームへ（カード交換あり）</button>
       <button class="restart" id="restartBtn2">ルール設定に戻る</button>
@@ -1293,6 +1322,57 @@ let provenHonestCount = [0,0,0,0];
 // 嘘をつく…といった記憶力頼みの読み合いの面白さは壊さないようにする。
 let declHistory = [];
 const DECL_HISTORY_LIMIT = 5;
+// あなたが上がった後、CPUだけの消化試合をスキップボタンで高速処理するためのフラグ。
+// 新しいゲームが始まるたびdealFreshHandsでfalseに戻す。
+let fastForward = false;
+function turboMs(ms){ return fastForward ? 20 : ms; }
+
+// ---- スコア制度：大富豪+3・富豪+1・貧民0・大貧民-1を対戦ごとに合算し、ブラウザに保存する ----
+const SCORE_BY_RANK = [3, 1, 0, -1];
+const LS_SCORE_KEY = 'ddf_season_scores';
+const LS_GAMES_KEY = 'ddf_season_games';
+let seasonScores = [0,0,0,0];
+let seasonGames = 0;
+function loadSeasonScores(){
+  try{
+    const raw = localStorage.getItem(LS_SCORE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if(Array.isArray(parsed) && parsed.length===4) seasonScores = parsed;
+    seasonGames = parseInt(localStorage.getItem(LS_GAMES_KEY), 10) || 0;
+  }catch(e){/* localStorage不可でも無視 */}
+}
+function saveSeasonScores(){
+  try{
+    localStorage.setItem(LS_SCORE_KEY, JSON.stringify(seasonScores));
+    localStorage.setItem(LS_GAMES_KEY, String(seasonGames));
+  }catch(e){/* 無視 */}
+}
+function addSeasonScore(finalRanking){
+  finalRanking.forEach((pIdx, i)=>{ seasonScores[pIdx] += SCORE_BY_RANK[i]; });
+  seasonGames++;
+  saveSeasonScores();
+}
+function resetSeasonScores(){
+  seasonScores = [0,0,0,0];
+  seasonGames = 0;
+  saveSeasonScores();
+  renderScoreBoard();
+}
+function renderScoreBoard(lastRanking){
+  const board = document.getElementById('scoreBoard');
+  if(!board) return;
+  const deltaByIdx = {};
+  if(lastRanking) lastRanking.forEach((pIdx, i)=>{ deltaByIdx[pIdx] = SCORE_BY_RANK[i]; });
+  const rows = [0,1,2,3].map(i=>{
+    const val = seasonScores[i];
+    const cls = val>0 ? 'score-plus' : (val<0 ? 'score-minus' : '');
+    const delta = deltaByIdx[i]!==undefined
+      ? ' <span class="score-delta">('+(deltaByIdx[i]>=0?'+':'')+deltaByIdx[i]+')</span>' : '';
+    return '<div class="score-row"><span>'+playerName(i)+'</span><span class="score-total '+cls+'">'+(val>0?'+':'')+val+'</span>'+delta+'</div>';
+  }).join('');
+  board.innerHTML = '<div class="score-board-title">総合成績（'+seasonGames+'戦）</div>'+rows
+    +'<button class="score-reset-btn" type="button" onclick="resetSeasonScores()">スコアをリセット</button>';
+}
 let cpuLevelSetting = 'normal';
 let cpuLevel = 'normal';
 const CPU_LEVEL_LABELS = {normal:'ノーマル', elite:'エリート', legend:'レジェンド'};
@@ -1618,6 +1698,7 @@ function dealFreshHands(){
   declHistory = [];
   nextStartingPlayerOverride = null;
   lastReceivedCardIds = new Set();
+  fastForward = false;
   gameOver = false;
   selected = new Set();
   logLines = [];
@@ -2180,7 +2261,7 @@ function scheduleNextIfCpu(){
       if(gameOver || pendingAction || exchangeInProgress || revealPending) return;
       if(currentPlayerIndex!==myTurnPlayer) return;
       cpuTurn(currentPlayerIndex);
-    }, 850);
+    }, turboMs(850));
   }
 }
 
@@ -2395,7 +2476,7 @@ function doubtAction(doubterIdx){
   setTimeout(()=>{
     if(myGen!==gameGen){ revealPending = false; return; }
     finishDoubt(doubterIdx, truthful);
-  }, 1500);
+  }, turboMs(1500));
 }
 function finishDoubt(doubterIdx, truthful){
   revealPending = false;
@@ -2976,8 +3057,8 @@ function applyBomber(ranksChosen, onComplete){
       if(flyHost) flyHost.innerHTML = '';
       checkGameEndAfterSideEffect('bomber');
       if(onComplete) onComplete();
-    }, 650);
-  }, 900);
+    }, turboMs(650));
+  }, turboMs(900));
 }
 
 let cutInTimer = null;
@@ -3497,12 +3578,14 @@ function humanDoubt(){
 function showResults(){
   const finalRanking = computeFinalRanking();
   previousFinishedOrder = finalRanking.slice();
+  addSeasonScore(finalRanking);
   const list = document.getElementById('resultList');
   list.innerHTML = finalRanking.map((pIdx, i)=>{
     const title = RANK_TITLES[i] || '';
     const reason = violationReasons[pIdx] ? '<div style="font-size:11px;color:var(--red-hanko);">反則：'+violationReasons[pIdx]+'</div>' : '';
     return '<div class="result-row"><span>'+(i+1)+'位　'+playerName(pIdx)+reason+'</span><span class="result-title">'+title+'</span></div>';
   }).join('');
+  renderScoreBoard(finalRanking);
   document.getElementById('overlay').classList.add('show');
 }
 
@@ -3679,6 +3762,14 @@ function render(){
     banner.className = 'turn-banner cpu-turn';
   }
 
+  const skipBtn = document.getElementById('skipBtn');
+  const canFastForward = !gameOver && finishedOrder.includes(0);
+  skipBtn.style.display = canFastForward ? 'block' : 'none';
+  if(canFastForward){
+    skipBtn.textContent = fastForward ? '⏩ 高速再生中（押すと通常速度に戻す）' : '⏩ 残りをスキップ（CPUだけの消化試合を高速処理）';
+    skipBtn.classList.toggle('active', fastForward);
+  }
+
   updateDiscardPileButton();
 }
 
@@ -3784,6 +3875,10 @@ document.getElementById('restartBtn2').addEventListener('click', ()=>{
 document.getElementById('nextGameBtn').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
   withLoading('カード交換中…', ()=>{ startGameWithExchange(); });
+});
+document.getElementById('skipBtn').addEventListener('click', ()=>{
+  fastForward = !fastForward;
+  render();
 });
 document.getElementById('selectAllBtn').addEventListener('click', ()=>{
   RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = true);
@@ -3911,6 +4006,7 @@ function initServiceWorker(){
 }
 
 renderRuleSetup();
+loadSeasonScores();
 Feedback.init();
 initTapFeedback();
 initErrorScreen();
