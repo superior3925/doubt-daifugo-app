@@ -3806,10 +3806,70 @@ document.getElementById('logCollapseBtn').addEventListener('click', ()=>{
   document.getElementById('logCollapseBtn').textContent = collapsed ? '＋' : '－';
 });
 
+// ===== Android実機の「戻る」ボタン対応 =====
+// Capacitorでは backButton にリスナーを付けた時点でデフォルト動作（WebViewの履歴を
+// 戻る／無ければアプリを閉じる）が完全に無効になる。このアプリは1ページ完結で
+// ブラウザ履歴を積まないため、何もしないと「戻る」を押しても反応がなくなってしまう。
+// そこで開いているオーバーレイ／モーダルを優先的に閉じ、何も開いていなければ
+// 対戦画面なら「ルール設定に戻る」と同じ確認フローへ、セットアップ画面（最上位）
+// まで来たらアプリを最小化する、という優先順位で処理する。
+function handleAndroidBackButton(){
+  const errorOv = document.getElementById('errorOverlay');
+  if(errorOv.classList.contains('show')){ location.reload(); return; }
+
+  const audioPanel = document.getElementById('audioPanel');
+  if(audioPanel.classList.contains('show')){ audioPanel.classList.remove('show'); return; }
+
+  const actionOv = document.getElementById('actionOverlay');
+  if(actionOv.classList.contains('show')){ minimizeActionModal(); return; }
+
+  const historyOv = document.getElementById('historyOverlay');
+  if(historyOv.classList.contains('show')){ closeHistoryModal(); return; }
+
+  const resultOv = document.getElementById('overlay');
+  if(resultOv.classList.contains('show')){
+    resultOv.classList.remove('show');
+    document.getElementById('gameScreen').style.display = 'none';
+    document.getElementById('setupScreen').style.display = 'block';
+    Feedback.setTrack('menu');
+    return;
+  }
+
+  const rulesBox = document.getElementById('rulesBox');
+  if(rulesBox.classList.contains('show')){
+    rulesBox.dataset.open = '0';
+    rulesBox.classList.remove('show');
+    return;
+  }
+
+  const gameScreen = document.getElementById('gameScreen');
+  if(gameScreen.style.display !== 'none'){
+    if(!gameOver){
+      if(!confirm('現在のゲームを中断してルール設定に戻りますか？')) return;
+    }
+    gameScreen.style.display = 'none';
+    document.getElementById('setupScreen').style.display = 'block';
+    Feedback.setTrack('menu');
+    return;
+  }
+
+  // セットアップ画面（最上位）まで来たら、標準的なAndroidの挙動に合わせてアプリを
+  // 最小化する（プロセスを強制終了するexitApp()は使わない。状態を保ったまま
+  // バックグラウンドに回るほうが復帰時に自然）。
+  const CapApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if(CapApp) CapApp.minimizeApp();
+}
+function initAndroidBackButton(){
+  const CapApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if(!CapApp || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) return;
+  CapApp.addListener('backButton', handleAndroidBackButton);
+}
+
 renderRuleSetup();
 Feedback.init();
 initTapFeedback();
 initErrorScreen();
+initAndroidBackButton();
 Feedback.setTrack('menu');  // 最初のユーザー操作で実際に再生が始まる
 </script>
 </body>

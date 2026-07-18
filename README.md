@@ -103,10 +103,14 @@ Web版のソース（[index.html](index.html)）はそのまま残し、[Capacit
 - `android/` … Capacitorが生成したネイティブAndroidプロジェクト（Gradle）。ビルド成果物（`build/`・`.gradle/`・`local.properties`）以外はリポジトリにコミットする方針です
 - `capacitor.config.json` … App ID・アプリ名・webDirの設定（App ID: `io.github.superior3925.doubtdaifugo`）
 
+### Android実機の「戻る」ボタン対応
+
+このアプリは1ページ完結でブラウザ履歴を積まないため、Capacitorの`@capacitor/app`プラグインで`backButton`イベントを直接ハンドリングしています（`index.html`内の`handleAndroidBackButton()`）。優先順位は、開いているオーバーレイ／モーダルを閉じる → 対戦中なら「ルール設定に戻る」と同じ確認ダイアログ → セットアップ画面（最上位）まで戻ったらアプリを最小化、の順です。Web版ではこのプラグインが存在しないため何も起きず、影響はありません。
+
 ### 必要な環境
 
 - Node.js（LTS）／npm
-- JDK 17
+- JDK 21（`@capacitor/android` 8系がJava 21でのコンパイルを要求します。Android Studioは内蔵JDKを使うため意識せず動きますが、コマンドラインで`gradlew`を直接叩く場合はJDK 21が必要です）
 - Android Studio（Android SDKのインストールに必要。SDKだけ単体で入れても構いません）
 
 ### セットアップ
