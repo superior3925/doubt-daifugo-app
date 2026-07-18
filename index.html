@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>大富豪</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
@@ -42,6 +42,13 @@
     text-shadow:0 0 18px rgba(139,26,26,0.8), 0 2px 6px var(--shadow);
   }
   *{box-sizing:border-box;}
+  /* タッチ操作の基本改善：タップ時の青いハイライトを消し、ダブルタップ由来の
+     300ms遅延を無くし、UI要素の不用意なテキスト選択・長押しメニューを抑止する。 */
+  button, .card, .switch, .rule-item, .audio-mini-switch, .discard-pile{
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  button, .card{ -webkit-user-select:none; user-select:none; }
   body{
     margin:0;
     font-family:'Zen Kaku Gothic New', sans-serif;
@@ -598,9 +605,9 @@
   .audio-panel.show{ display:flex; }
   .audio-panel h3{ margin:0 0 2px; font-size:13px; color:var(--gold-soft); font-weight:700; }
   .audio-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
-  .audio-row label{ flex:1; }
+  .audio-row label:not(.audio-mini-switch){ flex:1; }
   .audio-row input[type=range]{ width:96px; accent-color:var(--gold); }
-  .audio-mini-switch{ position:relative; width:38px; height:20px; flex-shrink:0; cursor:pointer; }
+  .audio-mini-switch{ position:relative; width:38px; height:20px; flex:0 0 38px; cursor:pointer; }
   .audio-mini-switch input{ opacity:0; width:0; height:0; }
   .audio-mini-track{
     position:absolute; inset:0; border-radius:999px;
@@ -678,13 +685,58 @@
     .log-sidebar{ width:100%; max-height:220px; }
   }
   @media (max-width:600px){
+    body{ padding:14px 8px 40px; }
     h1.title{ font-size:28px; }
-    .card{ width:44px; height:64px; padding:3px 4px;}
+    .card{ width:46px; height:66px; padding:3px 4px;}
     .card .rank{ font-size:12px;}
     .card .suit{ font-size:16px;}
     .opp{ min-width:76px; padding:6px 8px; }
-    .table{ border-radius:60px; padding:14px 10px; }
+    .table{ border-radius:36px; padding:14px 8px; }
     .setup-box{ padding:16px 14px; }
+
+    /* --- タップしやすいサイズへ底上げ（推奨44px以上） --- */
+    button.action{ font-size:15px; padding:13px 24px; min-height:48px; }
+    /* 画面下部の操作バー内のボタンだけは横幅を均等に広げる（設定画面や結果画面の
+       ボタンは全幅のまま活かしたいのでここでは対象にしない）。 */
+    .controls button.action{ flex:1; max-width:160px; }
+    .rules-toggle{ min-height:42px; padding:9px 16px; font-size:13px; }
+    .sort-toggle{ min-height:38px; padding:8px 14px; }
+    .log-collapse-btn{ width:38px; height:38px; font-size:18px; }
+    .discard-pile{ min-width:52px; min-height:44px; font-size:18px; }
+    .rank-btn{ min-height:40px; min-width:40px; font-size:14px; }
+    .joker-step-btn{ width:40px; height:40px; font-size:18px; }
+    .audio-mini-switch{ width:46px; height:26px; flex-basis:46px; }
+    .audio-mini-track::before{ width:20px; height:20px; }
+    .audio-mini-switch input:checked + .audio-mini-track::before{ transform:translateX(20px); }
+    .audio-panel input[type=range]{ height:26px; }
+
+    /* --- 操作ボタンを画面下部に固定して常に押せるようにする --- */
+    .controls{
+      position:sticky;
+      bottom:0;
+      z-index:40;
+      margin:10px -8px 0;
+      padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+      gap:10px;
+      background:linear-gradient(to top, var(--felt-dark) 55%, transparent);
+      backdrop-filter:blur(2px);
+    }
+    body.doubt-mode .controls{
+      background:linear-gradient(to top, #04060a 55%, transparent);
+    }
+
+    /* 設定FABはやや小さく・半透明にして、盤面に重なっても邪魔しにくくする */
+    .audio-fab{
+      width:40px; height:40px; font-size:17px;
+      top:calc(8px + env(safe-area-inset-top));
+      right:calc(8px + env(safe-area-inset-right));
+      opacity:0.82;
+    }
+    .audio-panel{
+      top:calc(54px + env(safe-area-inset-top));
+      right:calc(8px + env(safe-area-inset-right));
+      width:min(250px, calc(100vw - 16px));
+    }
   }
 </style>
 </head>
@@ -822,7 +874,7 @@
   <h3>サウンド設定</h3>
   <div class="audio-row">
     <label for="bgmToggle">BGM</label>
-    <span class="audio-mini-switch"><input type="checkbox" id="bgmToggle"><span class="audio-mini-track"></span></span>
+    <label class="audio-mini-switch"><input type="checkbox" id="bgmToggle"><span class="audio-mini-track"></span></label>
   </div>
   <div class="audio-row">
     <label for="bgmVol">BGM音量</label>
@@ -830,7 +882,7 @@
   </div>
   <div class="audio-row">
     <label for="sfxToggle">効果音</label>
-    <span class="audio-mini-switch"><input type="checkbox" id="sfxToggle"><span class="audio-mini-track"></span></span>
+    <label class="audio-mini-switch"><input type="checkbox" id="sfxToggle"><span class="audio-mini-track"></span></label>
   </div>
   <div class="audio-row">
     <label for="sfxVol">効果音音量</label>
@@ -838,7 +890,7 @@
   </div>
   <div class="audio-row">
     <label for="hapticToggle">触覚（バイブ）</label>
-    <span class="audio-mini-switch"><input type="checkbox" id="hapticToggle"><span class="audio-mini-track"></span></span>
+    <label class="audio-mini-switch"><input type="checkbox" id="hapticToggle"><span class="audio-mini-track"></span></label>
   </div>
   <div class="audio-note" id="audioNote"></div>
 </div>
