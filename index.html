@@ -272,6 +272,20 @@
     color:var(--gold-soft); background:rgba(0,0,0,0.3);
   }
 
+  .decl-history{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center;
+    font-size:11px; padding:4px 0;
+  }
+  .decl-history-label{ color:#9db8a8; flex-shrink:0; }
+  .decl-history-chips{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  .decl-history-chip{
+    padding:3px 9px; border-radius:999px; border:1px solid rgba(231,205,123,0.4);
+    background:rgba(0,0,0,0.25); color:#d9e3da; white-space:nowrap;
+  }
+  .decl-history-chip.you{ border-color:var(--gold); color:var(--gold-soft); }
+  .decl-history-chip.latest{ opacity:1; }
+  .decl-history-chip.fading{ opacity:0.55; }
+
   .you-row{ text-align:center; border-radius:16px; padding:8px; transition:box-shadow .2s; }
   .you-label-row{ display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
   .you-label{ font-size:13px; font-weight:700; color:var(--gold-soft); }
@@ -562,6 +576,103 @@
     animation:bannerPulse 1.4s ease-in-out infinite;
   }
 
+  /* ===== 音・触覚フィードバック関連のUI ===== */
+  .audio-fab{
+    position:fixed; top:14px; right:14px; z-index:60;
+    width:44px; height:44px; border-radius:50%;
+    background:rgba(0,0,0,0.55); border:1px solid var(--gold);
+    color:var(--gold-soft); font-size:20px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter:blur(4px); transition:transform .15s, box-shadow .15s;
+  }
+  .audio-fab:hover{ transform:scale(1.08); box-shadow:0 0 14px rgba(201,162,39,0.5); }
+  .audio-fab:active{ transform:scale(0.94); }
+  .audio-panel{
+    position:fixed; top:66px; right:14px; z-index:60;
+    width:250px; padding:14px 16px; border-radius:14px;
+    background:rgba(10,14,18,0.95); border:1px solid rgba(201,162,39,0.5);
+    box-shadow:0 12px 32px rgba(0,0,0,0.6); color:var(--cream);
+    display:none; flex-direction:column; gap:12px;
+    font-size:12px; backdrop-filter:blur(6px);
+  }
+  .audio-panel.show{ display:flex; }
+  .audio-panel h3{ margin:0 0 2px; font-size:13px; color:var(--gold-soft); font-weight:700; }
+  .audio-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .audio-row label{ flex:1; }
+  .audio-row input[type=range]{ width:96px; accent-color:var(--gold); }
+  .audio-mini-switch{ position:relative; width:38px; height:20px; flex-shrink:0; cursor:pointer; }
+  .audio-mini-switch input{ opacity:0; width:0; height:0; }
+  .audio-mini-track{
+    position:absolute; inset:0; border-radius:999px;
+    background:rgba(255,255,255,0.15); border:1px solid rgba(201,162,39,0.4);
+    transition:background .2s;
+  }
+  .audio-mini-track::before{
+    content:''; position:absolute; top:2px; left:2px; width:14px; height:14px;
+    border-radius:50%; background:var(--gold-soft); transition:transform .2s;
+  }
+  .audio-mini-switch input:checked + .audio-mini-track{ background:rgba(201,162,39,0.55); }
+  .audio-mini-switch input:checked + .audio-mini-track::before{ transform:translateX(18px); }
+  .audio-panel .audio-note{ font-size:10.5px; color:#9db8a8; line-height:1.5; }
+
+  /* ローディング画面（配牌演出） */
+  .loading-overlay{
+    position:fixed; inset:0; z-index:80; display:none;
+    align-items:center; justify-content:center; flex-direction:column; gap:22px;
+    background:radial-gradient(ellipse at center, #0c3a2c 0%, #05130d 100%);
+  }
+  body.doubt-mode .loading-overlay{
+    background:radial-gradient(ellipse at center, #111a1f 0%, #04060a 100%);
+  }
+  .loading-overlay.show{ display:flex; }
+  .loading-spinner{
+    width:64px; height:64px; border-radius:50%;
+    border:4px solid rgba(201,162,39,0.2); border-top-color:var(--gold-soft);
+    animation:loadSpin 0.8s linear infinite;
+  }
+  @keyframes loadSpin{ to{ transform:rotate(360deg); } }
+  .loading-text{ color:var(--gold-soft); font-size:16px; letter-spacing:0.2em; font-family:'Shippori Mincho',serif; }
+  .loading-suit-row{ display:flex; gap:14px; font-size:26px; }
+  .loading-suit-row span{ animation:suitBlink 1.2s ease-in-out infinite; }
+  .loading-suit-row span:nth-child(2){ animation-delay:0.15s; }
+  .loading-suit-row span:nth-child(3){ animation-delay:0.3s; }
+  .loading-suit-row span:nth-child(4){ animation-delay:0.45s; }
+  .loading-suit-row .s-red{ color:#e0524a; }
+  .loading-suit-row .s-blk{ color:#e8e4da; }
+  @keyframes suitBlink{ 0%,100%{ opacity:0.25; transform:translateY(0); } 50%{ opacity:1; transform:translateY(-6px); } }
+
+  /* エラー画面 */
+  .error-overlay{
+    position:fixed; inset:0; z-index:90; display:none;
+    align-items:center; justify-content:center; padding:24px;
+    background:rgba(6,8,10,0.94);
+  }
+  .error-overlay.show{ display:flex; }
+  .error-card{
+    max-width:440px; text-align:center; color:var(--cream);
+    background:rgba(20,16,14,0.9); border:1px solid var(--red-hanko);
+    border-radius:16px; padding:28px 26px; box-shadow:0 16px 40px rgba(0,0,0,0.7);
+  }
+  .error-card h2{ margin:0 0 12px; color:#e0524a; font-size:20px; }
+  .error-card p{ font-size:13px; line-height:1.7; color:#d9c9b8; margin:0 0 18px; }
+  .error-card .error-detail{
+    font-size:11px; color:#9a8f82; background:rgba(0,0,0,0.4);
+    border-radius:8px; padding:8px 10px; margin:0 0 18px; word-break:break-all;
+    max-height:120px; overflow:auto; text-align:left; font-family:monospace;
+  }
+
+  /* タップ波紋（リップル） */
+  .ripple-layer{ position:fixed; inset:0; pointer-events:none; z-index:70; overflow:hidden; }
+  .ripple{
+    position:absolute; border-radius:50%; transform:translate(-50%,-50%) scale(0);
+    background:radial-gradient(circle, rgba(231,205,123,0.55) 0%, rgba(231,205,123,0) 70%);
+    animation:rippleGrow 0.5s ease-out forwards; width:120px; height:120px;
+  }
+  @keyframes rippleGrow{ to{ transform:translate(-50%,-50%) scale(1.6); opacity:0; } }
+  /* カードやボタンを押した瞬間の沈み込み */
+  .tap-press{ animation:tapPress 0.16s ease-out; }
+  @keyframes tapPress{ 50%{ transform:scale(0.93); } }
+
   @media (max-width:900px){
     .game-layout{ flex-direction:column; }
     .log-sidebar{ width:100%; max-height:220px; }
@@ -649,6 +760,10 @@
             <div class="field-owner" id="fieldOwner"></div>
             <div class="field-cards" id="fieldCards"></div>
           </div>
+          <div class="decl-history" id="declHistory" style="display:none;">
+            <span class="decl-history-label">直近の宣言</span>
+            <div class="decl-history-chips" id="declHistoryChips"></div>
+          </div>
           <div class="you-row" id="youRow">
             <div class="you-label-row">
               <div class="you-label" id="youLabel">あなたの手札</div>
@@ -701,11 +816,322 @@
 <div class="bomber-fly" id="bomberFlyHost"></div>
 <button class="restore-tab" id="restoreTab" style="display:none;" type="button">操作画面に戻る</button>
 
+<!-- 音・触覚フィードバックの設定 -->
+<button class="audio-fab" id="audioFab" type="button" title="サウンド設定" aria-label="サウンド設定">🔊</button>
+<div class="audio-panel" id="audioPanel">
+  <h3>サウンド設定</h3>
+  <div class="audio-row">
+    <label for="bgmToggle">BGM</label>
+    <span class="audio-mini-switch"><input type="checkbox" id="bgmToggle"><span class="audio-mini-track"></span></span>
+  </div>
+  <div class="audio-row">
+    <label for="bgmVol">BGM音量</label>
+    <input type="range" id="bgmVol" min="0" max="100" value="45">
+  </div>
+  <div class="audio-row">
+    <label for="sfxToggle">効果音</label>
+    <span class="audio-mini-switch"><input type="checkbox" id="sfxToggle"><span class="audio-mini-track"></span></span>
+  </div>
+  <div class="audio-row">
+    <label for="sfxVol">効果音音量</label>
+    <input type="range" id="sfxVol" min="0" max="100" value="70">
+  </div>
+  <div class="audio-row">
+    <label for="hapticToggle">触覚（バイブ）</label>
+    <span class="audio-mini-switch"><input type="checkbox" id="hapticToggle"><span class="audio-mini-track"></span></span>
+  </div>
+  <div class="audio-note" id="audioNote"></div>
+</div>
+
+<!-- ローディング（配牌）演出 -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-suit-row"><span class="s-blk">♠</span><span class="s-red">♥</span><span class="s-red">♦</span><span class="s-blk">♣</span></div>
+  <div class="loading-text" id="loadingText">配牌中…</div>
+</div>
+
+<!-- 予期しないエラー時のフォールバック画面 -->
+<div class="error-overlay" id="errorOverlay">
+  <div class="error-card">
+    <h2>⚠ エラーが発生しました</h2>
+    <p>ゲームの処理中に問題が起きました。お手数ですが、ゲームをやり直してください。</p>
+    <div class="error-detail" id="errorDetail"></div>
+    <button class="action play" id="errorReloadBtn" type="button">最初からやり直す</button>
+  </div>
+</div>
+
+<div class="ripple-layer" id="rippleLayer"></div>
+
 <script>
 const RANKS = ['3','4','5','6','7','8','9','10','J','Q','K','A','2'];
 const SUITS = ['♠','♥','♦','♣'];
 const RANK_TITLES = ['大富豪','富豪','貧民','大貧民'];
 const NAMES = ['あなた','CPU 1','CPU 2','CPU 3'];
+
+/* =====================================================================
+   Feedback: BGM・効果音（Web Audio APIで合成）・触覚フィードバックを
+   ひとまとめにした自己完結モジュール。単一HTMLファイル構成を崩さないため、
+   効果音は音声ファイルではなくその場で合成する。BGMだけは assets/bgm/ の
+   mp3を読むが、ファイルが無い（gitに含めていないので新規cloneでは無い）場合も
+   静かに無効化するだけでゲームは通常どおり動く。
+   ===================================================================== */
+const Feedback = (function(){
+  const LS = {
+    bgm:'ddf_bgm_on', bgmVol:'ddf_bgm_vol',
+    sfx:'ddf_sfx_on', sfxVol:'ddf_sfx_vol',
+    haptic:'ddf_haptic_on'
+  };
+  const BGM_FILES = {
+    menu: 'assets/bgm/貴族のお部屋.mp3',     // 設定画面向けの落ち着いた曲
+    game: 'assets/bgm/メンタルヘルス.mp3'    // 対戦中向けの曲
+  };
+  const hapticSupported = typeof navigator!=='undefined' && typeof navigator.vibrate==='function';
+
+  const st = {
+    bgmOn: readBool(LS.bgm, true),
+    bgmVol: readNum(LS.bgmVol, 45),
+    sfxOn: readBool(LS.sfx, true),
+    sfxVol: readNum(LS.sfxVol, 70),
+    hapticOn: readBool(LS.haptic, true) && hapticSupported
+  };
+
+  function readBool(k, def){ const v=localStorage.getItem(k); return v===null ? def : v==='1'; }
+  function readNum(k, def){ const v=parseInt(localStorage.getItem(k),10); return isNaN(v)?def:v; }
+  function save(){
+    try{
+      localStorage.setItem(LS.bgm, st.bgmOn?'1':'0');
+      localStorage.setItem(LS.bgmVol, String(st.bgmVol));
+      localStorage.setItem(LS.sfx, st.sfxOn?'1':'0');
+      localStorage.setItem(LS.sfxVol, String(st.sfxVol));
+      localStorage.setItem(LS.haptic, st.hapticOn?'1':'0');
+    }catch(e){/* localStorage不可でも無視 */}
+  }
+
+  // ---- Web Audio (SFX) ----
+  let ctx = null, sfxMaster = null;
+  function ensureCtx(){
+    if(ctx) return ctx;
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return null;
+      ctx = new AC();
+      sfxMaster = ctx.createGain();
+      sfxMaster.gain.value = st.sfxVol/100;
+      sfxMaster.connect(ctx.destination);
+    }catch(e){ ctx=null; }
+    return ctx;
+  }
+  function unlock(){
+    const c = ensureCtx();
+    if(c && c.state==='suspended') c.resume();
+    startBgmIfWanted();
+  }
+
+  function tone(opts){
+    const c = ensureCtx();
+    if(!c || !st.sfxOn) return;
+    const t0 = c.currentTime + (opts.delay||0);
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = opts.type || 'sine';
+    osc.frequency.setValueAtTime(opts.f0, t0);
+    if(opts.f1!=null) osc.frequency.exponentialRampToValueAtTime(Math.max(1,opts.f1), t0+opts.dur);
+    const peak = (opts.gain!=null?opts.gain:0.3);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+opts.dur);
+    osc.connect(g); g.connect(sfxMaster);
+    osc.start(t0); osc.stop(t0+opts.dur+0.02);
+  }
+  function noise(opts){
+    const c = ensureCtx();
+    if(!c || !st.sfxOn) return;
+    const t0 = c.currentTime + (opts.delay||0);
+    const dur = opts.dur||0.12;
+    const buf = c.createBuffer(1, Math.ceil(c.sampleRate*dur), c.sampleRate);
+    const data = buf.getChannelData(0);
+    for(let i=0;i<data.length;i++) data[i] = (Math.random()*2-1);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const filt = c.createBiquadFilter();
+    filt.type = opts.filter||'lowpass';
+    filt.frequency.setValueAtTime(opts.freq||1200, t0);
+    if(opts.freqEnd!=null) filt.frequency.exponentialRampToValueAtTime(Math.max(60,opts.freqEnd), t0+dur);
+    const g = c.createGain();
+    const peak = (opts.gain!=null?opts.gain:0.25);
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    src.connect(filt); filt.connect(g); g.connect(sfxMaster);
+    src.start(t0); src.stop(t0+dur+0.02);
+  }
+
+  // 効果音のレシピ。名前で呼び出す。
+  const RECIPES = {
+    button(){ tone({type:'square', f0:660, f1:520, dur:0.06, gain:0.14}); },
+    select(){ tone({type:'sine', f0:880, dur:0.05, gain:0.16}); },
+    cardPlay(){ noise({freq:2600, freqEnd:500, dur:0.16, gain:0.28}); tone({type:'sine', f0:420, f1:200, dur:0.14, gain:0.12}); },
+    pass(){ tone({type:'sine', f0:300, f1:200, dur:0.16, gain:0.16}); },
+    reveal(){ noise({freq:3200, freqEnd:900, dur:0.09, gain:0.3}); },
+    doubt(){ tone({type:'sawtooth', f0:180, f1:90, dur:0.35, gain:0.3}); tone({type:'square', f0:300, dur:0.12, gain:0.14, delay:0.02}); },
+    doubtWin(){ [523,659,880].forEach((f,i)=>tone({type:'triangle', f0:f, dur:0.16, gain:0.22, delay:i*0.09})); },
+    doubtLose(){ tone({type:'sawtooth', f0:420, f1:150, dur:0.4, gain:0.26}); },
+    out(){ tone({type:'sine', f0:150, f1:70, dur:0.3, gain:0.3}); noise({freq:400, freqEnd:120, dur:0.2, gain:0.2}); },
+    win(){ [523,659,784,1047].forEach((f,i)=>tone({type:'triangle', f0:f, dur:0.22, gain:0.24, delay:i*0.11})); },
+    cutin(){ tone({type:'triangle', f0:880, f1:1760, dur:0.18, gain:0.18}); noise({filter:'highpass', freq:4000, dur:0.2, gain:0.12}); },
+    revolution(){ [400,300,220,160].forEach((f,i)=>tone({type:'sawtooth', f0:f, dur:0.2, gain:0.22, delay:i*0.06})); }
+  };
+  const HAPTICS = {
+    button:8, select:6, cardPlay:14, pass:10, reveal:12,
+    doubt:[28,18,28], doubtWin:[12,30,12], doubtLose:[45,25,45],
+    out:[55,30,55], win:[14,40,14,40,70], cutin:20, revolution:[20,20,20,20]
+  };
+
+  function sfx(name){
+    if(RECIPES[name]) RECIPES[name]();
+    haptic(name);
+  }
+  function haptic(name){
+    if(!st.hapticOn || !hapticSupported) return;
+    const p = HAPTICS[name];
+    if(p!=null){ try{ navigator.vibrate(p); }catch(e){} }
+  }
+
+  // ---- BGM ----
+  let audioEls = {}, currentTrack = null, bgmAvailable = {menu:true, game:true};
+  function makeAudio(key){
+    if(audioEls[key]) return audioEls[key];
+    const a = new Audio();
+    a.loop = true;
+    a.preload = 'auto';
+    a.src = encodeURI(BGM_FILES[key]);
+    a.volume = st.bgmVol/100;
+    a.addEventListener('error', ()=>{ bgmAvailable[key]=false; updateNote(); });
+    audioEls[key] = a;
+    return a;
+  }
+  function startBgmIfWanted(){ if(st.bgmOn && currentTrack) playTrack(currentTrack); }
+  function playTrack(key){
+    currentTrack = key;
+    // 別トラックが鳴っていたら止める
+    Object.keys(audioEls).forEach(k=>{ if(k!==key && audioEls[k]) audioEls[k].pause(); });
+    if(!st.bgmOn) return;
+    const a = makeAudio(key);
+    a.volume = st.bgmVol/100;
+    const pr = a.play();
+    if(pr && pr.catch) pr.catch(()=>{ /* 自動再生ブロックはユーザー操作で解除される */ });
+  }
+  function setTrack(key){ if(currentTrack===key && st.bgmOn && audioEls[key] && !audioEls[key].paused) return; playTrack(key); }
+  function stopBgm(){ Object.values(audioEls).forEach(a=>a.pause()); }
+
+  // ---- 設定UIとの同期 ----
+  function updateNote(){
+    const note = document.getElementById('audioNote');
+    if(!note) return;
+    const msgs = [];
+    if(!hapticSupported) msgs.push('※お使いの端末は触覚フィードバック（バイブ）に対応していません。');
+    if(bgmAvailable.menu===false || bgmAvailable.game===false) msgs.push('※BGM音源が見つかりません（assets/bgm/ に配置してください）。効果音はそのまま使えます。');
+    note.textContent = msgs.join(' ');
+  }
+  function syncUI(){
+    const set = (id, prop, val)=>{ const el=document.getElementById(id); if(el) el[prop]=val; };
+    set('bgmToggle','checked', st.bgmOn);
+    set('sfxToggle','checked', st.sfxOn);
+    set('hapticToggle','checked', st.hapticOn);
+    set('bgmVol','value', st.bgmVol);
+    set('sfxVol','value', st.sfxVol);
+    const ht = document.getElementById('hapticToggle');
+    if(ht && !hapticSupported){ ht.checked=false; ht.disabled=true; }
+    const fab = document.getElementById('audioFab');
+    if(fab) fab.textContent = (st.bgmOn||st.sfxOn) ? '🔊' : '🔇';
+    updateNote();
+  }
+
+  function init(){
+    // 設定パネルの開閉
+    const fab = document.getElementById('audioFab');
+    const panel = document.getElementById('audioPanel');
+    if(fab && panel){
+      fab.addEventListener('click', (e)=>{ e.stopPropagation(); panel.classList.toggle('show'); });
+      document.addEventListener('click', (e)=>{
+        if(panel.classList.contains('show') && !panel.contains(e.target) && e.target!==fab) panel.classList.remove('show');
+      });
+    }
+    bind('bgmToggle','change', el=>{ st.bgmOn=el.checked; save(); if(st.bgmOn) startBgmIfWanted(); else stopBgm(); syncUI(); });
+    bind('sfxToggle','change', el=>{ st.sfxOn=el.checked; save(); syncUI(); if(st.sfxOn) sfx('button'); });
+    bind('hapticToggle','change', el=>{ st.hapticOn=el.checked; save(); if(st.hapticOn) haptic('doubt'); });
+    bind('bgmVol','input', el=>{ st.bgmVol=parseInt(el.value,10)||0; if(audioEls[currentTrack]) audioEls[currentTrack].volume=st.bgmVol/100; save(); });
+    bind('sfxVol','input', el=>{ st.sfxVol=parseInt(el.value,10)||0; if(sfxMaster) sfxMaster.gain.value=st.sfxVol/100; save(); });
+    bind('bgmVol','change', ()=>sfx('select'));
+    bind('sfxVol','change', ()=>sfx('select'));
+
+    // 最初のユーザー操作でオーディオをアンロック（自動再生ポリシー対策）
+    const onFirst = ()=>{ unlock(); window.removeEventListener('pointerdown', onFirst); window.removeEventListener('keydown', onFirst); };
+    window.addEventListener('pointerdown', onFirst);
+    window.addEventListener('keydown', onFirst);
+
+    syncUI();
+  }
+  function bind(id, ev, fn){ const el=document.getElementById(id); if(el) el.addEventListener(ev, ()=>fn(el)); }
+
+  return { init, sfx, haptic, setTrack, stopBgm, unlock,
+           get bgmOn(){ return st.bgmOn; } };
+})();
+
+/* タップ波紋・押し込み演出。ボタンやカードを触れた位置に軽い波紋を出す。 */
+function spawnRipple(x, y){
+  const layer = document.getElementById('rippleLayer');
+  if(!layer) return;
+  const r = document.createElement('span');
+  r.className = 'ripple';
+  r.style.left = x+'px';
+  r.style.top = y+'px';
+  layer.appendChild(r);
+  setTimeout(()=>r.remove(), 520);
+}
+function initTapFeedback(){
+  document.addEventListener('pointerdown', (e)=>{
+    const t = e.target.closest('button, .card');
+    if(!t) return;
+    const isCard = t.classList.contains('card');
+    // 無効なボタン・押せないカード（相手の裏面や場札、手番でない手札）は反応させない。
+    if(!isCard && t.disabled) return;
+    if(isCard && (t.classList.contains('disabled') || !t.hasAttribute('onclick'))) return;
+    spawnRipple(e.clientX, e.clientY);
+    t.classList.remove('tap-press');
+    void t.offsetWidth; // 強制リフローで再アニメーション
+    t.classList.add('tap-press');
+    setTimeout(()=>t.classList.remove('tap-press'), 180);
+    // 汎用タップ音（ゲーム進行の主要効果音は各アクション側で個別に鳴らす）
+    if(isCard) Feedback.sfx('select');
+    else Feedback.haptic('button');
+  }, {passive:true});
+}
+
+/* ローディング（配牌）演出。fnを短い演出の後に実行する。 */
+function withLoading(text, fn){
+  const ov = document.getElementById('loadingOverlay');
+  const label = document.getElementById('loadingText');
+  if(label) label.textContent = text || '配牌中…';
+  if(ov) ov.classList.add('show');
+  setTimeout(()=>{
+    try{ fn(); }
+    finally{ if(ov) ov.classList.remove('show'); }
+  }, 720);
+}
+
+/* 予期しない例外でも真っ白にならないよう、フォールバック画面を出す。 */
+function initErrorScreen(){
+  const show = (msg)=>{
+    const ov = document.getElementById('errorOverlay');
+    const det = document.getElementById('errorDetail');
+    if(det) det.textContent = String(msg||'').slice(0,400);
+    if(ov) ov.classList.add('show');
+    try{ Feedback.stopBgm(); }catch(e){}
+  };
+  window.addEventListener('error', (e)=>{ show(e.message + (e.filename?(' @ '+e.filename+':'+e.lineno):'')); });
+  window.addEventListener('unhandledrejection', (e)=>{ show(e.reason && (e.reason.stack||e.reason.message) || e.reason); });
+  const btn = document.getElementById('errorReloadBtn');
+  if(btn) btn.addEventListener('click', ()=>location.reload());
+}
 
 const RULE_DEFS = [
   // 数字による特殊効果系（トリガーとなる数字の小さい順）
@@ -774,6 +1200,11 @@ let revealPending = false;
 // カンニングにはならない。
 let liarCaughtCount = [0,0,0,0];
 let provenHonestCount = [0,0,0,0];
+// 直近の宣言だけを覚えておく短期メモ。ゲーム全体のログではなく件数を絞ることで、
+// 「CPUの手が早くて直前の宣言すら追えない」を助ける一方、終盤に序盤の宣言について
+// 嘘をつく…といった記憶力頼みの読み合いの面白さは壊さないようにする。
+let declHistory = [];
+const DECL_HISTORY_LIMIT = 5;
 let cpuLevelSetting = 'normal';
 let cpuLevel = 'normal';
 const CPU_LEVEL_LABELS = {normal:'ノーマル', elite:'エリート', legend:'レジェンド'};
@@ -891,6 +1322,11 @@ function log(msg){
   const panel=document.getElementById('logPanel');
   panel.innerHTML = logLines.map(l=>'<div>'+l+'</div>').join('');
   panel.scrollTop = panel.scrollHeight;
+}
+
+function pushDeclHistory(playerIdx, label){
+  declHistory.push({playerIdx, label});
+  if(declHistory.length > DECL_HISTORY_LIMIT) declHistory.shift();
 }
 
 function activePlayers(){ return [0,1,2,3].filter(i=>!finishedOrder.includes(i)); }
@@ -1061,6 +1497,7 @@ function dealFreshHands(){
   revealPending = false;
   liarCaughtCount = [0,0,0,0];
   provenHonestCount = [0,0,0,0];
+  declHistory = [];
   nextStartingPlayerOverride = null;
   lastReceivedCardIds = new Set();
   gameOver = false;
@@ -1235,6 +1672,10 @@ function resolveFieldClearOnPass(){
     log('場が流れた');
   }
   checkGameEnd(); // 保留していたゲーム終了判定を、宣言が確定した今ここで再評価する
+  // ここで初めてgameOverになるケース（最後の宣言が確定するまで判定を保留していた場合）
+  // では、呼び出し元はこの後もadvanceToNextActor等を素通りしてしまうので、結果画面を
+  // ここで出しておかないと「結果を確認してください」の表示のまま何も起きなくなる。
+  if(gameOver){ render(); showResults(); }
   return true;
 }
 function countSeatAsPass(){
@@ -1413,6 +1854,7 @@ function updateLocksAfterPlay(prevField, rank, count, cards, wasSpade3Counter, p
 // cardsPlayed は「宣言されたカード」。ダウトモードでは actualCards に実際に伏せる札を渡す
 // （通常モードでは両者同一）。手札から抜くのは actualCards、場のランクになるのは cardsPlayed。
 function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards){
+  Feedback.sfx('cardPlay');
   const actual = actualCards || cardsPlayed;
   const prevField = field;
   const wasSpade3Counter = isSpade3Counter(cardsPlayed.length, cardsPlayed);
@@ -1448,6 +1890,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   } else if(faceDown){
     log(playerName(playerIdx)+'： 「'+declLabel(cardsPlayed)+'」と宣言して'+count+'枚を伏せた');
     if(rank==='8' && rules.fourStop) log('4を'+(count*2)+'枚（ジョーカー代用可）出せれば4止めで阻止できます');
+    pushDeclHistory(playerIdx, declLabel(cardsPlayed));
   } else {
     log(playerName(playerIdx)+'： '+(rank==='JOKER'?'ジョーカー':rank)+' を'+count+'枚出した');
     if(rank==='8' && rules.fourStop) log('4を'+(count*2)+'枚（ジョーカー代用可）出せれば4止めで阻止できます');
@@ -1465,7 +1908,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
     revolution = postToggleRevolution;
     if(journal) journal.revolutionToggled = true;
     log('革命が起きた！強さが逆転する');
-    showCutIn('革命！！！');
+    showCutIn('革命！！！', 'revolution');
   }
   if(willToggleElevenBack){
     elevenBack = postToggleElevenBack;
@@ -1493,6 +1936,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
     } else {
       log(playerName(playerIdx)+' が上がり！');
       markLegitFinish(playerIdx);
+      if(playerIdx===0) Feedback.sfx('win');
     }
   }
 
@@ -1600,6 +2044,7 @@ function afterPlayEffects(info){
 
 function passAction(playerIdx){
   passStreak++;
+  Feedback.sfx('pass');
   log(playerName(playerIdx)+'： パス');
   resolveFieldClearOnPass();
   advanceToNextActor();
@@ -1718,6 +2163,7 @@ function estimateOpponentThreat(idx, opp){
 // ---- ダウトの解決 ----
 function addOut(idx, reason){
   outs[idx]++;
+  Feedback.sfx('out');
   log(playerName(idx)+'にアウト（'+reason+'）　合計 '+outs[idx]+'/3');
   if(outs[idx]>=3 && !finishedOrder.includes(idx)){
     log(playerName(idx)+'はアウト3つで強制敗北！ その時点での最下位候補になります');
@@ -1824,7 +2270,7 @@ function doubtAction(doubterIdx){
   f.revealed = true;
   f.actual.forEach(c=>currentTrickHiddenIds.delete(c.id));
   log(playerName(doubterIdx)+'：ダウト！　'+playerName(f.owner)+'の宣言「'+declLabel(f.cards)+'」→ 実際は「'+declLabel(f.actual)+'」');
-  showCutIn('ダウト！！');
+  showCutIn('ダウト！！', 'doubt');
   revealPending = true;
   render();
   const myGen = gameGen;
@@ -1835,6 +2281,7 @@ function doubtAction(doubterIdx){
 }
 function finishDoubt(doubterIdx, truthful){
   revealPending = false;
+  Feedback.sfx('reveal');
   if(truthful) doubtFailed(doubterIdx);
   else doubtSucceeded(doubterIdx);
 }
@@ -1843,7 +2290,7 @@ function doubtFailed(doubterIdx){
   // 完全に公開されたダウトの結果として、出し手が「立証された正直さ」の統計を積む
   // （レジェンドCPUの学習材料。誰の手札も覗かない）。
   if(field) provenHonestCount[field.owner]++;
-  showCutIn('宣言どおり！ ダウト失敗');
+  showCutIn('宣言どおり！ ダウト失敗', 'doubtLose');
   log(playerName(doubterIdx)+'のダウトは失敗。このトリックと次のトリックは休みです');
   if(field && field.pendingClear) log(playerName(field.owner)+'の'+pendingClearLabel(field.pendingClear)+'の宣言は本物でした');
   // 宣言が真実だと確定したので、その宣言（自身の上がり等）にひも付いて保留していた
@@ -1869,7 +2316,7 @@ function doubtSucceeded(doubterIdx){
   const f = field;
   const liar = f.owner;
   liarCaughtCount[liar]++;
-  showCutIn('ウソつき！！');
+  showCutIn('ウソつき！！', 'doubtWin');
   log(playerName(liar)+'のウソが暴かれた！ 出した'+f.actual.length+'枚は手札に戻ります');
   annulFieldPlay();
   addOut(liar, 'ウソ発覚');
@@ -2416,7 +2863,8 @@ function applyBomber(ranksChosen, onComplete){
 }
 
 let cutInTimer = null;
-function showCutIn(text){
+function showCutIn(text, sound){
+  Feedback.sfx(sound===undefined ? 'cutin' : sound);
   const host = document.getElementById('cutInHost');
   if(!host) return;
   if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
@@ -2981,6 +3429,20 @@ function render(){
   if(field && field.pendingClear) flagParts.push('<div class="flag">'+pendingClearLabel(field.pendingClear)+'成立待ち（他の人がダウトかパスをするまで確定しません）</div>');
   document.getElementById('flags').innerHTML = flagParts.join('');
 
+  const declHistoryEl = document.getElementById('declHistory');
+  if(isDoubtMode() && declHistory.length>0){
+    declHistoryEl.style.display = 'flex';
+    const n = declHistory.length;
+    document.getElementById('declHistoryChips').innerHTML = declHistory.map((d,i)=>{
+      const cls = ['decl-history-chip'];
+      cls.push(d.playerIdx===0 ? 'you' : '');
+      cls.push(i===n-1 ? 'latest' : (i<n-2 ? 'fading' : ''));
+      return '<span class="'+cls.filter(Boolean).join(' ')+'">'+playerName(d.playerIdx)+'「'+d.label+'」</span>';
+    }).join('');
+  } else {
+    declHistoryEl.style.display = 'none';
+  }
+
   const isNewField = field !== null && pendingDealAnimation;
   const pendingSuffix = (field && field.pendingClear) ? '（成立待ち・'+pendingClearLabel(field.pendingClear)+'）' : '';
   if(field===null){
@@ -3171,15 +3633,17 @@ document.getElementById('backToSetupBtn').addEventListener('click', ()=>{
   }
   document.getElementById('gameScreen').style.display='none';
   document.getElementById('setupScreen').style.display='block';
+  Feedback.setTrack('menu');
 });
 document.getElementById('restartBtn2').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
   document.getElementById('gameScreen').style.display='none';
   document.getElementById('setupScreen').style.display='block';
+  Feedback.setTrack('menu');
 });
 document.getElementById('nextGameBtn').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
-  startGameWithExchange();
+  withLoading('カード交換中…', ()=>{ startGameWithExchange(); });
 });
 document.getElementById('selectAllBtn').addEventListener('click', ()=>{
   RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = true);
@@ -3204,9 +3668,13 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
   cpuLevelSetting = levelInput ? levelInput.value : 'normal';
   cpuLevel = resolveCpuLevel(cpuLevelSetting);
-  document.getElementById('setupScreen').style.display='none';
-  document.getElementById('gameScreen').style.display='block';
-  startGame();
+  Feedback.unlock();
+  Feedback.setTrack('game');
+  withLoading('配牌中…', ()=>{
+    document.getElementById('setupScreen').style.display='none';
+    document.getElementById('gameScreen').style.display='block';
+    startGame();
+  });
 });
 document.getElementById('restoreTab').addEventListener('click', restoreActionModal);
 document.getElementById('discardPileBtn').addEventListener('click', openDiscardHistoryModal);
@@ -3222,6 +3690,10 @@ document.getElementById('logCollapseBtn').addEventListener('click', ()=>{
 });
 
 renderRuleSetup();
+Feedback.init();
+initTapFeedback();
+initErrorScreen();
+Feedback.setTrack('menu');  // 最初のユーザー操作で実際に再生が始まる
 </script>
 </body>
 </html>
