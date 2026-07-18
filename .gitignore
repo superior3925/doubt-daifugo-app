@@ -1,0 +1,6 @@
+# ローカル専用のBGM音源（著作権フリー素材だがリポジトリには含めない）
+assets/bgm/
+
+# OS / エディタ
+Thumbs.db
+.DS_Store
