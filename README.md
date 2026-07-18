@@ -114,6 +114,21 @@ npm run assets:generate
 
 - `assets/icon-*.png`・`assets/splash.png` はこのアプリ専用に作成したオリジナル素材なので、`assets/bgm/`（著作権上の理由で除外）とは異なりリポジトリに含めています。
 
+### リリースビルド（署名済みAPK）
+
+Google Play Storeには当面出さず、まずはGitHub Releasesで配布する方針のため、署名鍵は以下の手順でリポジトリの外に保管しています。
+
+- 署名鍵（`.jks`）はリポジトリ外（ローカル＋クラウド2箇所）で保管し、`android/keystore.properties`（gitignore対象、鍵のパスとパスワードを記載）経由で`android/app/build.gradle`から参照する構成
+- `keystore.properties` が存在しない環境（このリポジトリをcloneしただけの人）でも、署名なしでdebugビルドは問題なく動きます
+- リリースビルドのコマンド:
+
+```
+cd android
+./gradlew assembleRelease
+```
+
+生成されたAPK（`android/app/build/outputs/apk/release/app-release.apk`）はGitHub Releasesに手動でアップロードします。
+
 ### Android実機の「戻る」ボタン対応
 
 このアプリは1ページ完結でブラウザ履歴を積まないため、Capacitorの`@capacitor/app`プラグインで`backButton`イベントを直接ハンドリングしています（`index.html`内の`handleAndroidBackButton()`）。優先順位は、開いているオーバーレイ／モーダルを閉じる → 対戦中なら「ルール設定に戻る」と同じ確認ダイアログ → セットアップ画面（最上位）まで戻ったらアプリを最小化、の順です。Web版ではこのプラグインが存在しないため何も起きず、影響はありません。
