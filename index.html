@@ -104,6 +104,11 @@
   }
   .rules-box.show{display:block;}
   .rules-box b{color:var(--gold-soft);}
+  .rules-box-summary{
+    font-size:12px; font-weight:700; color:var(--gold-soft);
+    margin:-2px 0 10px; padding-bottom:10px;
+    border-bottom:1px dashed rgba(231,205,123,0.4);
+  }
 
   .mode-toggle-block{
     max-width:980px; margin:0 auto 14px; display:flex; align-items:center; gap:16px;
@@ -126,6 +131,14 @@
   }
   .switch input:checked + .slider{ background:rgba(192,57,43,0.5); border-color:var(--doubt); }
   .switch input:checked + .slider::before{ transform:translateX(24px); background:#f3d9d2; }
+
+  .setup-actions-top{
+    max-width:980px; margin:0 auto 14px; display:flex; justify-content:center;
+    align-items:center; gap:12px; flex-wrap:wrap;
+    background:rgba(0,0,0,0.35); border:1px solid var(--gold); border-radius:14px; padding:14px 20px;
+  }
+  .setup-actions-top .rules-toggle{ display:inline-block; margin:0; }
+  .setup-actions-top button.action{ margin:0; }
 
   .setup-box{
     max-width:980px; margin:0 auto; background:rgba(0,0,0,0.35); border:1px solid var(--gold);
@@ -174,7 +187,6 @@
   }
   .joker-step-btn:disabled{ opacity:0.35; cursor:not-allowed; }
   #jokerCountDisplay{ font-size:13px; font-weight:700; color:var(--gold-soft); min-width:14px; text-align:center; }
-  .setup-actions{ display:flex; justify-content:center; gap:10px; margin-top:14px; flex-wrap:wrap; }
   @media (max-width:760px){
     .rule-columns{ grid-template-columns:1fr; }
   }
@@ -736,6 +748,12 @@
       background:linear-gradient(to top, #04060a 55%, transparent);
     }
 
+    /* 操作モーダル（宣言・結果・捨て札履歴など）が、画面下部に固定した操作バーと
+       重なって誤操作につながらないよう、上寄せにしたうえで操作バー分の高さを
+       常に空けておく。 */
+    .overlay{ align-items:flex-start; padding-top:20px; }
+    .result-card{ max-height:calc(100vh - 200px); }
+
     /* 設定FABはやや小さく・半透明にして、盤面に重なっても邪魔しにくくする */
     .audio-fab{
       width:40px; height:40px; font-size:17px;
@@ -764,6 +782,11 @@
         <div class="rule-desc">全員が出すカードを宣言したうえで、すべて裏向きに出します。宣言はウソでもかまいません。怪しいと思ったら自分の番に「ダウト」でめくれます。外すとアウト、見抜けば相手にアウト。アウト3つで強制敗北です。</div>
       </div>
     </div>
+    <div class="setup-actions-top">
+      <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
+      <button class="rules-toggle" id="selectNoneBtn" type="button">すべて解除</button>
+      <button class="action play" id="startGameBtn" type="button">この設定でゲーム開始</button>
+    </div>
     <div class="setup-box">
       <div class="setup-title">対戦ルール設定</div>
       <div class="setup-desc">今回の対戦で有効にするローカルルールを選んでください。何も選ばなければ基本ルールのみで遊べます。</div>
@@ -779,21 +802,16 @@
       </div>
 
       <div class="rule-list" id="ruleList"></div>
-      <div class="setup-actions">
-        <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
-        <button class="rules-toggle" id="selectNoneBtn" type="button">すべて解除</button>
-      </div>
-      <button class="action play" id="startGameBtn" style="margin-top:16px;">この設定でゲーム開始</button>
     </div>
   </div>
 
   <div id="gameScreen" style="display:none;">
-    <div class="subtitle" id="activeRulesLine"></div>
     <div style="display:flex; justify-content:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
       <button class="rules-toggle" id="rulesBtn">ルールを見る</button>
       <button class="rules-toggle" id="backToSetupBtn">ルール設定に戻る</button>
     </div>
     <div class="rules-box" id="rulesBox">
+      <div class="rules-box-summary" id="activeRulesLine"></div>
       ・4人（あなた + CPU3人）で配ります。<br>
       ・場に出ているカードより<b>同じ枚数・強いランク</b>のカードを出します（ペア・トリプルもOK）。<br>
       ・強さは弱い順に <b>3,4,5,6,7,8,9,10,J,Q,K,A,2</b>。<br>
@@ -1363,16 +1381,20 @@ function isDeclarationTruthful(declCards, actualCards){
   return remaining.length===0;
 }
 
-// 宣言のうち「実際に出すカードでは説明がつかない部分（＝ウソの部分）」が、既に所在の
-// わかっているカード（自分の手元に残る札・公開済みの捨て札・めくれた場）と同じ識別子
-// （ランク＋スート）を名乗っていないかを見る。重なっていれば、そのカードを実際に持って
-// いる（または見ている）相手からは一発で「あり得ない宣言」と分かってしまうため、宣言者
-// 本人にだけ分かるヒントとして警告する。出すカード自身との一致（＝正直な部分）はここでは
-// 対象外なので、先に消費してから残りだけを判定する。
+// 宣言のうち「実際に出すカードでは説明がつかない部分（＝ウソの部分）」が、既に公開済み
+// （捨て札・めくれた場）のカードと同じ識別子（ランク＋スート）を名乗っていないかを見る。
+// 重なっていれば、それを見ている全員から一発で「あり得ない宣言」と分かってしまうため、
+// 宣言者本人にだけ分かるヒントとして警告する。
+// 注意：自分の手元に残っている（今回出さない）カードと同じ識別子を騙るのは、ここでは
+// 対象外にする。ダウトする側が根拠にできるのは「自分の手札」＋「公開情報」だけであり、
+// 宣言者の手札の中身は他の誰からも見えない。つまりそのカードが自分の手元にあるという
+// ことは、裏を返せば他の誰の手札にも無いということでもあり、むしろ絶対に「その札は私が
+// 持っています」と名乗り出られる相手がいない、一番安全な部類の嘘になる。
+// 出すカード自身との一致（＝正直な部分）はここでは対象外なので、先に消費してから
+// 残りだけを判定する。
 function declarationRiskyIdentity(declCards, actualCards){
   const actualRemaining = actualCards.slice();
   const known = new Set();
-  hands[0].forEach(c=>{ if(!actualCards.some(a=>a.id===c.id)) known.add(c.suit+'_'+c.rank); });
   discardHistory.forEach(h=> h.cards.forEach(c=>{
     if(!(h.hiddenIds && h.hiddenIds.has(c.id))) known.add(c.suit+'_'+c.rank);
   }));
@@ -3748,15 +3770,11 @@ document.getElementById('backToSetupBtn').addEventListener('click', ()=>{
   if(!gameOver){
     if(!confirm('現在のゲームを中断してルール設定に戻りますか？')) return;
   }
-  document.getElementById('gameScreen').style.display='none';
-  document.getElementById('setupScreen').style.display='block';
-  Feedback.setTrack('menu');
+  returnToSetupScreen();
 });
 document.getElementById('restartBtn2').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
-  document.getElementById('gameScreen').style.display='none';
-  document.getElementById('setupScreen').style.display='block';
-  Feedback.setTrack('menu');
+  returnToSetupScreen();
 });
 document.getElementById('nextGameBtn').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.remove('show');
@@ -3806,6 +3824,18 @@ document.getElementById('logCollapseBtn').addEventListener('click', ()=>{
   document.getElementById('logCollapseBtn').textContent = collapsed ? '＋' : '－';
 });
 
+// ゲーム画面からセットアップ画面へ戻る共通処理。宣言モーダル等を最小化した状態のまま
+// （＝pendingActionが残ったまま）戻ると、「操作画面に戻る」タブがセットアップ画面にまで
+// 表示され続けてしまうため、actionOverlay・restoreTab・pendingActionもあわせてリセットする。
+function returnToSetupScreen(){
+  document.getElementById('gameScreen').style.display = 'none';
+  document.getElementById('setupScreen').style.display = 'block';
+  document.getElementById('actionOverlay').classList.remove('show');
+  document.getElementById('restoreTab').style.display = 'none';
+  pendingAction = null;
+  Feedback.setTrack('menu');
+}
+
 // ===== Android実機の「戻る」ボタン対応 =====
 // Capacitorでは backButton にリスナーを付けた時点でデフォルト動作（WebViewの履歴を
 // 戻る／無ければアプリを閉じる）が完全に無効になる。このアプリは1ページ完結で
@@ -3829,9 +3859,7 @@ function handleAndroidBackButton(){
   const resultOv = document.getElementById('overlay');
   if(resultOv.classList.contains('show')){
     resultOv.classList.remove('show');
-    document.getElementById('gameScreen').style.display = 'none';
-    document.getElementById('setupScreen').style.display = 'block';
-    Feedback.setTrack('menu');
+    returnToSetupScreen();
     return;
   }
 
@@ -3847,9 +3875,7 @@ function handleAndroidBackButton(){
     if(!gameOver){
       if(!confirm('現在のゲームを中断してルール設定に戻りますか？')) return;
     }
-    gameScreen.style.display = 'none';
-    document.getElementById('setupScreen').style.display = 'block';
-    Feedback.setTrack('menu');
+    returnToSetupScreen();
     return;
   }
 
