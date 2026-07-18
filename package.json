@@ -5,7 +5,8 @@
   "scripts": {
     "sync:web": "node scripts/sync-web.js",
     "android:sync": "npm run sync:web && npx cap sync android",
-    "android:open": "npm run sync:web && npx cap open android"
+    "android:open": "npm run sync:web && npx cap open android",
+    "assets:generate": "node scripts/generate-icon-assets.js && npx capacitor-assets generate --android"
   },
   "repository": {
     "type": "git",
@@ -25,6 +26,10 @@
     "@capacitor/core": "^8.4.2"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.4.2"
+  },
+  "allowScripts": {
+    "sharp@0.32.6": true
   }
 }
