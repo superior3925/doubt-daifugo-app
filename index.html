@@ -856,6 +856,95 @@
       width:min(250px, calc(100vw - 16px));
     }
   }
+
+  /* ===== オンライン対戦（モード選択・ロビー・待機室） ===== */
+  .mode-choice{ display:flex; flex-direction:column; gap:16px; max-width:520px; margin:24px auto 0; }
+  .mode-card{
+    display:flex; align-items:center; gap:16px; text-align:left;
+    background:rgba(0,0,0,0.22); border:1px solid var(--gold-soft);
+    border-radius:16px; padding:20px 22px; cursor:pointer;
+    color:var(--cream); font-family:inherit; transition:transform .12s, box-shadow .12s, border-color .12s;
+  }
+  .mode-card:hover{ transform:translateY(-2px); box-shadow:0 6px 20px var(--shadow); border-color:var(--gold); }
+  .mode-card:active{ transform:scale(0.985); }
+  .mode-card .mode-emoji{ font-size:34px; line-height:1; flex-shrink:0; }
+  .mode-card .mode-card-title{ font-family:'Shippori Mincho',serif; font-size:20px; color:var(--gold-soft); margin-bottom:4px; }
+  .mode-card .mode-card-desc{ font-size:12.5px; opacity:0.82; line-height:1.5; }
+
+  .online-panel{ max-width:640px; margin:16px auto 0; }
+  .online-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .online-title{ font-family:'Shippori Mincho',serif; font-size:22px; color:var(--gold-soft); }
+  .online-box{
+    background:rgba(0,0,0,0.22); border:1px solid rgba(231,205,123,0.4);
+    border-radius:14px; padding:16px; margin-bottom:14px;
+  }
+  .online-box-title{ font-size:13px; color:var(--gold-soft); font-weight:700; margin-bottom:10px; letter-spacing:.04em; }
+  .online-field{ display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .online-field label{ font-size:12px; opacity:0.8; }
+  .online-input, .online-select{
+    font-family:inherit; font-size:15px; padding:11px 13px; border-radius:10px;
+    border:1px solid rgba(231,205,123,0.5); background:rgba(0,0,0,0.28); color:var(--cream);
+    width:100%; min-height:44px;
+  }
+  .online-input:focus, .online-select:focus{ outline:none; border-color:var(--gold); }
+  .online-radio-row{ display:flex; gap:14px; flex-wrap:wrap; }
+  .online-radio-row label{ display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; }
+  .online-note{ font-size:11.5px; opacity:0.7; line-height:1.5; margin-top:4px; }
+  .online-status{
+    font-size:12.5px; opacity:0.85; padding:8px 12px; border-radius:8px;
+    background:rgba(0,0,0,0.2); margin-bottom:12px; min-height:20px;
+  }
+  .online-status.err{ color:#ffb4a4; background:rgba(166,50,31,0.22); }
+
+  .room-list{ display:flex; flex-direction:column; gap:8px; }
+  .room-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(0,0,0,0.25); border:1px solid rgba(231,205,123,0.3);
+    border-radius:10px; padding:12px 14px;
+  }
+  .room-row .room-info{ min-width:0; }
+  .room-row .room-name{ font-size:15px; color:var(--cream); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .room-row .room-meta{ font-size:11.5px; opacity:0.72; margin-top:2px; }
+  .room-empty{ font-size:13px; opacity:0.7; text-align:center; padding:18px 8px; }
+  .lock-badge{ font-size:11px; }
+
+  .member-list{ display:flex; flex-direction:column; gap:8px; }
+  .member-row{
+    display:flex; align-items:center; gap:10px;
+    background:rgba(0,0,0,0.25); border:1px solid rgba(231,205,123,0.3);
+    border-radius:10px; padding:10px 14px;
+  }
+  .member-seat{
+    width:26px; height:26px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:700; background:var(--gold); color:#2b2200;
+  }
+  .member-seat.cpu{ background:var(--felt-light); color:var(--cream); }
+  .member-name{ flex:1; min-width:0; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .member-tag{ font-size:10.5px; padding:2px 7px; border-radius:999px; border:1px solid var(--gold-soft); color:var(--gold-soft); }
+  .member-tag.host{ background:var(--gold); color:#2b2200; border-color:var(--gold); }
+  .member-tag.ready{ background:var(--playable); color:#04231c; border-color:var(--playable); }
+  .member-tag.notready{ opacity:0.6; }
+  .member-tag.offline{ background:rgba(166,50,31,0.3); color:#ffb4a4; border-color:transparent; }
+  .room-code-box{
+    text-align:center; background:rgba(0,0,0,0.28); border:1px dashed var(--gold-soft);
+    border-radius:10px; padding:10px; margin-bottom:12px;
+  }
+  .room-code-box .code{ font-size:26px; letter-spacing:.28em; color:var(--gold-soft); font-family:'Shippori Mincho',serif; }
+  .online-btn-row{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:6px; }
+  .online-btn-row.spread{ justify-content:space-between; }
+  button.ghost{
+    background:transparent; border:1px solid var(--gold-soft); color:var(--gold-soft);
+    padding:10px 22px; border-radius:999px; font-size:13px; cursor:pointer; font-family:inherit; font-weight:700;
+    min-height:44px;
+  }
+  button.ghost:active{ transform:scale(0.96); }
+  button.ghost:disabled{ opacity:0.35; cursor:not-allowed; }
+  .host-config-bar{
+    background:rgba(0,0,0,0.25); border:1px solid var(--gold-soft);
+    border-radius:12px; padding:14px 16px; margin-bottom:14px;
+  }
+  .host-config-bar .online-box-title{ margin-bottom:12px; }
 </style>
 </head>
 <body>
@@ -863,8 +952,42 @@
   <h1 class="title" id="appTitle">大 富 豪</h1>
   <div class="subtitle" id="appSubtitle">DAIFUGO &mdash; 拡張ルール対応版</div>
 
-  <div id="setupScreen">
-    <div class="cloud-bar">
+  <div id="modeScreen">
+    <div class="mode-choice">
+      <button class="mode-card" id="modeOfflineBtn" type="button">
+        <span class="mode-emoji">🎴</span>
+        <span>
+          <span class="mode-card-title">オフライン対戦</span>
+          <span class="mode-card-desc">CPU3人と対戦する従来モード。通信不要で、この端末だけで遊べます。</span>
+        </span>
+      </button>
+      <button class="mode-card" id="modeOnlineBtn" type="button">
+        <span class="mode-emoji">🌐</span>
+        <span>
+          <span class="mode-card-title">オンライン対戦</span>
+          <span class="mode-card-desc">友人と最大4人でオンライン対戦。登録不要、ニックネームだけで参加できます。</span>
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <div id="setupScreen" style="display:none;">
+    <div class="host-config-bar" id="hostConfigBar" style="display:none;">
+      <div class="online-box-title">ルーム設定</div>
+      <div class="online-field">
+        <label for="hostRoomName">ルーム名</label>
+        <input class="online-input" id="hostRoomName" type="text" maxlength="24" placeholder="例：金曜の夜卓">
+      </div>
+      <div class="online-field">
+        <label>入室パスワード</label>
+        <div class="online-radio-row">
+          <label><input type="radio" name="hostRoomPw" value="none" checked> なし</label>
+          <label><input type="radio" name="hostRoomPw" value="code"> 6桁を自動生成</label>
+        </div>
+        <div class="online-note">パスワードは「誤って別の卓に入らないための合言葉」レベルです（厳密なアクセス制御ではありません）。</div>
+      </div>
+    </div>
+    <div class="cloud-bar" id="cloudBar">
       <div class="cloud-status">
         <span class="cloud-dot" id="cloudDot"></span>
         <span class="cloud-status-text" id="cloudStatusText">対戦成績はこの端末に保存されます</span>
@@ -886,6 +1009,9 @@
       <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
       <button class="rules-toggle" id="selectNoneBtn" type="button">すべて解除</button>
       <button class="action play" id="startGameBtn" type="button">この設定でゲーム開始</button>
+      <button class="action play" id="createRoomBtn" type="button" style="display:none;">この設定でルームを作る</button>
+      <button class="action play" id="saveRoomRulesBtn" type="button" style="display:none;">ルール変更を保存</button>
+      <button class="ghost" id="hostConfigBackBtn" type="button" style="display:none;">戻る</button>
     </div>
     <div class="setup-box">
       <div class="setup-title">対戦ルール設定</div>
@@ -902,6 +1028,79 @@
       </div>
 
       <div class="rule-list" id="ruleList"></div>
+    </div>
+  </div>
+
+  <div id="lobbyScreen" style="display:none;">
+    <div class="online-panel">
+      <div class="online-head">
+        <div class="online-title">オンラインロビー</div>
+        <button class="ghost" id="lobbyBackBtn" type="button">モード選択へ</button>
+      </div>
+      <div class="online-status" id="lobbyStatus">接続中…</div>
+
+      <div class="online-box" id="nicknameBox">
+        <div class="online-box-title">ニックネーム</div>
+        <div class="online-field">
+          <input class="online-input" id="nicknameInput" type="text" maxlength="16" placeholder="ゲームで表示される名前">
+        </div>
+        <div class="online-note">アカウント登録は不要です。この名前は同じ卓の相手にだけ表示されます。</div>
+      </div>
+
+      <div class="online-box">
+        <div class="online-head" style="margin-bottom:10px;">
+          <div class="online-box-title" style="margin:0;">対戦ルーム</div>
+          <div class="online-btn-row" style="margin:0;">
+            <button class="ghost" id="refreshRoomsBtn" type="button">更新</button>
+            <button class="action play" id="openCreateRoomBtn" type="button">ルームを作る</button>
+          </div>
+        </div>
+        <div class="room-list" id="roomList"><div class="room-empty">ルームを読み込み中…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="roomScreen" style="display:none;">
+    <div class="online-panel">
+      <div class="online-head">
+        <div class="online-title" id="roomTitle">待機室</div>
+        <button class="ghost" id="leaveRoomBtn" type="button">退室</button>
+      </div>
+      <div class="online-status" id="roomStatus"></div>
+
+      <div class="room-code-box" id="roomCodeBox" style="display:none;">
+        <div class="online-note" style="margin:0 0 4px;">入室パスワード（6桁）</div>
+        <div class="code" id="roomCodeValue">------</div>
+      </div>
+
+      <div class="online-box">
+        <div class="online-box-title">参加者（<span id="memberCount">0</span>/4）</div>
+        <div class="member-list" id="memberList"></div>
+      </div>
+
+      <div class="online-box" id="hostControlsBox" style="display:none;">
+        <div class="online-box-title">ホスト設定</div>
+        <div class="online-field">
+          <label>4人に満たないとき</label>
+          <div class="online-radio-row">
+            <label><input type="radio" name="cpuFillChoice" value="fill" checked> CPUで4人に補充</label>
+            <label><input type="radio" name="cpuFillChoice" value="none"> CPUなし（今いる人数で）</label>
+          </div>
+        </div>
+        <div class="online-btn-row" style="justify-content:flex-start;">
+          <button class="ghost" id="editRoomRulesBtn" type="button">ルールを変更</button>
+        </div>
+      </div>
+
+      <div class="online-box">
+        <div class="online-box-title">現在のルール</div>
+        <div class="online-note" id="roomRulesSummary" style="opacity:0.9;"></div>
+      </div>
+
+      <div class="online-btn-row">
+        <button class="action pass" id="readyToggleBtn" type="button">準備完了</button>
+        <button class="action play" id="startRoomBtn" type="button" style="display:none;" disabled>全員の準備を待っています…</button>
+      </div>
     </div>
   </div>
 
@@ -1359,8 +1558,23 @@ const RULE_DEFS = [
 
 let rules = {};
 let hands, field, revolution, elevenBack, passStreak, currentPlayerIndex, finishedOrder, gameOver, selected, logLines;
+// 対戦人数の可変化（2〜4人）。オフラインは常に4・mySeat=0・seatNames=NAMESで、
+// 従来と完全に同じ挙動になる。オンライン（ホスト権威）では seatCount を実人数にし、
+// mySeat を各ブラウザの席、seatNames を各席の表示名に差し替える。
+let seatCount = 4;
+let mySeat = 0;
+let seatNames = NAMES.slice();
+// オンライン対戦（ホスト権威）。offline=従来のCPU戦、host=このブラウザがエンジンを動かす
+// 進行役、guest=ホストのスナップショットを描画して操作をintentで送るだけ。
+let onlineRole = 'offline';
+// 席→ 'host-ui'（ホスト自身の席）／'local-cpu'（CPU補充席）／'remote-human'（リモートのゲスト）。
+// オフラインでは使わず、seatController() が mySeat 基準の従来判定を返す。
+let seatControllers = [];
 let suitLock, numberLock, prevPlaySuits;
 let pendingAction = null;
+// ホストがリモート席の追加アクション（7渡し/10捨て/12ボンバー）の選択を待っている状態。
+// {seat, kind:'give'|'discard'|'bomber', count, info, extraSkips}。待ち中は手番を進めない。
+let pendingRemoteAction = null;
 let fieldSeqCounter = 0;
 let pendingDealAnimation = false;
 let dealAnimationTimer = null;
@@ -1478,6 +1692,28 @@ const LS_CLOUD_DOC = 'ddf_cloud_doc';
 const LS_CLOUD_OPTIN = 'ddf_cloud_optin';   // '1'なら次回起動時に自動ログインを試みる
 const LS_CLOUD_FILEID = 'ddf_cloud_fileid';
 
+// ===== オンライン対戦（Firebase Realtime Database ＋ 匿名認証）の設定 =====
+// 開発者がFirebaseコンソールで発行した値をここに貼る（未入力ならオンライン対戦は
+// 「接続設定が未入力」と案内される）。オフライン対戦はこの設定に一切依存しない。
+// Google Drive（通算成績）用のOAuthとは完全に独立した別系統。
+const FIREBASE_CONFIG = {
+  apiKey: '',
+  authDomain: '',
+  databaseURL: '',   // 例: https://<project>-default-rtdb.firebaseio.com
+  projectId: '',
+  appId: ''
+};
+// FirebaseのcompatライブラリをロードするCDN（オンライン選択時のみ遅延ロードする）。
+const FIREBASE_SDK_URLS = [
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js'
+];
+const LS_ONLINE_NICK = 'ddf_online_nick';
+function firebaseConfigured(){
+  return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL);
+}
+
 function cloudConfigured(){
   return typeof GOOGLE_CLIENT_ID==='string'
     && GOOGLE_CLIENT_ID.indexOf('YOUR_GOOGLE_CLIENT_ID')!==0
@@ -1533,7 +1769,7 @@ function markCloudDocChanged(){
 
 // ---- 通算成績の記録 ----
 function recordCareerResult(finalRanking){
-  const pos = finalRanking.indexOf(0); // 人間プレイヤーの最終順位（0=大富豪）
+  const pos = finalRanking.indexOf(mySeat); // 自分（人間プレイヤー）の最終順位（0=大富豪）
   if(pos<0) return;
   cloudDoc.career.games += 1;
   cloudDoc.career.score += SCORE_BY_RANK[pos];
@@ -1969,7 +2205,7 @@ function bomberPriorityOrder(){
 function isDoubtMode(){ return !!rules.doubtMode; }
 // めくり演出の最中は誰の手番でもない。ここを見ないと、自分がダウトした直後の待ち時間に
 // 「出す」「パス」が押せてしまい、解決前の場を触れてしまう。
-function humanCanAct(){ return currentPlayerIndex===0 && !gameOver && !pendingAction && !exchangeInProgress && !revealPending; }
+function humanCanAct(){ return currentPlayerIndex===mySeat && !gameOver && !pendingAction && !exchangeInProgress && !revealPending; }
 
 function declLabel(cards){
   return cards.map(c=> c.rank==='JOKER' ? 'JOKER' : c.rank+c.suit).join(' ');
@@ -2089,7 +2325,24 @@ function pushDeclHistory(playerIdx, label){
   if(declHistory.length > DECL_HISTORY_LIMIT) declHistory.shift();
 }
 
-function activePlayers(){ return [0,1,2,3].filter(i=>!finishedOrder.includes(i)); }
+function activePlayers(){ return allSeats().filter(i=>!finishedOrder.includes(i)); }
+function allSeats(){ const a=[]; for(let i=0;i<seatCount;i++) a.push(i); return a; }
+// その席を誰が操作するか。オフラインは「自席＝UI待ち、他＝CPU」。オンラインはホストが
+// 席割当時に構築した seatControllers を使う（ゲストは自席以外を触らない）。
+function seatController(seat){
+  if(onlineRole==='offline') return (seat===mySeat) ? 'host-ui' : 'local-cpu';
+  return seatControllers[seat] || 'local-cpu';
+}
+// 人数に応じた順位称号。4人は従来どおり ['大富豪','富豪','貧民','大貧民']。
+function rankTitlesFor(n){
+  if(n<=1) return ['大富豪'];
+  if(n===2) return ['大富豪','大貧民'];
+  if(n===3) return ['大富豪','平民','大貧民'];
+  const t = new Array(n).fill('平民');
+  t[0]='大富豪'; t[1]='富豪'; t[n-2]='貧民'; t[n-1]='大貧民';
+  return t;
+}
+function seatTitles(){ return rankTitlesFor(seatCount); }
 function passClearThreshold(act){
   // Normally the field owner is one of the active players still waiting their turn to come
   // back around, so only the *other* act.length-1 players need to pass. But if the owner
@@ -2099,12 +2352,12 @@ function passClearThreshold(act){
   return act.includes(field.owner) ? act.length-1 : act.length;
 }
 function leftNeighborOf(idx){
-  let i = (idx+turnDirection+4)%4;
+  let i = (idx+turnDirection+seatCount)%seatCount;
   let guard = 0;
-  while(finishedOrder.includes(i) && guard<4){ i = (i+turnDirection+4)%4; guard++; }
+  while(finishedOrder.includes(i) && guard<seatCount){ i = (i+turnDirection+seatCount)%seatCount; guard++; }
   return i;
 }
-function playerName(i){ return NAMES[i]; }
+function playerName(i){ return (seatNames && seatNames[i]!=null) ? seatNames[i] : ('CPU '+i); }
 function countOfRank(hand, rank){ return hand.filter(c=>c.rank===rank).length; }
 
 function activeRulesSummary(){
@@ -2222,7 +2475,7 @@ function clearField(discardLabel){
   skipQuota = 0;
   forcedPassOnly = false;
   if(isDoubtMode()){
-    for(let i=0;i<4;i++) if(sitOutTricks[i]>0) sitOutTricks[i]--;
+    for(let i=0;i<seatCount;i++) if(sitOutTricks[i]>0) sitOutTricks[i]--;
   }
 }
 
@@ -2239,8 +2492,8 @@ function dealFreshHands(){
   const bomberFlyHost = document.getElementById('bomberFlyHost');
   if(bomberFlyHost) bomberFlyHost.innerHTML = '';
   const deck = buildDeck();
-  hands = [[],[],[],[]];
-  for(let i=0;i<deck.length;i++) hands[i%4].push(deck[i]);
+  hands = Array.from({length: seatCount}, ()=>[]);
+  for(let i=0;i<deck.length;i++) hands[i%seatCount].push(deck[i]);
   revolution = false;
   finishedOrder = [];
   legitFinishOrder = [];
@@ -2250,13 +2503,13 @@ function dealFreshHands(){
   discardHistory = [];
   currentTrickCards = [];
   currentTrickHiddenIds = new Set();
-  outs = [0,0,0,0];
-  sitOutTricks = [0,0,0,0];
+  outs = new Array(seatCount).fill(0);
+  sitOutTricks = new Array(seatCount).fill(0);
   skipQuota = 0;
   forcedPassOnly = false;
   revealPending = false;
-  liarCaughtCount = [0,0,0,0];
-  provenHonestCount = [0,0,0,0];
+  liarCaughtCount = new Array(seatCount).fill(0);
+  provenHonestCount = new Array(seatCount).fill(0);
   declHistory = [];
   nextStartingPlayerOverride = null;
   lastReceivedCardIds = new Set();
@@ -2266,6 +2519,7 @@ function dealFreshHands(){
   selected = new Set();
   logLines = [];
   pendingAction = null;
+  pendingRemoteAction = null;
   exchangeInProgress = false;
   clearField();
   document.getElementById('overlay').classList.remove('show');
@@ -2283,7 +2537,7 @@ function finalizeGameStart(){
   } else {
     currentPlayerIndex = 0;
     outer:
-    for(let p=0;p<4;p++){
+    for(let p=0;p<seatCount;p++){
       for(const c of hands[p]){
         if(c.rank==='3' && c.suit==='♦'){ currentPlayerIndex=p; break outer; }
       }
@@ -2305,9 +2559,9 @@ function startGame(){
 function startGameWithExchange(){
   const prevOrder = previousFinishedOrder;
   dealFreshHands();
-  if(prevOrder && prevOrder.length===4){
+  if(prevOrder && prevOrder.length===seatCount && seatCount>=2){
     if(rules.miyakoOchi) defendingDaifugoIdx = prevOrder[0];
-    nextStartingPlayerOverride = prevOrder[3]; // previous daihinmin leads the next game
+    nextStartingPlayerOverride = prevOrder[prevOrder.length-1]; // previous daihinmin leads the next game
     log('新しいゲームを開始しました。前回の順位に応じてカード交換を行います。');
     exchangeInProgress = true;
     exchangeQueue = buildExchangeQueue(prevOrder);
@@ -2319,14 +2573,23 @@ function startGameWithExchange(){
   }
 }
 
+// 人数に応じた交換ペア。4人は従来どおり（大富豪↔大貧民2枚・富豪↔貧民1枚）。
+// 3人以下では上位↔下位のみ（大富豪↔大貧民）を交換し、中間（平民）は交換しない。
 function buildExchangeQueue(prevOrder){
-  const [daifugoIdx, fugoIdx, hinminIdx, daihinminIdx] = prevOrder;
-  return [
-    {giver:daihinminIdx, receiver:daifugoIdx, count:2, giverChoice:false, giverRole:'大貧民', receiverRole:'大富豪'},
-    {giver:daifugoIdx, receiver:daihinminIdx, count:2, giverChoice:true, giverRole:'大富豪', receiverRole:'大貧民'},
-    {giver:hinminIdx, receiver:fugoIdx, count:1, giverChoice:false, giverRole:'貧民', receiverRole:'富豪'},
-    {giver:fugoIdx, receiver:hinminIdx, count:1, giverChoice:true, giverRole:'富豪', receiverRole:'貧民'},
-  ];
+  const n = prevOrder.length;
+  const titles = rankTitlesFor(n);
+  const q = [];
+  if(n < 2) return q;
+  const top = prevOrder[0], bottom = prevOrder[n-1];
+  const bigCount = (n >= 4) ? 2 : 1;
+  q.push({giver:bottom, receiver:top,    count:bigCount, giverChoice:false, giverRole:titles[n-1], receiverRole:titles[0]});
+  q.push({giver:top,    receiver:bottom, count:bigCount, giverChoice:true,  giverRole:titles[0],   receiverRole:titles[n-1]});
+  if(n >= 4){
+    const second = prevOrder[1], secondLast = prevOrder[n-2];
+    q.push({giver:secondLast, receiver:second,     count:1, giverChoice:false, giverRole:titles[n-2], receiverRole:titles[1]});
+    q.push({giver:second,     receiver:secondLast, count:1, giverChoice:true,  giverRole:titles[1],   receiverRole:titles[n-2]});
+  }
+  return q;
 }
 
 function processNextExchange(){
@@ -2345,7 +2608,7 @@ function processNextExchange(){
     log(playerName(task.giver)+'（前回の'+task.giverRole+'）が最強の'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した（'+chosen.map(c=>c.rank==='JOKER'?'ジョーカー':c.rank+c.suit).join('、')+'）');
     render();
     processNextExchange();
-  } else if(task.giver===0){
+  } else if(task.giver===mySeat){
     openExchangeGiveModal(task);
   } else {
     const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
@@ -2400,7 +2663,7 @@ function advanceTurn(){
   const act = activePlayers();
   if(act.length<=1) return;
   do{
-    currentPlayerIndex = (currentPlayerIndex+turnDirection+4)%4;
+    currentPlayerIndex = (currentPlayerIndex+turnDirection+seatCount)%seatCount;
   } while(finishedOrder.includes(currentPlayerIndex));
 }
 
@@ -2508,7 +2771,7 @@ function checkGameEndAfterSideEffect(sourceType){
     give: rules.fwSevenGive ? '7渡し上がり' : null,
     discard: rules.fwTenDiscard ? '10捨て上がり' : null
   };
-  for(let i=0;i<4;i++){
+  for(let i=0;i<seatCount;i++){
     if(hands[i].length===0 && !finishedOrder.includes(i)){
       const violation = (rules.forbiddenWin && violationBySource[sourceType]) || null;
       if(violation){
@@ -2701,7 +2964,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
     } else {
       log(playerName(playerIdx)+' が上がり！');
       markLegitFinish(playerIdx);
-      if(playerIdx===0) Feedback.sfx('win');
+      if(playerIdx===mySeat) Feedback.sfx('win');
     }
   }
 
@@ -2792,11 +3055,17 @@ function afterPlayEffects(info){
   if(needsGive) showCutIn('7渡し！');
   else if(needsDiscard) showCutIn('10捨て！');
 
-  if(idx===0){
+  if(idx===mySeat){
+    // 自席（オフライン人間 or ホスト自身）：手元モーダルで選ぶ
     if(needsGive) openGiveModal(idx, count, info, extraSkips);
     else if(needsDiscard) openDiscardModal(idx, count, info, extraSkips);
     else if(needsBomber) openBomberModal(idx, count, info, extraSkips);
+  } else if(onlineRole==='host' && seatController(idx)==='remote-human'){
+    // リモートのゲスト：選択を要求してサブintentを待つ（CPU代行しない）
+    const kind = needsGive ? 'give' : (needsDiscard ? 'discard' : 'bomber');
+    requestRemoteAction(idx, kind, count, info, extraSkips);
   } else {
+    // CPU（オフラインの相手、または切断でCPU化した席）
     if(needsGive) cpuDoGive(idx, count);
     if(needsDiscard) cpuDoDiscard(idx, count);
     if(needsBomber){
@@ -2805,6 +3074,65 @@ function afterPlayEffects(info){
     }
     finalizeTurn(info, extraSkips);
   }
+}
+
+// ホスト：リモート席に追加アクションの選択を要求して待つ。ゲストはビューの pendingRemote を
+// 見て自分のモーダルを開き、サブintent（give/discard/bomber）で応答する。
+function requestRemoteAction(seat, kind, count, info, extraSkips){
+  pendingRemoteAction = {seat, kind, count, info, extraSkips};
+  log(playerName(seat)+' の追加アクションを待っています…');
+  render();   // 末尾の broadcast で pendingRemote が該当ゲストへ届く
+}
+// ホスト：受信したサブintentを適用（confirmGive/Discard/applyBomber と同じ処理）。
+function applyRemoteGive(seat, recipient, cardIds){
+  const pra = pendingRemoteAction; const info=pra.info, ex=pra.extraSkips;
+  const others = activePlayers().filter(i=>i!==seat);
+  if(others.indexOf(recipient)<0) recipient = chooseGiveRecipient(seat, others);
+  const ids = new Set(cardIds||[]);
+  const need = Math.min(pra.count, hands[seat].length);
+  let giveCards = hands[seat].filter(c=>ids.has(c.id)).slice(0, need);
+  pendingRemoteAction = null;
+  if(giveCards.length>0 && recipient!==undefined && recipient!==null){
+    const gset = new Set(giveCards.map(c=>c.id));
+    hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
+    hands[recipient] = hands[recipient].concat(giveCards);
+    log(playerName(seat)+'が'+playerName(recipient)+'に'+giveCards.length+'枚渡した');
+    if(journalActive()) field.journal.gives.push({from:seat, to:recipient, cards:giveCards.slice()});
+    checkGameEndAfterSideEffect('give');
+  }
+  finalizeTurn(info, ex);
+}
+function applyRemoteDiscard(seat, cardIds){
+  const pra = pendingRemoteAction; const info=pra.info, ex=pra.extraSkips;
+  const ids = new Set(cardIds||[]);
+  const need = Math.min(pra.count, hands[seat].length);
+  const discarded = hands[seat].filter(c=>ids.has(c.id)).slice(0, need);
+  pendingRemoteAction = null;
+  if(discarded.length>0){
+    const dset = new Set(discarded.map(c=>c.id));
+    hands[seat] = hands[seat].filter(c=>!dset.has(c.id));
+    log(playerName(seat)+'が'+discarded.length+'枚のカードを捨てた');
+    recordDiscard(discarded, playerName(seat)+'が10捨てで捨てた');
+    if(journalActive()) field.journal.discards.push({idx:seat, cards:discarded.slice()});
+    checkGameEndAfterSideEffect('discard');
+  }
+  finalizeTurn(info, ex);
+}
+function applyRemoteBomber(seat, ranks){
+  const pra = pendingRemoteAction; const info=pra.info, ex=pra.extraSkips;
+  const palette = bomberPalette();
+  const chosen = (ranks||[]).filter(r=>palette.includes(r)).slice(0, pra.count);
+  pendingRemoteAction = null;
+  applyBomber(chosen, ()=>{ finalizeTurn(info, ex); });
+}
+// 切断でCPU化した席の追加アクション待ちを、CPUの選択で解決する。
+function resolvePendingRemoteWithCpu(){
+  const pra = pendingRemoteAction; if(!pra) return;
+  const {seat, kind, count, info, extraSkips} = pra;
+  pendingRemoteAction = null;
+  if(kind==='give'){ cpuDoGive(seat, count); finalizeTurn(info, extraSkips); }
+  else if(kind==='discard'){ cpuDoDiscard(seat, count); finalizeTurn(info, extraSkips); }
+  else if(kind==='bomber'){ cpuDoBomber(seat, count, ()=>finalizeTurn(info, extraSkips)); }
 }
 
 function passAction(playerIdx){
@@ -2819,7 +3147,11 @@ function passAction(playerIdx){
 
 function scheduleNextIfCpu(){
   if(gameOver) return;
-  if(currentPlayerIndex!==0){
+  // ゲストはエンジンを進めない（ホストが配信するスナップショットを描画するだけ）。
+  if(onlineRole==='guest') return;
+  // 席ごとの controller で分岐：local-cpu は自動、host-ui（自席）とremote-human は
+  // それぞれ手元UI／リモートのintentを待つので、ここでは何もしない。
+  if(seatController(currentPlayerIndex)==='local-cpu'){
     const myGen = gameGen;
     const myTurnPlayer = currentPlayerIndex;
     setTimeout(()=>{
@@ -3654,7 +3986,7 @@ function applyBomber(ranksChosen, onComplete){
   setTimeout(()=>{
     const allRemoved = [];
     const stillActive = journalActive();
-    for(let i=0;i<4;i++){
+    for(let i=0;i<seatCount;i++){
       const removedCards = hands[i].filter(c=>ranksChosen.includes(c.rank));
       if(removedCards.length>0){
         allRemoved.push(...removedCards);
@@ -3829,6 +4161,10 @@ function giveToggleCard(id){
 }
 function confirmGive(){
   const pa = pendingAction;
+  if(pa.remote){
+    Online.sendIntent({type:'give', recipient:pa.recipient, cardIds:[...pa.chosen]});
+    hideActionModal(); pendingAction=null; render(); return;
+  }
   const giveCards = hands[pa.idx].filter(c=>pa.chosen.has(c.id));
   hands[pa.idx] = hands[pa.idx].filter(c=>!pa.chosen.has(c.id));
   hands[pa.recipient] = hands[pa.recipient].concat(giveCards);
@@ -3863,6 +4199,10 @@ function discardToggleCard(id){
 }
 function confirmDiscard(){
   const pa = pendingAction;
+  if(pa.remote){
+    Online.sendIntent({type:'discard', cardIds:[...pa.chosen]});
+    hideActionModal(); pendingAction=null; render(); return;
+  }
   const discarded = hands[pa.idx].filter(c=>pa.chosen.has(c.id));
   hands[pa.idx] = hands[pa.idx].filter(c=>!pa.chosen.has(c.id));
   log(playerName(pa.idx)+'が'+discarded.length+'枚のカードを捨てた');
@@ -3900,6 +4240,10 @@ function bomberToggleRank(r){
 }
 function confirmBomber(){
   const pa = pendingAction;
+  if(pa.remote){
+    Online.sendIntent({type:'bomber', ranks:Array.from(pa.chosen)});
+    hideActionModal(); pendingAction=null; render(); return;
+  }
   hideActionModal();
   const info=pa.info, extraSkips=pa.extraSkips;
   pendingAction=null;
@@ -3920,7 +4264,8 @@ function confirmElevenBackChoice(decision){
   const actual = pendingAction.actual;
   hideActionModal();
   pendingAction = null;
-  const info = resolvePlayCore(0, cards, decision, actual);
+  if(onlineRole==='guest'){ guestSendPlay(cards, actual, decision); render(); return; }
+  const info = resolvePlayCore(mySeat, cards, decision, actual);
   render();
   afterPlayEffects(info);
 }
@@ -4017,15 +4362,25 @@ function confirmDeclare(){
     openElevenBackChoiceModal(declCards, actual);
     return;
   }
-  const info = resolvePlayCore(0, declCards, undefined, actual);
+  if(onlineRole==='guest'){ guestSendPlay(declCards, actual); render(); return; }
+  const info = resolvePlayCore(mySeat, declCards, undefined, actual);
   render();
   afterPlayEffects(info);
 }
 
+// ゲスト：プレイをintentとしてホストへ送る。宣言（decl）は{rank,suit}で、実カードはidで送る。
+// ホストが自分の手札から実カードを解決し、審判として resolvePlayCore を実行する。
+function guestSendPlay(declCards, actualCards, elevenBack){
+  const real = actualCards || declCards;
+  const intent = { type:'play', actualIds: real.map(c=>c.id), decl: declCards.map(c=>({rank:c.rank, suit:(c.suit!==undefined?c.suit:null)})) };
+  if(elevenBack!==undefined) intent.elevenBack = elevenBack;
+  Online.sendIntent(intent);
+}
+
 function computePlayableCardIds(){
   const playable = new Set();
-  if(currentPlayerIndex!==0 || gameOver || pendingAction || exchangeInProgress) return playable;
-  const hand = hands[0];
+  if(currentPlayerIndex!==mySeat || gameOver || pendingAction || exchangeInProgress) return playable;
+  const hand = hands[mySeat];
 
   if(rules.spade3Return && field && field.rank==='JOKER' && field.count===1){
     const spade3 = hand.find(c=>c.rank==='3' && c.suit==='♠');
@@ -4104,7 +4459,7 @@ function toggleSelect(id){
     render();
     return;
   }
-  const card = hands[0].find(c=>c.id===id);
+  const card = hands[mySeat].find(c=>c.id===id);
   if(!card) return;
   // ダウトモードでは伏せて出す以上、実札は何の組み合わせでもよい（同じランクである必要は
   // ない）。合法性は実札ではなく宣言のほうで判定する。
@@ -4124,7 +4479,7 @@ function toggleSelect(id){
 }
 
 function currentSelectionCards(){
-  return hands[0].filter(c=>selected.has(c.id));
+  return hands[mySeat].filter(c=>selected.has(c.id));
 }
 
 function flashMsg(msg){
@@ -4167,7 +4522,8 @@ function tryPlayCardsAsIs(cards){
     openElevenBackChoiceModal(cards);
     return;
   }
-  const info = resolvePlayCore(0, cards);
+  if(onlineRole==='guest'){ guestSendPlay(cards, cards); render(); return; }
+  const info = resolvePlayCore(mySeat, cards);
   render();
   afterPlayEffects(info);
 }
@@ -4186,14 +4542,16 @@ function humanPass(){
   if(!humanCanAct()) return;
   if(field===null){ flashMsg('場が空の時はパスできません'); return; }
   selected.clear();
-  passAction(0);
+  if(onlineRole==='guest'){ Online.sendIntent({type:'pass'}); return; }
+  passAction(mySeat);
 }
 
 function humanDoubt(){
   if(!humanCanAct()) return;
-  if(!doubtAvailableFor(0)){ flashMsg('いまダウトは宣言できません'); return; }
+  if(!doubtAvailableFor(mySeat)){ flashMsg('いまダウトは宣言できません'); return; }
   selected.clear();
-  doubtAction(0);
+  if(onlineRole==='guest'){ Online.sendIntent({type:'doubt'}); return; }
+  doubtAction(mySeat);
 }
 
 function showResults(){
@@ -4202,18 +4560,26 @@ function showResults(){
   // スコア加算は1ゲームにつき厳密に1回。showResultsはゲーム終了検出の複数経路
   // （通常の上がり・ダウト解決・宣言確定時の保留解除など）から呼ばれるため、
   // 万一同じゲームで二重に呼ばれても通算成績（永続データ）を汚さないようにする。
-  if(!resultsRecorded){
+  // 通算成績・シーズンスコアは「オフラインのCPU戦」専用の指標なので、オンライン戦は
+  // 記録しない（人数可変・相手が人間なので、混ぜると指標が歪む）。
+  if(!resultsRecorded && onlineRole==='offline'){
     resultsRecorded = true;
     addSeasonScore(finalRanking);
     recordCareerResult(finalRanking); // 通算成績を更新し、Driveへ同期
   }
   const list = document.getElementById('resultList');
+  const titles = seatTitles();
   list.innerHTML = finalRanking.map((pIdx, i)=>{
-    const title = RANK_TITLES[i] || '';
+    const title = titles[i] || '';
     const reason = violationReasons[pIdx] ? '<div style="font-size:11px;color:var(--red-hanko);">反則：'+violationReasons[pIdx]+'</div>' : '';
     return '<div class="result-row"><span>'+(i+1)+'位　'+playerName(pIdx)+reason+'</span><span class="result-title">'+title+'</span></div>';
   }).join('');
-  renderScoreBoard(finalRanking);
+  const scoreBoard = document.getElementById('scoreBoard');
+  if(onlineRole==='offline'){ scoreBoard.style.display=''; renderScoreBoard(finalRanking); }
+  else { scoreBoard.style.display='none'; }
+  // 再戦（カード交換つき）はホストだけが起動できる。ゲストには次ゲームボタンを出さない。
+  const nextBtn = document.getElementById('nextGameBtn');
+  if(nextBtn) nextBtn.style.display = (onlineRole==='guest') ? 'none' : '';
   document.getElementById('overlay').classList.add('show');
 }
 
@@ -4248,13 +4614,16 @@ function render(){
   document.getElementById('rulesBox').classList.toggle('show', document.getElementById('rulesBox').dataset.open==='1');
 
   const finalRankingForBadges = gameOver ? computeFinalRanking() : null;
-  const oppHtml = [1,2,3].map(i=>{
+  const titleList = seatTitles();
+  // 相手席＝自席以外の全席（mySeatはオフライン／ホストでは0、ゲストでは自分の席）。
+  const oppSeats = allSeats().filter(i=>i!==mySeat);
+  const oppHtml = oppSeats.map(i=>{
     let badge = '';
     if(finishedOrder.includes(i)){
       if(gameOver){
-        badge = '<div class="badge">'+RANK_TITLES[finalRankingForBadges.indexOf(i)]+'</div>';
+        badge = '<div class="badge">'+titleList[finalRankingForBadges.indexOf(i)]+'</div>';
       } else if(legitFinishOrder.includes(i)){
-        badge = '<div class="badge">'+RANK_TITLES[legitFinishOrder.indexOf(i)]+'</div>';
+        badge = '<div class="badge">'+titleList[legitFinishOrder.indexOf(i)]+'</div>';
       } else {
         badge = '<div class="badge violation-badge">反則</div>';
       }
@@ -4286,7 +4655,7 @@ function render(){
     const n = declHistory.length;
     document.getElementById('declHistoryChips').innerHTML = declHistory.map((d,i)=>{
       const cls = ['decl-history-chip'];
-      cls.push(d.playerIdx===0 ? 'you' : '');
+      cls.push(d.playerIdx===mySeat ? 'you' : '');
       cls.push(i===n-1 ? 'latest' : (i<n-2 ? 'fading' : ''));
       return '<span class="'+cls.filter(Boolean).join(' ')+'">'+playerName(d.playerIdx)+'「'+d.label+'」</span>';
     }).join('');
@@ -4317,9 +4686,9 @@ function render(){
     document.getElementById('fieldCards').innerHTML = (field.cards||[]).map(c=>cardHtml(c,'mini'+(isNewField?' deal-in':''),false,false)).join('');
   }
 
-  const isYourTurn = (currentPlayerIndex===0 && !gameOver && !pendingAction && !exchangeInProgress);
+  const isYourTurn = (currentPlayerIndex===mySeat && !gameOver && !pendingAction && !exchangeInProgress);
   const playableIds = computePlayableCardIds();
-  const sortedHand = hands[0].slice().sort((a,b)=> handSortDescending
+  const sortedHand = hands[mySeat].slice().sort((a,b)=> handSortDescending
     ? effStrength(b.rank)-effStrength(a.rank)
     : effStrength(a.rank)-effStrength(b.rank));
   document.getElementById('hand').innerHTML = sortedHand.map(c=>{
@@ -4329,19 +4698,19 @@ function render(){
   }).join('') || '<div class="field-empty">手札なし</div>';
 
   let youBadgeText = '';
-  if(finishedOrder.includes(0)){
+  if(finishedOrder.includes(mySeat)){
     if(gameOver){
-      youBadgeText = RANK_TITLES[finalRankingForBadges.indexOf(0)];
-    } else if(legitFinishOrder.includes(0)){
-      youBadgeText = RANK_TITLES[legitFinishOrder.indexOf(0)];
+      youBadgeText = titleList[finalRankingForBadges.indexOf(mySeat)];
+    } else if(legitFinishOrder.includes(mySeat)){
+      youBadgeText = titleList[legitFinishOrder.indexOf(mySeat)];
     } else {
       youBadgeText = '反則（順位確定待ち）';
     }
   }
-  if(isDoubtMode() && sitOutTricks[0]>0 && !finishedOrder.includes(0)) youBadgeText = '休み（ダウトの罰）';
+  if(isDoubtMode() && sitOutTricks[mySeat]>0 && !finishedOrder.includes(mySeat)) youBadgeText = '休み（ダウトの罰）';
   document.getElementById('youLabel').innerHTML = (youBadgeText
     ? 'あなたの手札 （'+youBadgeText+'）'
-    : 'あなたの手札') + outPipsHtml(0);
+    : 'あなたの手札') + outPipsHtml(mySeat);
 
   document.getElementById('youRow').classList.toggle('active-turn', isYourTurn);
 
@@ -4355,7 +4724,7 @@ function render(){
     handHint.style.display = 'none';
   }
 
-  const canDoubt = isYourTurn && doubtAvailableFor(0);
+  const canDoubt = isYourTurn && doubtAvailableFor(mySeat);
   const doubtBtn = document.getElementById('doubtBtn');
   doubtBtn.style.display = isDoubtMode() ? 'inline-block' : 'none';
   doubtBtn.disabled = !canDoubt;
@@ -4380,9 +4749,12 @@ function render(){
     banner.textContent = (pendingAction && pendingAction.type==='exchange') ? 'あなたが渡すカードを選んでください' : 'カード交換中…';
     banner.className = 'turn-banner neutral';
   } else if(pendingAction){
-    banner.textContent = (pendingAction.idx===0 ? 'あなたの追加アクション中…' : playerName(pendingAction.idx)+' の追加アクション中…');
+    banner.textContent = (pendingAction.idx===mySeat ? 'あなたの追加アクション中…' : playerName(pendingAction.idx)+' の追加アクション中…');
     banner.className = 'turn-banner neutral';
-  } else if(currentPlayerIndex===0){
+  } else if(pendingRemoteAction){
+    banner.textContent = playerName(pendingRemoteAction.seat)+' の追加アクション中…';
+    banner.className = 'turn-banner neutral';
+  } else if(currentPlayerIndex===mySeat){
     banner.textContent = '★ あなたの番です ★';
     banner.className = 'turn-banner your-turn';
   } else {
@@ -4391,7 +4763,7 @@ function render(){
   }
 
   const skipBtn = document.getElementById('skipBtn');
-  const canFastForward = !gameOver && finishedOrder.includes(0);
+  const canFastForward = !gameOver && finishedOrder.includes(mySeat);
   skipBtn.style.display = canFastForward ? 'block' : 'none';
   if(canFastForward){
     skipBtn.textContent = fastForward ? '⏩ 高速再生中（押すと通常速度に戻す）' : '⏩ 残りをスキップ（CPUだけの消化試合を高速処理）';
@@ -4399,6 +4771,116 @@ function render(){
   }
 
   updateDiscardPileButton();
+
+  // ホストは毎描画後、各ゲストに「自分視点に伏せた」スナップショットを配信する。
+  // 差分があるときだけ書き込む（Online.broadcast内でハッシュ比較）。
+  if(onlineRole==='host' && typeof Online!=='undefined') Online.broadcast();
+}
+
+// ===== オンライン対戦：スナップショット（redacted view）とゲストへの反映 =====
+// ダウトの秘匿を守るため、他席の手札・伏せ札の実体・伏せたまま流れた札は絶対に含めない。
+function redactField(f, viewerSeat){
+  if(f===null) return null;
+  const base = { rank:f.rank, count:f.count, owner:f.owner, faceDown:!!f.faceDown,
+    revealed:!!f.revealed, pendingClear:f.pendingClear||null, seq:f.seq,
+    cards:(f.cards||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id})) };
+  if(f.faceDown && !f.revealed){
+    // 伏せ中は実カード（actual）を絶対に送らない。枚数だけ分かるプレースホルダにする。
+    base.actual = (f.actual||[]).map(()=>({hidden:true}));
+  } else {
+    base.actual = (f.actual||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id}));
+  }
+  return base;
+}
+function redactDiscardEntry(h){
+  const hidden = h.hiddenIds || new Set();
+  return {
+    reason: h.reason,
+    hiddenIds: [...hidden],
+    // 伏せたまま流れた札は中身を隠す（idは重複判定のため残す）。
+    cards: h.cards.map(c=> hidden.has(c.id)
+      ? {rank:'?', suit:null, id:c.id, hidden:true}
+      : {rank:c.rank, suit:c.suit, id:c.id})
+  };
+}
+// viewerSeat 視点のスナップショット。自席は実カード、他席は枚数だけ。
+function buildRedactedView(viewerSeat){
+  return {
+    seatCount, mySeat: viewerSeat, seatNames: seatNames.slice(),
+    currentPlayerIndex, turnDirection, revolution, elevenBack,
+    numberLock, suitLock: suitLock ? suitLock.slice() : null,
+    finishedOrder: finishedOrder.slice(), legitFinishOrder: legitFinishOrder.slice(),
+    violationFinishOrder: violationFinishOrder.slice(), violationReasons: Object.assign({}, violationReasons),
+    gameOver, outs: outs.slice(), sitOutTricks: sitOutTricks.slice(),
+    skipQuota, forcedPassOnly, revealPending,
+    declHistory: declHistory.map(d=>({playerIdx:d.playerIdx, label:d.label})),
+    rules: Object.assign({}, rules), cpuLevel,
+    flowingOutCards: flowingOutCards ? flowingOutCards.map(c=>({rank:c.rank, suit:c.suit, id:c.id})) : null,
+    flowingOutFaceDown: !!flowingOutFaceDown,
+    hands: hands.map((h,i)=> i===viewerSeat
+      ? h.map(c=>({rank:c.rank, suit:c.suit, id:c.id}))
+      : h.map(()=>({hidden:true}))),
+    field: redactField(field, viewerSeat),
+    discardHistory: discardHistory.map(redactDiscardEntry),
+    logLines: logLines.slice(-80),
+    // このゲストに追加アクションを要求しているときだけ pendingRemote を載せる。
+    pendingRemote: (pendingRemoteAction && pendingRemoteAction.seat===viewerSeat)
+      ? {kind: pendingRemoteAction.kind, count: pendingRemoteAction.count} : null
+  };
+}
+// ゲスト：受信したスナップショットをグローバルへ反映して、既存の render() で描画する。
+function reviveField(vf){
+  if(!vf) return null;
+  return { rank:vf.rank, count:vf.count, owner:vf.owner, faceDown:!!vf.faceDown,
+    revealed:!!vf.revealed, pendingClear:vf.pendingClear||null, seq:vf.seq,
+    cards:vf.cards||[], actual:vf.actual||[], journal:null };
+}
+function applyView(v){
+  seatCount = v.seatCount; mySeat = v.mySeat; seatNames = v.seatNames||[];
+  currentPlayerIndex = v.currentPlayerIndex; turnDirection = v.turnDirection;
+  revolution = v.revolution; elevenBack = v.elevenBack;
+  numberLock = v.numberLock; suitLock = v.suitLock || null;
+  finishedOrder = v.finishedOrder||[]; legitFinishOrder = v.legitFinishOrder||[];
+  violationFinishOrder = v.violationFinishOrder||[]; violationReasons = v.violationReasons||{};
+  gameOver = v.gameOver; outs = v.outs||[]; sitOutTricks = v.sitOutTricks||[];
+  skipQuota = v.skipQuota||0; forcedPassOnly = !!v.forcedPassOnly; revealPending = !!v.revealPending;
+  declHistory = v.declHistory||[]; rules = v.rules||{}; cpuLevel = v.cpuLevel||'normal';
+  flowingOutCards = v.flowingOutCards || null; flowingOutFaceDown = !!v.flowingOutFaceDown;
+  pendingDealAnimation = false; fastForward = false;
+  logLines = v.logLines || [];
+  hands = (v.hands||[]).map(h=>h.map(c=>c));
+  field = reviveField(v.field);
+  discardHistory = (v.discardHistory||[]).map(d=>({reason:d.reason, cards:d.cards, hiddenIds:new Set(d.hiddenIds||[])}));
+  currentTrickCards = []; currentTrickHiddenIds = new Set();
+  const panel = document.getElementById('logPanel');
+  if(panel){ panel.innerHTML = logLines.map(l=>'<div>'+l+'</div>').join(''); panel.scrollTop = panel.scrollHeight; }
+  render();
+
+  // ホストから追加アクションを要求されたら、自分のモーダルを開いてサブintentで応答する。
+  if(v.pendingRemote){
+    if(!(pendingAction && pendingAction.remote && pendingAction.type===v.pendingRemote.kind)){
+      openRemoteActionModal(v.pendingRemote.kind, v.pendingRemote.count);
+    }
+  } else if(pendingAction && pendingAction.remote){
+    // もう要求されていない（ホストが解決済み）ならモーダルを閉じる。
+    hideActionModal(); pendingAction = null;
+  }
+
+  // 結果表示の同期：ホスト側でゲームが終わったらゲストも結果を出す。再戦で新しい
+  // ゲームが始まったら（gameOver=false）自動的に閉じる。
+  const overlayEl = document.getElementById('overlay');
+  const overlayShown = overlayEl.classList.contains('show');
+  if(gameOver && !overlayShown){ showResults(); }
+  else if(!gameOver && overlayShown){ overlayEl.classList.remove('show'); }
+}
+
+// ゲスト：ホストの pendingRemote 要求に応じて、該当する選択モーダルを開く。
+// 確定時（confirmGive/Discard/Bomber）は pendingAction.remote を見てサブintentを送る。
+function openRemoteActionModal(kind, count){
+  if(kind==='give') openGiveModal(mySeat, count, null, null);
+  else if(kind==='discard') openDiscardModal(mySeat, count, null, null);
+  else if(kind==='bomber') openBomberModal(mySeat, count, null, null);
+  if(pendingAction) pendingAction.remote = true;
 }
 
 function syncSubRuleStates(){
@@ -4553,6 +5035,13 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
   cpuLevelSetting = levelInput ? levelInput.value : 'normal';
   cpuLevel = resolveCpuLevel(cpuLevelSetting);
+  // オフライン対戦は常に「あなた＋CPU3人」の4人・自席0・既定の名前。オンライン対戦を
+  // 遊んだ後でも、ここで確実に4人構成へ戻してからゲームを開始する。
+  seatCount = 4;
+  mySeat = 0;
+  seatNames = NAMES.slice();
+  onlineRole = 'offline';
+  seatControllers = [];
   Feedback.unlock();
   Feedback.setTrack('game');
   withLoading('配牌中…', ()=>{
@@ -4578,6 +5067,17 @@ document.getElementById('logCollapseBtn').addEventListener('click', ()=>{
 // （＝pendingActionが残ったまま）戻ると、「操作画面に戻る」タブがセットアップ画面にまで
 // 表示され続けてしまうため、actionOverlay・restoreTab・pendingActionもあわせてリセットする。
 function returnToSetupScreen(){
+  // オンライン対局中に抜ける場合は、ルーム同期を止めてロビーへ戻す（オフラインの
+  // ルール設定画面ではなく）。エンジンの状態も onlineRole='offline' に片付けられる。
+  if(onlineRole!=='offline'){
+    document.getElementById('gameScreen').style.display = 'none';
+    document.getElementById('actionOverlay').classList.remove('show');
+    document.getElementById('restoreTab').style.display = 'none';
+    pendingAction = null;
+    Online.leave();
+    Feedback.setTrack('menu');
+    return;
+  }
   document.getElementById('gameScreen').style.display = 'none';
   document.getElementById('setupScreen').style.display = 'block';
   document.getElementById('actionOverlay').classList.remove('show');
@@ -4636,6 +5136,20 @@ function handleAndroidBackButton(){
     return;
   }
 
+  // オンライン対戦の画面は「1つ前の画面」へ戻す。待機室は退室、ロビーはモード選択へ、
+  // ルーム設定中のsetupScreenは元の画面（ロビー／待機室）へ。
+  const roomScreen = document.getElementById('roomScreen');
+  if(roomScreen.style.display === 'block'){ Online.leave(); return; }
+  if(setupMode !== 'offline' && document.getElementById('setupScreen').style.display === 'block'){ Online.hostConfigBack(); return; }
+  const lobbyScreen = document.getElementById('lobbyScreen');
+  if(lobbyScreen.style.display === 'block'){ Online.teardownLobby(); showTopScreen('modeScreen'); return; }
+  const modeScreen = document.getElementById('modeScreen');
+  if(modeScreen.style.display === 'block'){
+    const CapAppMode = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if(CapAppMode) CapAppMode.minimizeApp();
+    return;
+  }
+
   // セットアップ画面（最上位）まで来たら、標準的なAndroidの挙動に合わせてアプリを
   // 最小化する（プロセスを強制終了するexitApp()は使わない。状態を保ったまま
   // バックグラウンドに回るほうが復帰時に自然）。
@@ -4682,6 +5196,570 @@ function showUpdateToast(){
   document.body.appendChild(el);
 }
 
+/* ===================================================================
+   オンライン対戦：モード選択・ロビー・待機室（フェーズ1）
+   ホスト権威モデルの土台。実対戦の同期はフェーズ3以降で追加する。
+   Firebase SDKはオンライン選択時のみ遅延ロードし、オフラインは無依存を維持する。
+   =================================================================== */
+
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// トップレベル画面の切り替え（同時に1つだけ表示）。既存のsetupScreen/gameScreenの
+// display操作（returnToSetupScreen等）と同じ 'block'/'none' 規約に揃える。
+const TOP_SCREENS = ['modeScreen','setupScreen','lobbyScreen','roomScreen','gameScreen'];
+function showTopScreen(id){
+  TOP_SCREENS.forEach(s=>{ const el=document.getElementById(s); if(el) el.style.display = (s===id)?'block':'none'; });
+}
+
+// setupScreenは「オフライン設定」「オンライン・ルール設定（作成）」「同（変更）」の
+// 3用途で共用する。モードに応じて上部の主ボタンとルーム設定バーの表示を切り替える。
+let setupMode = 'offline';
+function applySetupMode(mode){
+  setupMode = mode;
+  const show=(id,on)=>{ const el=document.getElementById(id); if(el) el.style.display = on?'':'none'; };
+  show('startGameBtn',    mode==='offline');
+  show('createRoomBtn',   mode==='createRoom');
+  show('saveRoomRulesBtn',mode==='editRoom');
+  show('hostConfigBackBtn', mode!=='offline');
+  show('hostConfigBar',   mode==='createRoom');
+  show('cloudBar',        mode==='offline');
+}
+
+// 現在のルール設定UI（チェックボックス・ダウトトグル・CPUレベル・ジョーカー数）を
+// ルーム用ルールオブジェクトへ。captureRulesToDoc と同じ形（flags/doubtMode/jokerCount/cpuLevel）。
+function readRoomRulesFromUI(){
+  const flags={};
+  RULE_DEFS.forEach(r=>{ const cb=document.getElementById('rule_'+r.key); if(cb) flags[r.key]=cb.checked; });
+  const lvl=document.querySelector('input[name="cpuLevelChoice"]:checked');
+  return { flags, doubtMode: document.getElementById('doubtModeToggle').checked, jokerCount: jokerCount, cpuLevel: lvl?lvl.value:'normal' };
+}
+function applyRoomRulesToUI(rr){
+  if(!rr) return;
+  if(rr.flags){ RULE_DEFS.forEach(r=>{ const cb=document.getElementById('rule_'+r.key); if(cb && typeof rr.flags[r.key]==='boolean') cb.checked=rr.flags[r.key]; }); }
+  if(typeof rr.jokerCount==='number'){ jokerCount=Math.max(1,Math.min(8,rr.jokerCount)); const d=document.getElementById('jokerCountDisplay'); if(d) d.textContent=jokerCount; }
+  if(typeof rr.doubtMode==='boolean'){ document.getElementById('doubtModeToggle').checked=rr.doubtMode; applyDoubtTheme(rr.doubtMode); }
+  if(rr.cpuLevel){ const radio=document.querySelector('input[name="cpuLevelChoice"][value="'+rr.cpuLevel+'"]'); if(radio) radio.checked=true; }
+  syncSubRuleStates(); syncJokerStepperState();
+}
+function roomRulesSummaryText(rr){
+  if(!rr) return '—';
+  const active=RULE_DEFS.filter(r=>rr.flags && rr.flags[r.key]).map(r=> r.key==='jokers' ? 'ジョーカー'+(rr.jokerCount||2)+'枚' : r.label);
+  const rulesPart=active.length ? active.join('、') : '追加ルールなし（基本ルールのみ）';
+  const modePart=rr.doubtMode ? 'ダウト大富豪モード ／ ' : '';
+  return modePart+'CPU強さ: '+(CPU_LEVEL_LABELS[rr.cpuLevel]||rr.cpuLevel||'ノーマル')+' ／ '+rulesPart;
+}
+
+// Firebase compat SDK を遅延ロード（オンライン選択時のみ）。
+let _fbLoadPromise=null;
+function loadFirebaseSdk(){
+  if(window.firebase && window.firebase.database) return Promise.resolve();
+  if(_fbLoadPromise) return _fbLoadPromise;
+  _fbLoadPromise = FIREBASE_SDK_URLS.reduce((p,url)=> p.then(()=> new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=url; s.async=false;   // 順序依存（app→auth→database）のため async=false
+    s.onload=res; s.onerror=()=>rej(new Error('Firebase SDKの読み込みに失敗しました'));
+    document.head.appendChild(s);
+  })), Promise.resolve());
+  return _fbLoadPromise;
+}
+// 返り値は { auth, db }（compat API：db.ref(path) が使える）。
+// テスト用シーム：window.__fbMock が注入されていればそれを使う（実Firebase不要でロビーを検証）。
+async function ensureFirebase(){
+  if(window.__fbMock) return window.__fbMock;
+  if(!firebaseConfigured()) throw new Error('not-configured');
+  await loadFirebaseSdk();
+  if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+  return { auth: firebase.auth(), db: firebase.database() };
+}
+
+const Online = (function(){
+  const S = {
+    auth:null, db:null, uid:null, nickname:'プレイヤー',
+    roomId:null, isHost:false, meta:null, members:{}, rules:null,
+    roomUnsub:null, roomsUnsub:null, notifiedStart:false,
+    // 対局中の同期用（フェーズ3）
+    inGame:false, seatToUid:{}, uidToSeat:{},
+    viewUnsub:null, intentUnsub:null,
+    mySeq:0, processedSeq:{}, lastViewHash:{}
+  };
+
+  function setLobbyStatus(msg, err){ const el=document.getElementById('lobbyStatus'); if(el){ el.textContent=msg||''; el.classList.toggle('err', !!err); } }
+  function setRoomStatus(msg, err){ const el=document.getElementById('roomStatus'); if(el){ el.textContent=msg||''; el.classList.toggle('err', !!err); } }
+
+  function setNickname(v){
+    S.nickname = (v||'').trim() || 'プレイヤー';
+    try{ localStorage.setItem(LS_ONLINE_NICK, S.nickname==='プレイヤー'?'':S.nickname); }catch(e){}
+  }
+
+  async function enterLobby(){
+    showTopScreen('lobbyScreen');
+    const savedNick = (localStorage.getItem(LS_ONLINE_NICK)||'');
+    const input=document.getElementById('nicknameInput');
+    if(input){ input.value = savedNick; }
+    S.nickname = savedNick || 'プレイヤー';
+    // 接続設定が未入力（かつモックも無し）ならオンラインは使えない旨を案内。
+    if(!window.__fbMock && !firebaseConfigured()){
+      setLobbyStatus('接続設定が未入力です。開発者がFirebaseの設定を行うとオンライン対戦が使えるようになります。', true);
+      document.getElementById('roomList').innerHTML='<div class="room-empty">オンライン対戦は現在利用できません</div>';
+      document.getElementById('openCreateRoomBtn').disabled=true;
+      return;
+    }
+    document.getElementById('openCreateRoomBtn').disabled=false;
+    try{
+      setLobbyStatus('接続中…');
+      const fb=await ensureFirebase();
+      S.auth=fb.auth; S.db=fb.db;
+      const cred=await S.auth.signInAnonymously();
+      S.uid=(cred && cred.user && cred.user.uid) || (S.auth.currentUser && S.auth.currentUser.uid);
+      setLobbyStatus('接続しました。ニックネームを入力し、ルームを作成または参加してください。');
+      subscribeRoomList();
+    }catch(e){
+      setLobbyStatus('接続に失敗しました（'+((e&&e.message)||e)+'）', true);
+    }
+  }
+
+  function teardownLobby(){
+    if(S.roomsUnsub){ try{S.roomsUnsub();}catch(e){} S.roomsUnsub=null; }
+  }
+
+  function subscribeRoomList(){
+    if(S.roomsUnsub) return;
+    const ref=S.db.ref('rooms');
+    const cb=ref.on('value', s=>{ renderRoomList(s.val()||{}); });
+    S.roomsUnsub=()=>{ try{ref.off('value', cb);}catch(e){} };
+  }
+
+  function renderRoomList(rooms){
+    const list=document.getElementById('roomList');
+    if(!list) return;
+    const rows=Object.keys(rooms||{}).map(id=>Object.assign({id}, rooms[id]))
+      .filter(r=>r.meta && r.meta.status==='waiting')
+      .sort((a,b)=>(b.meta.createdAt||0)-(a.meta.createdAt||0));
+    if(!rows.length){ list.innerHTML='<div class="room-empty">待機中のルームはありません。「ルームを作る」で新しく作成できます。</div>'; return; }
+    list.innerHTML=rows.map(r=>{
+      const n=r.members?Object.keys(r.members).length:0;
+      const lock=r.meta.hasPassword?'<span class="lock-badge">🔒</span> ':'';
+      const full=n>=4;
+      const doubt=(r.rules && r.rules.doubtMode)?'ダウト':'通常';
+      return '<div class="room-row"><div class="room-info"><div class="room-name">'+lock+escapeHtml(r.meta.name||'名称未設定')+'</div>'
+        +'<div class="room-meta">'+n+'/4人 ・ '+doubt+'モード</div></div>'
+        +'<button class="ghost" '+(full?'disabled':'')+' onclick="Online.join(\''+r.id+'\')">'+(full?'満席':'参加')+'</button></div>';
+    }).join('');
+  }
+
+  function refreshRooms(){
+    if(!S.db){ return; }
+    S.db.ref('rooms').once('value').then(s=>renderRoomList(s.val()||{})).catch(()=>{});
+  }
+
+  // ---- ルーム作成（setupScreenのルール設定を使う） ----
+  function openCreate(){
+    if(!S.db){ setLobbyStatus('接続がまだ完了していません。少し待ってからお試しください。', true); return; }
+    setNickname(document.getElementById('nicknameInput').value);
+    document.getElementById('hostRoomName').value='';
+    const pwNone=document.querySelector('input[name="hostRoomPw"][value="none"]'); if(pwNone) pwNone.checked=true;
+    applySetupMode('createRoom');
+    showTopScreen('setupScreen');
+  }
+
+  async function createRoomFromSetup(){
+    if(!S.db) return;
+    const rr=readRoomRulesFromUI();
+    const name=(document.getElementById('hostRoomName').value||'').trim() || (S.nickname+'の卓');
+    const pwMode=(document.querySelector('input[name="hostRoomPw"]:checked')||{}).value||'none';
+    const hasPassword=(pwMode==='code');
+    const code=hasPassword ? String(Math.floor(Math.random()*1e6)).padStart(6,'0') : null;
+    try{
+      const roomRef=S.db.ref('rooms').push();
+      const roomId=roomRef.key;
+      const meta={ name, hostUid:S.uid, createdAt:Date.now(), hasPassword, code, status:'waiting', cpuFill:true, seatCount:4 };
+      await roomRef.set({
+        meta, rules: rr,
+        members: { [S.uid]: { name:S.nickname, seat:0, isHost:true, ready:false, connected:true, controller:'human' } }
+      });
+      await enterRoom(roomId, true);
+    }catch(e){
+      applySetupMode('offline');
+      showTopScreen('lobbyScreen');
+      setLobbyStatus('ルームを作成できませんでした（'+((e&&e.message)||e)+'）', true);
+    }
+  }
+
+  // ---- ルーム参加 ----
+  async function join(roomId){
+    if(!S.db) return;
+    setNickname(document.getElementById('nicknameInput').value);
+    const base=S.db.ref('rooms/'+roomId);
+    let meta;
+    try{ meta=(await base.child('meta').once('value')).val(); }
+    catch(e){ setLobbyStatus('ルーム情報を取得できませんでした', true); return; }
+    if(!meta || meta.status!=='waiting'){ setLobbyStatus('このルームには入れません（開始済みか終了しています）', true); return; }
+    if(meta.hasPassword){
+      const inputPw=prompt('入室パスワード（6桁）を入力してください');
+      if(inputPw===null) return;
+      if((inputPw||'').trim()!==String(meta.code)){ setLobbyStatus('パスワードが違います', true); return; }
+    }
+    let full=false;
+    let res;
+    try{
+      res=await base.child('members').transaction(members=>{
+        members=members||{};
+        if(members[S.uid]) return members; // 再入室（座席はそのまま）
+        const taken=new Set(Object.keys(members).map(k=>members[k].seat));
+        let seat=null; for(let i=0;i<4;i++){ if(!taken.has(i)){ seat=i; break; } }
+        if(seat===null){ full=true; return; } // 満席 → abort
+        members[S.uid]={ name:S.nickname, seat, isHost:false, ready:false, connected:true, controller:'human' };
+        return members;
+      });
+    }catch(e){ setLobbyStatus('参加処理に失敗しました', true); return; }
+    if(full || (res && res.committed===false)){ setLobbyStatus('このルームは満席です（最大4人）', true); return; }
+    await enterRoom(roomId, false);
+  }
+
+  // ---- 待機室 ----
+  async function enterRoom(roomId, isHost){
+    S.roomId=roomId; S.isHost=isHost; S.notifiedStart=false;
+    const base=S.db.ref('rooms/'+roomId);
+    // プレゼンス：切断時に自席を connected=false に。ホストは切断でルームを閉じる。
+    try{
+      base.child('members/'+S.uid+'/connected').onDisconnect().set(false);
+      if(isHost) base.child('meta/status').onDisconnect().set('closed');
+    }catch(e){}
+    const metaCb=base.child('meta').on('value', s=>{ S.meta=s.val(); onRoomData(); });
+    const memCb =base.child('members').on('value', s=>{ S.members=s.val()||{}; if(onlineRole==='host' && S.inGame) hostHandleMembersUpdate(); onRoomData(); });
+    const ruleCb=base.child('rules').on('value', s=>{ S.rules=s.val(); onRoomData(); });
+    S.roomUnsub=()=>{
+      try{ base.child('meta').off('value', metaCb); }catch(e){}
+      try{ base.child('members').off('value', memCb); }catch(e){}
+      try{ base.child('rules').off('value', ruleCb); }catch(e){}
+    };
+    showTopScreen('roomScreen');
+  }
+
+  function onRoomData(){
+    if(!S.roomId) return;
+    if(!S.meta){ if(!S.isHost) leaveBecause('ホストがルームを閉じました'); return; }
+    if(S.meta.status==='closed'){ if(!S.isHost) leaveBecause('ルームが終了しました'); return; }
+    if(S.meta.status==='playing'){ onGameStart(); return; }
+    renderRoom();
+  }
+
+  function renderRoom(){
+    const meta=S.meta||{}, members=S.members||{};
+    document.getElementById('roomTitle').textContent=meta.name||'待機室';
+    const codeBox=document.getElementById('roomCodeBox');
+    if(meta.hasPassword && meta.code){ codeBox.style.display='block'; document.getElementById('roomCodeValue').textContent=meta.code; }
+    else codeBox.style.display='none';
+
+    const humans=Object.keys(members).map(uid=>Object.assign({uid}, members[uid])).sort((a,b)=>a.seat-b.seat);
+    const humanCount=humans.length;
+    const takenSeats=new Set(humans.map(h=>h.seat));
+    const cpuFill=!!meta.cpuFill;
+    document.getElementById('memberCount').textContent=humanCount;
+
+    const rows=humans.map(h=>{
+      const tags=[];
+      if(h.isHost) tags.push('<span class="member-tag host">ホスト</span>');
+      if(h.connected===false) tags.push('<span class="member-tag offline">切断</span>');
+      else tags.push(h.ready?'<span class="member-tag ready">準備OK</span>':'<span class="member-tag notready">準備中</span>');
+      const meMark=(h.uid===S.uid)?'（あなた）':'';
+      return '<div class="member-row"><div class="member-seat">'+(h.seat+1)+'</div>'
+        +'<div class="member-name">'+escapeHtml(h.name||'プレイヤー')+meMark+'</div>'+tags.join('')+'</div>';
+    });
+    if(cpuFill){
+      for(let s=0;s<4;s++){ if(!takenSeats.has(s)){
+        rows.push('<div class="member-row"><div class="member-seat cpu">'+(s+1)+'</div><div class="member-name">CPU</div><span class="member-tag">CPU</span></div>');
+      } }
+    }
+    document.getElementById('memberList').innerHTML=rows.join('');
+    document.getElementById('roomRulesSummary').textContent=roomRulesSummaryText(S.rules);
+
+    const hostBox=document.getElementById('hostControlsBox');
+    hostBox.style.display=S.isHost?'block':'none';
+    if(S.isHost){ const r=document.querySelector('input[name="cpuFillChoice"][value="'+(cpuFill?'fill':'none')+'"]'); if(r) r.checked=true; }
+
+    const me=members[S.uid];
+    const readyBtn=document.getElementById('readyToggleBtn');
+    if(me){ readyBtn.style.display=''; readyBtn.textContent=me.ready?'準備を取り消す':'準備完了'; readyBtn.classList.toggle('highlight-pass', !me.ready); }
+    else readyBtn.style.display='none';
+
+    const startBtn=document.getElementById('startRoomBtn');
+    const totalPlayers=cpuFill?4:humanCount;
+    const allReady=humanCount>0 && humans.filter(h=>h.connected!==false).every(h=>h.ready);
+    const canStart=S.isHost && allReady && totalPlayers>=2;
+    startBtn.style.display=S.isHost?'':'none';
+    startBtn.disabled=!canStart;
+    startBtn.textContent=canStart?'ゲーム開始':(totalPlayers<2?'2人以上必要です':'全員の準備を待っています…');
+    setRoomStatus('');
+  }
+
+  function toggleReady(){
+    const me=S.members[S.uid]; if(!me || !S.roomId) return;
+    S.db.ref('rooms/'+S.roomId+'/members/'+S.uid+'/ready').set(!me.ready);
+  }
+  function setCpuFill(v){
+    if(!S.isHost || !S.roomId) return;
+    S.db.ref('rooms/'+S.roomId+'/meta/cpuFill').set(v==='fill');
+  }
+  function editRules(){
+    applyRoomRulesToUI(S.rules);
+    applySetupMode('editRoom');
+    showTopScreen('setupScreen');
+  }
+  async function saveRules(){
+    if(S.isHost && S.roomId){
+      try{ await S.db.ref('rooms/'+S.roomId+'/rules').set(readRoomRulesFromUI()); }catch(e){}
+    }
+    applySetupMode('offline');
+    showTopScreen('roomScreen');
+  }
+  function startRoom(){
+    if(!S.isHost || !S.roomId) return;
+    S.db.ref('rooms/'+S.roomId+'/meta/status').set('playing');
+  }
+  // ルームの status が 'playing' になったら対局を開始する（ホスト／ゲストで一度だけ）。
+  function onGameStart(){
+    if(S.inGame) return;
+    S.inGame = true;
+    if(S.isHost) hostStartGame();
+    else guestStartGame();
+  }
+
+  // ルールオブジェクト（flags/doubtMode/jokerCount/cpuLevel）をエンジンのグローバルへ。
+  function applyRoomRulesToEngine(rr){
+    rr = rr || {flags:{}};
+    rules = {};
+    RULE_DEFS.forEach(r=> rules[r.key] = !!(rr.flags && rr.flags[r.key]));
+    rules.jokerCount = (typeof rr.jokerCount==='number') ? rr.jokerCount : 2;
+    rules.doubtMode = !!rr.doubtMode;
+    jokerCount = rules.jokerCount;
+    cpuLevelSetting = rr.cpuLevel || 'normal';
+    cpuLevel = resolveCpuLevel(cpuLevelSetting);
+    applyDoubtTheme(rules.doubtMode);
+  }
+
+  // ホスト：席割当を確定してエンジンを起動し、intent購読を始める。
+  function hostStartGame(){
+    const members = S.members || {};
+    const humans = Object.keys(members).map(u=>Object.assign({uid:u}, members[u])).sort((a,b)=>a.seat-b.seat);
+    const cpuFill = !!(S.meta && S.meta.cpuFill);
+    const humanCount = humans.length;
+    const sc = cpuFill ? 4 : humanCount;
+    seatCount = sc; mySeat = 0; onlineRole = 'host';
+    seatControllers = new Array(sc); seatNames = new Array(sc);
+    S.seatToUid = {}; S.uidToSeat = {};
+    humans.forEach(h=>{
+      if(h.seat < sc){
+        seatControllers[h.seat] = h.isHost ? 'host-ui' : 'remote-human';
+        seatNames[h.seat] = h.name || ('P'+h.seat);
+        S.seatToUid[h.seat] = h.uid; S.uidToSeat[h.uid] = h.seat;
+      }
+    });
+    for(let s=0;s<sc;s++){ if(!seatControllers[s]){ seatControllers[s]='local-cpu'; seatNames[s]='CPU'; } }
+    applyRoomRulesToEngine(S.rules);
+    S.lastViewHash = {}; S.processedSeq = {};
+    showTopScreen('gameScreen');
+    Feedback.setTrack('game');
+    subscribeIntents();
+    startGame();            // dealFreshHands → finalizeGameStart → render()（末尾で broadcast）
+  }
+
+  // ゲスト：エンジンは動かさず、自分向けスナップショットを購読して描画するだけ。
+  function guestStartGame(){
+    const me = (S.members||{})[S.uid];
+    mySeat = me ? me.seat : 0;
+    onlineRole = 'guest';
+    S.mySeq = 0;
+    showTopScreen('gameScreen');
+    Feedback.setTrack('game');
+    subscribeMyView();
+  }
+
+  // ゲスト → ホストへ操作を送る。seq で最新性を担保。
+  function sendIntent(intent){
+    if(onlineRole!=='guest' || !S.db || !S.roomId) return;
+    intent.seq = (S.mySeq = (S.mySeq||0)+1);
+    S.db.ref('rooms/'+S.roomId+'/game/intents/'+S.uid).set(intent);
+  }
+
+  // ホスト：各リモート席へ差分スナップショットを配信。
+  function broadcast(){
+    if(onlineRole!=='host' || !S.db || !S.roomId) return;
+    for(const seat in S.seatToUid){
+      const uid = S.seatToUid[seat];
+      if(seatController(Number(seat))!=='remote-human') continue;
+      const view = buildRedactedView(Number(seat));
+      const h = JSON.stringify(view);
+      if(S.lastViewHash[uid] === h) continue;
+      S.lastViewHash[uid] = h;
+      S.db.ref('rooms/'+S.roomId+'/game/views/'+uid).set(view);
+    }
+  }
+
+  // ホスト：intent購読。新しい seq のものだけ処理する。
+  function subscribeIntents(){
+    const ref = S.db.ref('rooms/'+S.roomId+'/game/intents');
+    const cb = ref.on('value', s=>{
+      const all = s.val() || {};
+      for(const uid in all){
+        const intent = all[uid];
+        if(!intent) continue;
+        const seq = intent.seq || 0;
+        if((S.processedSeq[uid]||0) >= seq) continue;
+        S.processedSeq[uid] = seq;
+        const seat = S.uidToSeat[uid];
+        if(seat===undefined) continue;
+        try{ handleIntent(seat, intent); }catch(e){ /* 不正なintentは無視 */ }
+      }
+    });
+    S.intentUnsub = ()=>{ try{ ref.off('value', cb); }catch(e){} };
+  }
+
+  // ホスト：受信intentを審判として検証・実行する。
+  function handleIntent(seat, intent){
+    if(seatController(seat)!=='remote-human') return;
+    // 追加アクションのサブintent（該当席の選択待ち中のときだけ受理）。
+    if(pendingRemoteAction && pendingRemoteAction.seat===seat){
+      if(intent.type==='give'    && pendingRemoteAction.kind==='give')    { applyRemoteGive(seat, intent.recipient, intent.cardIds); return; }
+      if(intent.type==='discard' && pendingRemoteAction.kind==='discard') { applyRemoteDiscard(seat, intent.cardIds); return; }
+      if(intent.type==='bomber'  && pendingRemoteAction.kind==='bomber')  { applyRemoteBomber(seat, intent.ranks); return; }
+      return; // 待ち中は他のintentは受け付けない
+    }
+    const busy = gameOver || pendingAction || pendingRemoteAction || exchangeInProgress || revealPending;
+    if(intent.type==='pass'){
+      if(busy || currentPlayerIndex!==seat || field===null) return;
+      passAction(seat);
+    } else if(intent.type==='doubt'){
+      if(busy || currentPlayerIndex!==seat || !doubtAvailableFor(seat)) return;
+      doubtAction(seat);
+    } else if(intent.type==='play'){
+      if(busy || currentPlayerIndex!==seat) return;
+      const ids = intent.actualIds || [];
+      const actualCards = ids.map(id=> hands[seat].find(c=>c.id===id)).filter(Boolean);
+      if(actualCards.length===0 || actualCards.length!==ids.length) return; // 手札に無い札は不正
+      if(isDoubtMode()){
+        const decl = (intent.decl||[]).map(d=> d.rank==='JOKER'
+          ? {rank:'JOKER', suit:null, id:'declJOKER'}
+          : {rank:d.rank, suit:d.suit, id:'decl_'+d.suit+'_'+d.rank});
+        if(decl.length!==actualCards.length) return;
+        const rank=representedRank(decl), count=decl.length;
+        if(!canBeatField(rank, count, decl).ok) return;
+        const info = resolvePlayCore(seat, decl, intent.elevenBack, actualCards);
+        render(); afterPlayEffects(info);
+      } else {
+        if(!isValidGroup(actualCards)) return;
+        const rank=representedRank(actualCards), count=actualCards.length;
+        if(!canBeatField(rank, count, actualCards).ok) return;
+        const info = resolvePlayCore(seat, actualCards, intent.elevenBack);
+        render(); afterPlayEffects(info);
+      }
+    }
+  }
+
+  // ゲスト：自分向けの view を購読して描画する。
+  function subscribeMyView(){
+    const ref = S.db.ref('rooms/'+S.roomId+'/game/views/'+S.uid);
+    const cb = ref.on('value', s=>{
+      const v = s.val();
+      if(v) applyView(v);
+    });
+    S.viewUnsub = ()=>{ try{ ref.off('value', cb); }catch(e){} };
+  }
+
+  // ホスト：対局中にメンバーの接続状態が変わったら、切断したリモート席をCPUに引き継がせる。
+  function hostHandleMembersUpdate(){
+    if(onlineRole!=='host' || !S.inGame) return;
+    let changed=false;
+    for(const seatStr in S.seatToUid){
+      const seat=Number(seatStr); const uid=S.seatToUid[seatStr]; const m=S.members[uid];
+      if(seatControllers[seat]==='remote-human' && (!m || m.connected===false)){
+        seatControllers[seat]='local-cpu';
+        seatNames[seat]=((m&&m.name)||seatNames[seat]||'CPU')+'(CPU)';
+        log(playerName(seat)+'が切断しました。CPUが引き継ぎます');
+        changed=true;
+        if(pendingRemoteAction && pendingRemoteAction.seat===seat){ resolvePendingRemoteWithCpu(); }
+      }
+    }
+    if(changed){
+      render();
+      // 切断席が手番のまま止まっていたらCPUを動かす。
+      if(!gameOver && !pendingAction && !pendingRemoteAction && !revealPending && seatController(currentPlayerIndex)==='local-cpu'){
+        scheduleNextIfCpu();
+      }
+    }
+  }
+
+  function teardownGame(){
+    if(S.viewUnsub){ try{S.viewUnsub();}catch(e){} S.viewUnsub=null; }
+    if(S.intentUnsub){ try{S.intentUnsub();}catch(e){} S.intentUnsub=null; }
+    S.inGame=false; S.seatToUid={}; S.uidToSeat={}; S.processedSeq={}; S.lastViewHash={};
+    onlineRole='offline'; seatControllers=[]; pendingRemoteAction=null;
+  }
+
+  async function leave(){
+    const roomId=S.roomId, isHost=S.isHost;
+    teardownGame();
+    if(S.roomUnsub){ try{S.roomUnsub();}catch(e){} S.roomUnsub=null; }
+    if(S.db && roomId){
+      const base=S.db.ref('rooms/'+roomId);
+      try{
+        if(isHost){ await base.child('meta/status').set('closed'); await base.remove(); }
+        else { await base.child('members/'+S.uid).remove(); }
+      }catch(e){}
+    }
+    resetRoomState();
+    showTopScreen('lobbyScreen');
+  }
+  function leaveBecause(msg){
+    teardownGame();
+    if(S.roomUnsub){ try{S.roomUnsub();}catch(e){} S.roomUnsub=null; }
+    resetRoomState();
+    showTopScreen('lobbyScreen');
+    setLobbyStatus(msg||'', true);
+  }
+  function resetRoomState(){
+    S.roomId=null; S.isHost=false; S.meta=null; S.members={}; S.rules=null; S.notifiedStart=false;
+    S.inGame=false;
+  }
+
+  function hostConfigBack(){
+    if(setupMode==='editRoom'){ applySetupMode('offline'); showTopScreen('roomScreen'); }
+    else { applySetupMode('offline'); showTopScreen('lobbyScreen'); }
+  }
+
+  return {
+    enterLobby, teardownLobby, refreshRooms, openCreate, createRoomFromSetup,
+    join, toggleReady, setCpuFill, editRules, saveRules, startRoom, leave,
+    hostConfigBack, setNickname,
+    broadcast, sendIntent,   // エンジン（render/human*）から呼ばれる同期フック
+    _state:S,                // デバッグ／テスト用
+    _handleIntent:handleIntent
+  };
+})();
+
+function initOnlineUI(){
+  applySetupMode('offline');
+  const on=(id,ev,fn)=>{ const el=document.getElementById(id); if(el) el.addEventListener(ev, fn); };
+  on('modeOfflineBtn','click', ()=>{ applySetupMode('offline'); showTopScreen('setupScreen'); Feedback.setTrack('menu'); });
+  on('modeOnlineBtn','click', ()=>{ Online.enterLobby(); });
+  on('lobbyBackBtn','click', ()=>{ Online.teardownLobby(); showTopScreen('modeScreen'); });
+  on('refreshRoomsBtn','click', ()=>{ Online.refreshRooms(); });
+  on('openCreateRoomBtn','click', ()=>{ Online.openCreate(); });
+  on('nicknameInput','input', (e)=>{ Online.setNickname(e.target.value); });
+  on('createRoomBtn','click', ()=>{ Online.createRoomFromSetup(); });
+  on('saveRoomRulesBtn','click', ()=>{ Online.saveRules(); });
+  on('hostConfigBackBtn','click', ()=>{ Online.hostConfigBack(); });
+  on('leaveRoomBtn','click', ()=>{ Online.leave(); });
+  on('readyToggleBtn','click', ()=>{ Online.toggleReady(); });
+  on('startRoomBtn','click', ()=>{ Online.startRoom(); });
+  on('editRoomRulesBtn','click', ()=>{ Online.editRules(); });
+  document.querySelectorAll('input[name="cpuFillChoice"]').forEach(radio=>{
+    radio.addEventListener('change', (e)=>{ if(e.target.checked) Online.setCpuFill(e.target.value); });
+  });
+}
+
 renderRuleSetup();
 loadSeasonScores();
 loadCloudDoc();
@@ -4702,6 +5780,10 @@ initTapFeedback();
 initErrorScreen();
 initAndroidBackButton();
 initServiceWorker();
+// オンライン対戦（モード選択・ロビー・待機室）。ルーム一覧の「参加」ボタンは
+// インラインonclickから Online.join を呼ぶため、window にも公開しておく。
+window.Online = Online;
+initOnlineUI();
 Feedback.setTrack('menu');  // 最初のユーザー操作で実際に再生が始まる
 </script>
 </body>
