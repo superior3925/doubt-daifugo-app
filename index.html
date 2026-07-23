@@ -4688,7 +4688,7 @@ function render(){
 
   const isYourTurn = (currentPlayerIndex===mySeat && !gameOver && !pendingAction && !exchangeInProgress);
   const playableIds = computePlayableCardIds();
-  const sortedHand = hands[mySeat].slice().sort((a,b)=> handSortDescending
+  const sortedHand = (hands[mySeat]||[]).slice().sort((a,b)=> handSortDescending
     ? effStrength(b.rank)-effStrength(a.rank)
     : effStrength(a.rank)-effStrength(b.rank));
   document.getElementById('hand').innerHTML = sortedHand.map(c=>{
@@ -4817,9 +4817,12 @@ function buildRedactedView(viewerSeat){
     rules: Object.assign({}, rules), cpuLevel,
     flowingOutCards: flowingOutCards ? flowingOutCards.map(c=>({rank:c.rank, suit:c.suit, id:c.id})) : null,
     flowingOutFaceDown: !!flowingOutFaceDown,
-    hands: hands.map((h,i)=> i===viewerSeat
-      ? h.map(c=>({rank:c.rank, suit:c.suit, id:c.id}))
-      : h.map(()=>({hidden:true}))),
+    // 手札はFirebase安全な形で送る。RTDBは空配列（[]）を保存しないため、席が0枚に
+    // なると hands 配列が欠落・短縮し、ゲスト側の再構成が壊れる（hands[mySeat] が
+    // undefined になる等）。そこで「全席の枚数（数値配列：0も保存される）」と「自席の
+    // 実カードだけ」に分けて送り、ゲスト側で枚数から他席の伏せプレースホルダを再構成する。
+    handCounts: hands.map(h=>h.length),
+    myHand: (hands[viewerSeat]||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id})),
     field: redactField(field, viewerSeat),
     discardHistory: discardHistory.map(redactDiscardEntry),
     logLines: logLines.slice(-80),
@@ -4848,7 +4851,11 @@ function applyView(v){
   flowingOutCards = v.flowingOutCards || null; flowingOutFaceDown = !!v.flowingOutFaceDown;
   pendingDealAnimation = false; fastForward = false;
   logLines = v.logLines || [];
-  hands = (v.hands||[]).map(h=>h.map(c=>c));
+  // handCounts（数値・全席分）＋ myHand（自席の実カード）から手札を再構成する。
+  // 他席は枚数ぶんの伏せプレースホルダにする。Firebaseの空配列ドロップに影響されない。
+  const _counts = v.handCounts || [];
+  const _myHand = (v.myHand||[]).map(c=>c);
+  hands = _counts.map((n,i)=> i===mySeat ? _myHand : Array.from({length:n},()=>({hidden:true})));
   field = reviveField(v.field);
   discardHistory = (v.discardHistory||[]).map(d=>({reason:d.reason, cards:d.cards, hiddenIds:new Set(d.hiddenIds||[])}));
   currentTrickCards = []; currentTrickHiddenIds = new Set();
