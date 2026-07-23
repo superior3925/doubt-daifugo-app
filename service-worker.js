@@ -4,7 +4,7 @@
 // デザインやコードを更新して配信し直した場合は、このCACHE_NAMEの値を
 // 変更してください。変更すると古いキャッシュはactivate時に破棄され、
 // 次回オンライン時に新しい内容が取り込まれる。
-const CACHE_NAME = 'doubt-daifugo-v6';
+const CACHE_NAME = 'doubt-daifugo-v7';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -34,6 +34,15 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // オンライン対戦のFirebase通信（SDKのCDN読み込み・Realtime DatabaseのREST/ロング
+  // ポーリング等、すべてクロスオリジン）は、このCache Firstの経路に一切乗せない。
+  // 乗せると古い応答をキャッシュから返してリアルタイム同期が壊れ得る。RTDB既定の
+  // WebSocketはそもそもfetchを経由しないが、フォールバックのHTTP通信もここで素通しする。
+  // 同一オリジン（アプリ本体の静的アセット）だけをキャッシュ対象にする。
+  let sameOrigin = true;
+  try { sameOrigin = new URL(event.request.url).origin === self.location.origin; }
+  catch (e) { sameOrigin = true; }
+  if (!sameOrigin) return;
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const network = fetch(event.request).then((response) => {
