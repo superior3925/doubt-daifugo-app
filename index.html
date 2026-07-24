@@ -1601,7 +1601,7 @@ const RULE_DEFS = [
   {key:'fwStrongest', label:'最強カード上がり', desc:'最強ランク（通常2とジョーカー、11バック/革命中は3とジョーカー）で上がると反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
   {key:'fwJokerWild', label:'ジョーカーワイルド上がり', desc:'ジョーカーを他ランクのワイルドカードとして使った手で上がると反則です（純粋なジョーカー単騎/複数での上がりは対象外）。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
   {key:'miyakoOchi', label:'都落ち', desc:'前回の大富豪が今回1位になれなかった場合、その時点で最下位候補になります（カード交換ありの連戦時のみ意味を持ちます）。', category:'lock'},
-  {key:'openDoubt', label:'手番外ダウト', desc:'ダウト大富豪モード専用。CPUが場に重ねて出す直前、あなたがダウトできる局面だけ短い猶予（約1.5秒）が入り、自分の番でなくてもダウトできます。見送れば通常どおりCPUがそのまま出します（現在はオフライン対戦のみ対応）。', category:'lock'}
+  {key:'openDoubt', label:'手番外ダウト', desc:'ダウト大富豪モード専用。CPUが場に重ねて出す直前、あなたがダウトできる局面だけ短い猶予（秒数は右で調整可）が入り、自分の番でなくてもダウトできます。見送れば通常どおりCPUがそのまま出します（現在はオフライン対戦のみ対応）。', category:'lock'}
 ];
 
 let rules = {};
@@ -1654,6 +1654,10 @@ let jokerCount = 2;
 // trueなら、ゲームが始まる（連戦の再戦も含む）たびに jokerCount を1〜8でランダムに
 // 引き直す。実際に使う枚数は dealFreshHands() 内で rules.jokerCount へ確定させる。
 let jokerCountRandom = false;
+// 手番外ダウト（openDoubtルール）の猶予秒数。jokerCountと同じ「UI表示用ミラー＋
+// ゲーム開始時にrules.doubtWindowSecへ確定」のパターンで扱う。既定3秒（初期実装の
+// 1.5秒固定が短すぎたというフィードバックを受け、ユーザーが1〜10秒で調整できるようにした）。
+let doubtWindowSec = 3;
 let nextStartingPlayerOverride = null;
 let turnDirection = 1;
 let lastReceivedCardIds = new Set();
@@ -1683,12 +1687,13 @@ function turboMs(ms){ return fastForward ? 20 : ms; }
 
 // ---- 手番外ダウト（openDoubtルール）：CPUが場に重ねる直前に、自分がダウト可能な
 // 局面だけ短い猶予を挟み、その間だけ手番でなくてもダウトできるようにする。----
-// pendingCpuPlay: 猶予中のまま保留されているCPUの手（{idx, decl, actual}）。nullなら
-// ウィンドウは開いていない。doubtActionが呼ばれたらこの手はまるごと破棄される
-// （場が変わるので、CPUは自分の手番が来たときに新しい場を見て考え直す）。
+// pendingCpuPlay: 猶予中のまま保留されているCPUの手（{idx, decl, actual, deadline}）。
+// deadlineはDate.now()基準の終了時刻（カウントダウン表示用）。nullならウィンドウは
+// 開いていない。doubtActionが呼ばれたらこの手はまるごと破棄される（場が変わるので、
+// CPUは自分の手番が来たときに新しい場を見て考え直す）。
 let pendingCpuPlay = null;
-let doubtWindowTimer = null;
-const DOUBT_WINDOW_MS = 1500;
+let doubtWindowTimer = null;    // 猶予満了時にCPUの手を確定させるタイマー
+let doubtCountdownTimer = null; // カウントダウン表示を更新するための周期tick
 
 // ---- スコア制度：大富豪+3・富豪+1・貧民0・大貧民-1を対戦ごとに合算し、ブラウザに保存する ----
 const SCORE_BY_RANK = [3, 1, 0, -1];
@@ -1866,6 +1871,7 @@ function captureRulesToDoc(){
     cpuLevel: levelInput ? levelInput.value : 'normal',
     jokerCount: jokerCount,
     jokerCountRandom: jokerCountRandom,
+    doubtWindowSec: doubtWindowSec,
     flags: flags
   };
 }
@@ -1888,6 +1894,11 @@ function applyRulesFromDoc(){
   jokerCountRandom = !!r.jokerCountRandom;
   const randomCb = document.getElementById('jokerCountRandomCb');
   if(randomCb) randomCb.checked = jokerCountRandom;
+  if(typeof r.doubtWindowSec==='number'){
+    doubtWindowSec = Math.max(1, Math.min(10, r.doubtWindowSec));
+    const dwd = document.getElementById('doubtWindowSecDisplay');
+    if(dwd) dwd.textContent = doubtWindowSec;
+  }
   if(typeof r.doubtMode==='boolean'){
     document.getElementById('doubtModeToggle').checked = r.doubtMode;
     applyDoubtTheme(r.doubtMode);
@@ -1898,6 +1909,7 @@ function applyRulesFromDoc(){
   }
   syncSubRuleStates();
   syncJokerStepperState();
+  syncOpenDoubtStepperState();
 }
 // ルール設定が変わった時（チェックボックス等）に呼ぶ共通ハンドラ。
 function onRulesChanged(){
@@ -2321,8 +2333,20 @@ function legalDeclRanks(count){
 
 // 実札が宣言どおりか。ジョーカーは「宣言された非ジョーカー1枚」の代役として正直とみなす
 // （ワイルドカードの本来の働き）。逆にJOKERと宣言して実札を出すのは常にウソ。
+//
+// ただし、これは「代役すべき非ジョーカーの実札が他に含まれている」場合の話。実際に出した
+// 札が全部ジョーカー（単体JOKER単騎や、ジョーカーだけの複数枚出し）だと代役対象の実札が
+// 存在しないため、上のマッチングだけでは「JOKER単体をクローバー10と宣言」のような組み
+// 合わせまで正直と誤判定してしまう。この場合の実効ランクは常に wildcardAwareRank で決まる
+// （数しばり中はそのロック数字、そうでなければJOKER自身）ので、宣言は「素直にJOKERと言う」
+// か「そのロック数字だと言う」のどちらかでなければウソになる（数しばりが無ければ実質
+// JOKERとしか正直に名乗れない＝他ランクを騙れば必ずウソ）。
 function isDeclarationTruthful(declCards, actualCards){
   if(declCards.length !== actualCards.length) return false;
+  if(actualCards.length>0 && actualCards.every(c=>c.rank==='JOKER')){
+    const effRank = wildcardAwareRank(actualCards);
+    return declCards.every(d=> d.rank==='JOKER' || d.rank===effRank);
+  }
   const remaining = actualCards.slice();
   const unmatched = [];
   for(const d of declCards){
@@ -2584,7 +2608,7 @@ function dealFreshHands(){
   if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer=null; }
   flowingOutCards = null;
   if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
-  if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+  clearDoubtWindowTimers();
   pendingCpuPlay = null;
   const cutInHost = document.getElementById('cutInHost');
   if(cutInHost) cutInHost.innerHTML = '';
@@ -4042,23 +4066,46 @@ function shouldOpenDoubtWindow(){
   return isDoubtMode() && !!rules.openDoubt && onlineRole==='offline' && !fastForward
     && doubtAvailableFor(mySeat);
 }
+// ルール設定の秒数（1〜10、既定3）をミリ秒へ。rules未設定時（保険）は既定値を使う。
+function doubtWindowMs(){
+  const sec = Math.max(1, Math.min(10, rules.doubtWindowSec || 3));
+  return sec*1000;
+}
 // あなたの手番外ダウトの猶予を開始する。gameGenで「別ゲームに切り替わっていないか」を
-// ガードしつつ、DOUBT_WINDOW_MS後に誰もダウトしなければCPUの手をそのまま確定する。
+// ガードしつつ、設定秒数後に誰もダウトしなければCPUの手をそのまま確定する。カウントダウン
+// 表示のため、猶予中は別途250ms間隔で再描画するtickタイマーも走らせる。
 function openDoubtWindow(idx, decl, actual){
-  pendingCpuPlay = {idx, decl, actual};
+  const ms = turboMs(doubtWindowMs());
+  pendingCpuPlay = {idx, decl, actual, deadline: Date.now()+ms};
   render();
   const myGen = gameGen;
   doubtWindowTimer = setTimeout(()=>{
     doubtWindowTimer = null;
     if(myGen!==gameGen) return; // 新しいゲームに切り替わっている
     resolvePendingCpuPlay();
-  }, turboMs(DOUBT_WINDOW_MS));
+  }, ms);
+  scheduleDoubtCountdownTick(myGen);
+}
+function scheduleDoubtCountdownTick(myGen){
+  doubtCountdownTimer = setTimeout(()=>{
+    doubtCountdownTimer = null;
+    if(myGen!==gameGen || !pendingCpuPlay) return; // 既に解決済み／別ゲームに切り替わった
+    render();
+    scheduleDoubtCountdownTick(myGen);
+  }, 250);
+}
+// 猶予関連の2本のタイマーをまとめて止める（満了・様子見・ダウト介入・後始末のどこから
+// 呼んでも安全なようclearTimeout(null)を許容する形にしてある）。
+function clearDoubtWindowTimers(){
+  if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+  if(doubtCountdownTimer){ clearTimeout(doubtCountdownTimer); doubtCountdownTimer=null; }
 }
 // 猶予が満了、または「様子見」で明示的にスキップされたときに、保留していたCPUの手を
 // そのまま確定する。
 function resolvePendingCpuPlay(){
   const p = pendingCpuPlay;
   if(!p) return;
+  clearDoubtWindowTimers();
   pendingCpuPlay = null;
   const info = cpuResolvePlay(p.idx, p.decl, p.actual);
   render();
@@ -4067,7 +4114,6 @@ function resolvePendingCpuPlay(){
 // あなたが猶予中に「様子見」ボタンでスキップした：タイマーを止めてすぐ確定する。
 function skipDoubtWindow(){
   if(!pendingCpuPlay) return;
-  if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
   resolvePendingCpuPlay();
 }
 // スペ3返し・4止めという2つの狭い戦術カウンター。全ティア正直のまま扱う（実装スコープの
@@ -4777,7 +4823,7 @@ function humanDoubt(){
   // に対してダウトする。
   if(pendingCpuPlay){
     if(gameOver || pendingAction || exchangeInProgress || revealPending) return;
-    if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+    clearDoubtWindowTimers();
     pendingCpuPlay = null;
     selected.clear();
     doubtAction(mySeat);
@@ -5056,7 +5102,8 @@ function render(){
     banner.textContent = 'ダウト！ カードをめくっています…';
     banner.className = 'turn-banner neutral';
   } else if(doubtWindowOpen){
-    banner.textContent = playerName(pendingCpuPlay.idx)+' が重ねようとしています…ダウトしますか？';
+    const remainSec = Math.max(0, Math.ceil((pendingCpuPlay.deadline - Date.now())/1000));
+    banner.textContent = playerName(pendingCpuPlay.idx)+' が重ねようとしています…ダウトしますか？（残り'+remainSec+'秒）';
     banner.className = 'turn-banner doubt-window';
   } else if(exchangeInProgress){
     banner.textContent = (pendingAction && pendingAction.type==='exchange') ? 'あなたが渡すカードを選んでください' : 'カード交換中…';
@@ -5317,6 +5364,36 @@ function ruleItemHtml(r){
 function fwChipHtml(r){
   return '<label class="fw-chip" title="'+r.desc.replace(/"/g,'&quot;')+'"><input type="checkbox" id="rule_'+r.key+'">'+ruleNumBadge(r)+'<span>'+r.label+'</span></label>';
 }
+function openDoubtItemHtml(r){
+  return '<div class="rule-item">'
+    + '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;cursor:pointer;">'
+    + '<input type="checkbox" id="rule_'+r.key+'">'
+    + '<div style="flex:1;"><div class="rule-label">'+r.label+'</div><div class="rule-desc">'+r.desc+'</div></div>'
+    + '</label>'
+    + '<div class="joker-stepper-col" onclick="event.stopPropagation()">'
+    + '<div class="joker-stepper">'
+    + '<button type="button" class="joker-step-btn" id="doubtWindowMinusBtn" onclick="adjustDoubtWindowSec(-1)">－</button>'
+    + '<span id="doubtWindowSecDisplay">'+doubtWindowSec+'</span>秒'
+    + '<button type="button" class="joker-step-btn" id="doubtWindowPlusBtn" onclick="adjustDoubtWindowSec(1)">＋</button>'
+    + '</div>'
+    + '</div>'
+    + '</div>';
+}
+function adjustDoubtWindowSec(delta){
+  const before = doubtWindowSec;
+  doubtWindowSec = Math.max(1, Math.min(10, doubtWindowSec + delta));
+  const disp = document.getElementById('doubtWindowSecDisplay');
+  if(disp) disp.textContent = doubtWindowSec;
+  if(doubtWindowSec!==before && typeof onRulesChanged==='function') onRulesChanged();
+}
+function syncOpenDoubtStepperState(){
+  const cb = document.getElementById('rule_openDoubt');
+  const enabled = cb && cb.checked;
+  const minus = document.getElementById('doubtWindowMinusBtn');
+  const plus = document.getElementById('doubtWindowPlusBtn');
+  if(minus) minus.disabled = !enabled;
+  if(plus) plus.disabled = !enabled;
+}
 function jokerItemHtml(r){
   return '<div class="rule-item">'
     + '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;cursor:pointer;">'
@@ -5351,6 +5428,9 @@ function renderRuleSetup(){
       } else if(items[i].key==='jokers'){
         body += jokerItemHtml(items[i]);
         i++;
+      } else if(items[i].key==='openDoubt'){
+        body += openDoubtItemHtml(items[i]);
+        i++;
       } else {
         body += ruleItemHtml(items[i]);
         i++;
@@ -5364,11 +5444,13 @@ function renderRuleSetup(){
     document.getElementById('rule_'+r.dependsOn).addEventListener('change', syncSubRuleStates);
   });
   document.getElementById('rule_jokers').addEventListener('change', syncJokerStepperState);
+  document.getElementById('rule_openDoubt').addEventListener('change', syncOpenDoubtStepperState);
   // ルール系のチェックボックス変更をまとめて拾い、cloudDocへ反映してDriveへ同期する
   // （イベント委任。個々のcheckboxのchangeはここへバブリングしてくる）。
   document.getElementById('ruleList').addEventListener('change', onRulesChanged);
   syncSubRuleStates();
   syncJokerStepperState();
+  syncOpenDoubtStepperState();
 }
 
 document.getElementById('playBtn').addEventListener('click', humanPlay);
@@ -5435,6 +5517,7 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
   RULE_DEFS.forEach(r=> rules[r.key] = document.getElementById('rule_'+r.key).checked);
   rules.jokerCount = jokerCount;
   rules.jokerCountRandom = jokerCountRandom;
+  rules.doubtWindowSec = doubtWindowSec;
   rules.doubtMode = document.getElementById('doubtModeToggle').checked;
   applyDoubtTheme(rules.doubtMode);
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
@@ -5475,7 +5558,7 @@ function returnToSetupScreen(){
   // 手番外ダウトの猶予中に画面を抜けるケースへの保険（通常は結果画面後のみ辿り着く
   // ボタンなので起きないはずだが、残ったままだと次にrender()する画面でダウトボタンが
   // 誤表示されうる）。
-  if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+  clearDoubtWindowTimers();
   pendingCpuPlay = null;
   // オンライン対局中に抜ける場合は、ルーム同期を止めてロビーへ戻す（オフラインの
   // ルール設定画面ではなく）。エンジンの状態も onlineRole='offline' に片付けられる。
@@ -5645,7 +5728,7 @@ function readRoomRulesFromUI(){
   const flags={};
   RULE_DEFS.forEach(r=>{ const cb=document.getElementById('rule_'+r.key); if(cb) flags[r.key]=cb.checked; });
   const lvl=document.querySelector('input[name="cpuLevelChoice"]:checked');
-  return { flags, doubtMode: document.getElementById('doubtModeToggle').checked, jokerCount: jokerCount, jokerCountRandom: jokerCountRandom, cpuLevel: lvl?lvl.value:'normal' };
+  return { flags, doubtMode: document.getElementById('doubtModeToggle').checked, jokerCount: jokerCount, jokerCountRandom: jokerCountRandom, doubtWindowSec: doubtWindowSec, cpuLevel: lvl?lvl.value:'normal' };
 }
 function applyRoomRulesToUI(rr){
   if(!rr) return;
@@ -5653,9 +5736,10 @@ function applyRoomRulesToUI(rr){
   if(typeof rr.jokerCount==='number'){ jokerCount=Math.max(1,Math.min(8,rr.jokerCount)); const d=document.getElementById('jokerCountDisplay'); if(d) d.textContent=jokerCount; }
   jokerCountRandom = !!rr.jokerCountRandom;
   const randomCb=document.getElementById('jokerCountRandomCb'); if(randomCb) randomCb.checked=jokerCountRandom;
+  if(typeof rr.doubtWindowSec==='number'){ doubtWindowSec=Math.max(1,Math.min(10,rr.doubtWindowSec)); const dwd=document.getElementById('doubtWindowSecDisplay'); if(dwd) dwd.textContent=doubtWindowSec; }
   if(typeof rr.doubtMode==='boolean'){ document.getElementById('doubtModeToggle').checked=rr.doubtMode; applyDoubtTheme(rr.doubtMode); }
   if(rr.cpuLevel){ const radio=document.querySelector('input[name="cpuLevelChoice"][value="'+rr.cpuLevel+'"]'); if(radio) radio.checked=true; }
-  syncSubRuleStates(); syncJokerStepperState();
+  syncSubRuleStates(); syncJokerStepperState(); syncOpenDoubtStepperState();
 }
 function roomRulesSummaryText(rr){
   if(!rr) return '—';
@@ -5958,9 +6042,11 @@ const Online = (function(){
     RULE_DEFS.forEach(r=> rules[r.key] = !!(rr.flags && rr.flags[r.key]));
     rules.jokerCount = (typeof rr.jokerCount==='number') ? rr.jokerCount : 2;
     rules.jokerCountRandom = !!rr.jokerCountRandom;
+    rules.doubtWindowSec = (typeof rr.doubtWindowSec==='number') ? rr.doubtWindowSec : 3;
     rules.doubtMode = !!rr.doubtMode;
     jokerCount = rules.jokerCount;
     jokerCountRandom = rules.jokerCountRandom;
+    doubtWindowSec = rules.doubtWindowSec;
     cpuLevelSetting = rr.cpuLevel || 'normal';
     cpuLevel = resolveCpuLevel(cpuLevelSetting);
     applyDoubtTheme(rules.doubtMode);
