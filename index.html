@@ -232,6 +232,15 @@
     gap:8px;
     flex-wrap:wrap;
   }
+  .turn-order-strip{
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:3px;
+    font-size:11px; color:#b9c4bd; margin-bottom:6px; min-height:16px;
+  }
+  .turn-order-strip .dir-icon{ font-size:14px; color:var(--gold-soft); margin-right:3px; }
+  .turn-order-strip .dir-icon.reversed{ color:#e3806f; }
+  .turn-order-seat{ padding:1px 5px; border-radius:4px; }
+  .turn-order-seat.current{ background:rgba(201,162,39,0.28); color:var(--gold-soft); font-weight:700; }
+  .turn-order-arrow{ color:#7c8b81; }
   .opp{
     text-align:center;
     background:rgba(0,0,0,0.25);
@@ -1151,6 +1160,7 @@
       <div class="game-main">
         <div class="table">
           <button class="discard-pile" id="discardPileBtn" type="button" title="捨て札を見る">🂠 <span id="discardCount">0</span></button>
+          <div class="turn-order-strip" id="turnOrderStrip"></div>
           <div class="opponents-row" id="opponents"></div>
           <div class="field-area">
             <div class="flags" id="flags"></div>
@@ -2393,6 +2403,28 @@ function leftNeighborOf(idx){
 }
 function playerName(i){ return (seatNames && seatNames[i]!=null) ? seatNames[i] : ('CPU '+i); }
 function countOfRank(hand, rank){ return hand.filter(c=>c.rank===rank).length; }
+
+// 相手席を表示する固定順。「自分の次（+1席）」が右端、そこから+2,+3…と左へ辿っていく
+// （＝卓を左回りに見た並びと一致する）。9リバースで手番の巡る向きが変わっても、現実の
+// カードゲームで席替えは起きないのと同様、この見た目の並びは動かさない。
+function oppSeatDisplayOrder(){
+  const n = seatCount;
+  const order = [];
+  for(let off=n-1; off>=1; off--) order.push((mySeat+off)%n);
+  return order;
+}
+// 現在の手番から、実際に手番が回る順（休み中の席は残るが上がり済みはスキップ）で
+// アクティブな席を一周ぶん並べる。turnDirectionに応じて自動的に向きが変わる。
+function turnOrderSeats(){
+  const active = activePlayers();
+  if(active.length===0) return [];
+  const seats = []; let i = currentPlayerIndex, guard = 0;
+  while(seats.length<active.length && guard++<seatCount*2){
+    if(!finishedOrder.includes(i)) seats.push(i);
+    i = (i+turnDirection+seatCount)%seatCount;
+  }
+  return seats;
+}
 
 function activeRulesSummary(){
   const active = RULE_DEFS.filter(r=>rules[r.key]).map(r=> r.key==='jokers' ? 'ジョーカー'+(rules.jokerCount||2)+'枚' : r.label);
@@ -4793,8 +4825,8 @@ function render(){
   const finalRankingForBadges = gameOver ? computeFinalRanking() : null;
   const titleList = seatTitles();
   const spectate = isSpectating();
-  // 相手席＝自席以外の全席（mySeatはオフライン／ホストでは0、ゲストでは自分の席）。
-  const oppSeats = allSeats().filter(i=>i!==mySeat);
+  // 相手席は「自分の次が右端、そこから左へ辿る」固定順（＝卓を左回りに見た並び）。
+  const oppSeats = oppSeatDisplayOrder();
   const oppHtml = oppSeats.map(i=>{
     let badge = '';
     if(finishedOrder.includes(i)){
@@ -4820,10 +4852,29 @@ function render(){
   }).join('');
   document.getElementById('opponents').innerHTML = oppHtml;
 
+  // プレイ順が一目でわかるように：現在の手番から実際に回る順で全員を並べ、向きは
+  // アイコン（⟲左回り／⟳右回り＝9リバース中）で示す。並び自体が向きを表すので、
+  // 矢印記号はどちらの向きでも同じ「→」でよい。
+  const orderSeats = turnOrderSeats();
+  const turnOrderEl = document.getElementById('turnOrderStrip');
+  if(turnOrderEl){
+    if(gameOver || orderSeats.length<2){
+      turnOrderEl.innerHTML = '';
+    } else {
+      const dirIcon = turnDirection===1 ? '⟲' : '⟳';
+      const dirLabel = turnDirection===1 ? '左回り' : '右回り（9リバース中）';
+      const seatsHtml = orderSeats.map(s=>{
+        const name = playerName(s);
+        const label = (s===mySeat && name!=='あなた') ? name+'（あなた）' : name;
+        return '<span class="turn-order-seat'+(s===currentPlayerIndex?' current':'')+'">'+label+'</span>';
+      }).join('<span class="turn-order-arrow">→</span>');
+      turnOrderEl.innerHTML = '<span class="dir-icon'+(turnDirection===-1?' reversed':'')+'" title="'+dirLabel+'">'+dirIcon+'</span>'+seatsHtml;
+    }
+  }
+
   const flagParts = [];
   if(revolution) flagParts.push('<div class="flag">革命中（強さ逆転）</div>');
   if(elevenBack) flagParts.push('<div class="flag">11バック中</div>');
-  if(turnDirection===-1) flagParts.push('<div class="flag">プレー順：逆回り</div>');
   if(rules.suitLock && suitLock) flagParts.push('<div class="flag">スートしばり：'+suitLock.join('・')+'</div>');
   if(rules.numberLock && numberLock) flagParts.push('<div class="flag">数しばり：次は'+numberLock+'</div>');
   if(field && field.rank==='8' && rules.fourStop && !field.pendingClear) flagParts.push('<div class="flag">8切り成立待ち（4止め：4×'+(field.count*2)+'）</div>');
