@@ -2637,115 +2637,153 @@ function buildExchangeQueue(prevOrder){
   return q;
 }
 
+// task giverの「渡すカードの選び方」を決める。
+// - giverChoice:true（前回大富豪/富豪）は手札全体からcount枚を自由に選べる（forcedは空）。
+// - giverChoice:false（前回貧民/大貧民）は強い順に確定させていくが、必要数の境界で同じ
+//   ランクの札が複数（＝同じ強さで並ぶ）ときだけ、その中のどれを渡すかを選ばせる
+//   （それより強いランクの札はforcedとして自動的に含まれる＝そこは選べない）。
+//   ジョーカー同士はスートが無く区別する意味が無いので、境界に来ても選ばせず機械的に確定する。
+//   曖昧さが無ければ choicePool:null を返す（＝即座に自動確定してよい）。
+function computeGiveSelection(task){
+  const hand = hands[task.giver];
+  if(task.giverChoice){
+    return { forced:[], choicePool: hand.slice(), pickCount: task.count };
+  }
+  const groups = {};
+  hand.forEach(c=>{ (groups[c.rank]=groups[c.rank]||[]).push(c); });
+  const ranksByStrength = Object.keys(groups).sort((a,b)=>effStrength(b)-effStrength(a));
+  const forced = [];
+  let remaining = task.count;
+  for(const r of ranksByStrength){
+    if(remaining<=0) break;
+    const group = groups[r];
+    if(group.length<=remaining || r==='JOKER'){
+      const take = Math.min(group.length, remaining);
+      forced.push(...group.slice(0, take));
+      remaining -= take;
+    } else {
+      return { forced, choicePool: group, pickCount: remaining };
+    }
+  }
+  return { forced, choicePool: null, pickCount: 0 };
+}
+// 確定した渡し札（forced＋選んだ分）を実際に移動し、ログを残す。
+function applyExchangeGive(task, giveCards){
+  const gset = new Set(giveCards.map(c=>c.id));
+  hands[task.giver] = hands[task.giver].filter(c=>!gset.has(c.id));
+  hands[task.receiver] = hands[task.receiver].concat(giveCards);
+  if(!task.giverChoice){
+    lastReceivedCardIds = gset; // so the receiver's upcoming give-choice can highlight these
+    log(playerName(task.giver)+'（前回の'+task.giverRole+'）が最強の'+giveCards.length+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した（'+giveCards.map(c=>c.rank==='JOKER'?'ジョーカー':c.rank+c.suit).join('、')+'）');
+  } else {
+    log(playerName(task.giver)+'が'+playerName(task.receiver)+'に'+giveCards.length+'枚渡した');
+  }
+}
 function processNextExchange(){
   if(exchangeQueue.length===0){
     finalizeGameStart();
     return;
   }
   const task = exchangeQueue.shift();
-  if(!task.giverChoice){
-    const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(b.rank)-effStrength(a.rank));
-    const chosen = sorted.slice(0, task.count);
-    const ids = new Set(chosen.map(c=>c.id));
-    hands[task.giver] = hands[task.giver].filter(c=>!ids.has(c.id));
-    hands[task.receiver] = hands[task.receiver].concat(chosen);
-    lastReceivedCardIds = ids; // so the receiver's upcoming give-choice can highlight these
-    log(playerName(task.giver)+'（前回の'+task.giverRole+'）が最強の'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した（'+chosen.map(c=>c.rank==='JOKER'?'ジョーカー':c.rank+c.suit).join('、')+'）');
+  const sel = computeGiveSelection(task);
+  if(!sel.choicePool){
+    // 曖昧さなし：forcedがそのまま渡す札の全て。
+    applyExchangeGive(task, sel.forced);
     render();
     processNextExchange();
-  } else if(task.giver===mySeat){
-    openExchangeGiveModal(task);
-  } else if(onlineRole==='host' && seatController(task.giver)==='remote-human'){
-    // リモートの前回大富豪/富豪：CPU代行せず、本人に選択を要求する（サブintent往復）。
-    requestRemoteExchange(task);
+    return;
+  }
+  const ctrl = seatController(task.giver);
+  if(ctrl==='host-ui'){
+    openExchangeGiveModal(task, sel);
+  } else if(onlineRole==='host' && ctrl==='remote-human'){
+    // リモート（前回大富豪/富豪、または同ランクの選択待ち）：CPU代行せず本人に選択を要求。
+    requestRemoteExchange(task, sel);
   } else {
-    const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
-    const chosen = sorted.slice(0, task.count);
-    const ids = new Set(chosen.map(c=>c.id));
-    hands[task.giver] = hands[task.giver].filter(c=>!ids.has(c.id));
-    hands[task.receiver] = hands[task.receiver].concat(chosen);
-    log(playerName(task.giver)+'（前回の'+task.giverRole+'）が'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した');
+    // CPU：giverChoiceなら弱い順、同ランクのタイブレークなら順序はどれでも同じ強さなので先頭から。
+    const sorted = sel.choicePool.slice().sort((a,b)=> task.giverChoice
+      ? effStrength(a.rank)-effStrength(b.rank) : effStrength(b.rank)-effStrength(a.rank));
+    const chosen = sorted.slice(0, sel.pickCount);
+    applyExchangeGive(task, sel.forced.concat(chosen));
     render();
     processNextExchange();
   }
 }
-// ホスト：リモート席（前回大富豪/富豪）に、渡すカードの選択を要求する。
-// pendingRemoteExchange が該当ゲストのビューに載り、ゲストが openRemoteExchangeModal を開く。
-function requestRemoteExchange(task){
-  pendingRemoteExchange = {seat:task.giver, task};
+// ホスト：リモート席に、渡すカードの選択を要求する（前回大富豪/富豪の自由選択、または
+// 前回貧民/大貧民の同ランクタイブレーク）。pendingRemoteExchangeが該当ゲストのビューに
+// 載り、ゲストが openRemoteExchangeModal を開く。
+function requestRemoteExchange(task, sel){
+  pendingRemoteExchange = {seat:task.giver, task, sel};
   log(playerName(task.giver)+'（前回の'+task.giverRole+'）のカード交換選択を待っています…');
   render();
 }
 // ホスト：リモートから届いたカード交換のサブintentを適用する。
 function applyRemoteExchange(seat, cardIds){
   const pre = pendingRemoteExchange; if(!pre || pre.seat!==seat) return;
-  const task = pre.task;
+  const task = pre.task, sel = pre.sel;
   const ids = new Set(cardIds||[]);
-  let giveCards = hands[seat].filter(c=>ids.has(c.id)).slice(0, task.count);
-  // 指定不足（枚数不足・不正なid等）は弱い順で機械的に補って必ず規定枚数を渡す。
-  if(giveCards.length < task.count){
-    const chosenIds = new Set(giveCards.map(c=>c.id));
-    const rest = hands[seat].filter(c=>!chosenIds.has(c.id)).sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
-    giveCards = giveCards.concat(rest.slice(0, task.count-giveCards.length));
+  let chosen = sel.choicePool.filter(c=>ids.has(c.id)).slice(0, sel.pickCount);
+  // 指定不足（枚数不足・不正なid等）は選択プール内から機械的に補って必ず規定枚数を渡す。
+  if(chosen.length < sel.pickCount){
+    const chosenIds = new Set(chosen.map(c=>c.id));
+    const rest = sel.choicePool.filter(c=>!chosenIds.has(c.id));
+    chosen = chosen.concat(rest.slice(0, sel.pickCount-chosen.length));
   }
   pendingRemoteExchange = null;
-  const gset = new Set(giveCards.map(c=>c.id));
-  hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
-  hands[task.receiver] = hands[task.receiver].concat(giveCards);
-  log(playerName(seat)+'が'+playerName(task.receiver)+'に'+giveCards.length+'枚渡した');
+  applyExchangeGive(task, sel.forced.concat(chosen));
   render();
   processNextExchange();
 }
-// 切断でCPU化した席のカード交換選択待ちを、CPUの選択（最弱カード）で解決する。
+// 切断でCPU化した席のカード交換選択待ちを、CPUの選択で解決する。
 function resolvePendingRemoteExchangeWithCpu(){
   const pre = pendingRemoteExchange; if(!pre) return;
-  const task = pre.task;
+  const task = pre.task, sel = pre.sel;
   pendingRemoteExchange = null;
-  const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
-  const chosen = sorted.slice(0, task.count);
-  const ids = new Set(chosen.map(c=>c.id));
-  hands[task.giver] = hands[task.giver].filter(c=>!ids.has(c.id));
-  hands[task.receiver] = hands[task.receiver].concat(chosen);
-  log(playerName(task.giver)+'（前回の'+task.giverRole+'）が'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した');
+  const sorted = sel.choicePool.slice().sort((a,b)=> task.giverChoice
+    ? effStrength(a.rank)-effStrength(b.rank) : effStrength(b.rank)-effStrength(a.rank));
+  const chosen = sorted.slice(0, sel.pickCount);
+  applyExchangeGive(task, sel.forced.concat(chosen));
   render();
   processNextExchange();
 }
 
-function openExchangeGiveModal(task){
-  pendingAction = {type:'exchange', idx:0, task, chosen:new Set()};
+function openExchangeGiveModal(task, sel){
+  pendingAction = {type:'exchange', task, sel, chosen:new Set()};
   render();
   renderExchangeModal();
 }
 function renderExchangeModal(){
   const pa = pendingAction;
-  const hand = hands[pa.task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const sel = pa.sel;
+  const hand = sel.choicePool.slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
   const cardsHtml = hand.map(c=>{
     const extra = 'mini' + (lastReceivedCardIds.has(c.id) ? ' received' : '');
     return cardHtml(c, extra, true, pa.chosen.has(c.id), 'exchangeToggleCard');
   }).join('');
   const hint = lastReceivedCardIds.size>0 ? '<p style="font-size:11px;color:#8a6d1f;">オレンジの枠＝相手から受け取ったカードです</p>' : '';
-  showActionModal('<h2>カード交換</h2><p>あなたは前回の'+pa.task.giverRole+'です。'+playerName(pa.task.receiver)+'（前回の'+pa.task.receiverRole+'）に渡すカードを'+pa.task.count+'枚選んでください（'+pa.chosen.size+'/'+pa.task.count+'）</p>'
+  const desc = pa.task.giverChoice
+    ? 'あなたは前回の'+pa.task.giverRole+'です。'+playerName(pa.task.receiver)+'（前回の'+pa.task.receiverRole+'）に渡すカードを'+sel.pickCount+'枚選んでください'
+    : 'あなたは前回の'+pa.task.giverRole+'です。同じ強さの札が'+sel.choicePool.length+'枚あり、その中から'+playerName(pa.task.receiver)+'（前回の'+pa.task.receiverRole+'）に渡す'+sel.pickCount+'枚を選んでください（残りは手元に残ります）';
+  showActionModal('<h2>カード交換</h2><p>'+desc+'（'+pa.chosen.size+'/'+sel.pickCount+'）</p>'
     + hint
     + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
-    + '<button class="action play" '+(pa.chosen.size===pa.task.count?'':'disabled')+' onclick="confirmExchange()">渡す</button>');
+    + '<button class="action play" '+(pa.chosen.size===sel.pickCount?'':'disabled')+' onclick="confirmExchange()">渡す</button>');
 }
 function exchangeToggleCard(id){
   const pa = pendingAction;
   if(pa.chosen.has(id)) pa.chosen.delete(id);
-  else if(pa.chosen.size<pa.task.count) pa.chosen.add(id);
+  else if(pa.chosen.size<pa.sel.pickCount) pa.chosen.add(id);
   renderExchangeModal();
 }
 function confirmExchange(){
   const pa = pendingAction;
-  const task = pa.task;
+  const task = pa.task, sel = pa.sel;
   if(pa.remote){
     Online.sendIntent({type:'exchange', cardIds:[...pa.chosen]});
     hideActionModal(); pendingAction=null; render(); return;
   }
-  const giveCards = hands[task.giver].filter(c=>pa.chosen.has(c.id));
-  hands[task.giver] = hands[task.giver].filter(c=>!pa.chosen.has(c.id));
-  hands[task.receiver] = hands[task.receiver].concat(giveCards);
-  log(playerName(task.giver)+'が'+playerName(task.receiver)+'に'+giveCards.length+'枚渡した');
+  const chosenCards = hands[task.giver].filter(c=>pa.chosen.has(c.id));
+  applyExchangeGive(task, sel.forced.concat(chosenCards));
   hideActionModal();
   pendingAction = null;
   render();
@@ -5007,9 +5045,14 @@ function buildRedactedView(viewerSeat){
     pendingRemote: (pendingRemoteAction && pendingRemoteAction.seat===viewerSeat)
       ? {kind: pendingRemoteAction.kind, count: pendingRemoteAction.count} : null,
     // このゲストにカード交換の選択を要求しているときだけ pendingRemoteExchange を載せる。
+    // poolIds/forcedIdsはゲスト自身の手札のidなので実体は明かさない（myHandで既に持っている）。
     pendingRemoteExchange: (pendingRemoteExchange && pendingRemoteExchange.seat===viewerSeat)
       ? {count: pendingRemoteExchange.task.count, receiver: pendingRemoteExchange.task.receiver,
-         giverRole: pendingRemoteExchange.task.giverRole, receiverRole: pendingRemoteExchange.task.receiverRole}
+         giverRole: pendingRemoteExchange.task.giverRole, receiverRole: pendingRemoteExchange.task.receiverRole,
+         giverChoice: pendingRemoteExchange.task.giverChoice,
+         pickCount: pendingRemoteExchange.sel.pickCount,
+         poolIds: pendingRemoteExchange.sel.choicePool.map(c=>c.id),
+         forcedIds: pendingRemoteExchange.sel.forced.map(c=>c.id)}
       : null,
     // カード交換モーダルの「オレンジの枠＝直前に受け取ったカード」表示用。
     lastReceivedCardIds: [...lastReceivedCardIds]
@@ -5067,7 +5110,7 @@ function applyView(v){
     }
   } else if(v.pendingRemoteExchange){
     if(!(pendingAction && pendingAction.remote && pendingAction.type==='exchange')){
-      openRemoteExchangeModal(Object.assign({giver: mySeat, giverChoice:true}, v.pendingRemoteExchange));
+      openRemoteExchangeModal(v.pendingRemoteExchange);
     }
   } else if(pendingAction && pendingAction.remote){
     // もう要求されていない（ホストが解決済み）ならモーダルを閉じる。
@@ -5091,9 +5134,19 @@ function openRemoteActionModal(kind, count){
   if(pendingAction) pendingAction.remote = true;
 }
 // ゲスト：ホストの pendingRemoteExchange 要求に応じて、カード交換モーダルを開く
-// （前回大富豪/富豪としての任意選択）。確定は confirmExchange の pa.remote 分岐が担う。
-function openRemoteExchangeModal(task){
-  openExchangeGiveModal(task);
+// （前回大富豪/富豪としての任意選択、または前回貧民/大貧民の同ランクタイブレーク）。
+// poolIds/forcedIdsは自分の手札のidなので、既に持っているmyHand由来のhands[mySeat]から
+// 実カードを引き当てる。確定は confirmExchange の pa.remote 分岐が担う。
+function openRemoteExchangeModal(info){
+  const byId = id => hands[mySeat].find(c=>c.id===id);
+  const task = {giver: mySeat, receiver: info.receiver, count: info.count,
+    giverChoice: info.giverChoice, giverRole: info.giverRole, receiverRole: info.receiverRole};
+  const sel = {
+    forced: (info.forcedIds||[]).map(byId).filter(Boolean),
+    choicePool: (info.poolIds||[]).map(byId).filter(Boolean),
+    pickCount: info.pickCount
+  };
+  openExchangeGiveModal(task, sel);
   if(pendingAction) pendingAction.remote = true;
 }
 
