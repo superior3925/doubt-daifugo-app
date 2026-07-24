@@ -450,6 +450,11 @@
     color:#b9c9be;
     border:1px solid rgba(231,205,123,0.3);
   }
+  .turn-banner.doubt-window{
+    background:var(--doubt);
+    color:#ffeae4;
+    animation:bannerPulse 0.9s ease-in-out infinite;
+  }
 
   .cut-in{
     position:fixed; top:38%; left:0; right:0; z-index:80;
@@ -514,6 +519,7 @@
   button.decline:hover{ background:rgba(32,27,18,0.08); }
   button.doubt{ background:var(--doubt); color:#ffeae4; }
   button.doubt.available{ animation:turnGlow 1.1s ease-in-out infinite; }
+  button.skip-doubt{ background:transparent; color:var(--cream); border:1px solid rgba(255,255,255,0.5); }
   button.honest{ background:transparent; color:var(--playable); border:1px solid var(--playable); }
   button.honest:hover:not(:disabled){ background:rgba(94,217,189,0.12); }
   button.action:disabled{ opacity:0.35; cursor:not-allowed; }
@@ -1198,6 +1204,7 @@
         <div class="controls">
           <button class="action pass" id="passBtn">パス</button>
           <button class="action doubt" id="doubtBtn" style="display:none;">ダウト</button>
+          <button class="action skip-doubt" id="skipDoubtBtn" type="button" style="display:none;" title="ダウトせず、そのまま相手に出させます">様子を見る</button>
           <button class="action honest" id="honestBtn" style="display:none;" title="選んだカードをそのまま正直に宣言して伏せます">正直に出す</button>
           <button class="action play" id="playBtn">出す</button>
         </div>
@@ -1593,7 +1600,8 @@ const RULE_DEFS = [
   {key:'fwBomber', label:'12ボンバー上がり', num:12, desc:'12ボンバーの没収効果で手札がなくなったら反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
   {key:'fwStrongest', label:'最強カード上がり', desc:'最強ランク（通常2とジョーカー、11バック/革命中は3とジョーカー）で上がると反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
   {key:'fwJokerWild', label:'ジョーカーワイルド上がり', desc:'ジョーカーを他ランクのワイルドカードとして使った手で上がると反則です（純粋なジョーカー単騎/複数での上がりは対象外）。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
-  {key:'miyakoOchi', label:'都落ち', desc:'前回の大富豪が今回1位になれなかった場合、その時点で最下位候補になります（カード交換ありの連戦時のみ意味を持ちます）。', category:'lock'}
+  {key:'miyakoOchi', label:'都落ち', desc:'前回の大富豪が今回1位になれなかった場合、その時点で最下位候補になります（カード交換ありの連戦時のみ意味を持ちます）。', category:'lock'},
+  {key:'openDoubt', label:'手番外ダウト', desc:'ダウト大富豪モード専用。CPUが場に重ねて出す直前、あなたがダウトできる局面だけ短い猶予（約1.5秒）が入り、自分の番でなくてもダウトできます。見送れば通常どおりCPUがそのまま出します（現在はオフライン対戦のみ対応）。', category:'lock'}
 ];
 
 let rules = {};
@@ -1672,6 +1680,15 @@ let fastForward = false;
 // このゲームのスコア・通算成績を加算済みか（showResultsの二重呼び出し保険）。
 let resultsRecorded = false;
 function turboMs(ms){ return fastForward ? 20 : ms; }
+
+// ---- 手番外ダウト（openDoubtルール）：CPUが場に重ねる直前に、自分がダウト可能な
+// 局面だけ短い猶予を挟み、その間だけ手番でなくてもダウトできるようにする。----
+// pendingCpuPlay: 猶予中のまま保留されているCPUの手（{idx, decl, actual}）。nullなら
+// ウィンドウは開いていない。doubtActionが呼ばれたらこの手はまるごと破棄される
+// （場が変わるので、CPUは自分の手番が来たときに新しい場を見て考え直す）。
+let pendingCpuPlay = null;
+let doubtWindowTimer = null;
+const DOUBT_WINDOW_MS = 1500;
 
 // ---- スコア制度：大富豪+3・富豪+1・貧民0・大貧民-1を対戦ごとに合算し、ブラウザに保存する ----
 const SCORE_BY_RANK = [3, 1, 0, -1];
@@ -2567,6 +2584,8 @@ function dealFreshHands(){
   if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer=null; }
   flowingOutCards = null;
   if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
+  if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+  pendingCpuPlay = null;
   const cutInHost = document.getElementById('cutInHost');
   if(cutInHost) cutInHost.innerHTML = '';
   const bomberFlyHost = document.getElementById('bomberFlyHost');
@@ -4002,10 +4021,54 @@ function cpuDeclareFollow(idx, hand, groups){
 
 // CPUが手を確定するときの定型（宣言→再描画→後処理）。cpuTurn内で何度も繰り返す
 // ので1か所にまとめる。actual省略時はdeclがそのまま実札（ダウトなしの正直プレイ）。
+// openDoubtルールが有効で、かつ「今まさに場にある伏せ札」をあなたがダウトできる局面
+// なら、CPUがそれに重ねる直前で一旦保留し、短い猶予（手番外ダウト）を挟む。
 function cpuCommitPlay(idx, decl, actual){
+  if(shouldOpenDoubtWindow()){
+    openDoubtWindow(idx, decl, actual);
+    return;
+  }
   const info = cpuResolvePlay(idx, decl, actual);
   render();
   afterPlayEffects(info);
+}
+// 「今の場（まだCPUの新しい手で上書きされていない伏せ札）」をあなたがダウトできるか。
+// doubtAvailableFor(mySeat)がまさにこの条件（ダウトモード・伏せたまま未公開・自分の
+// 宣言ではない・自分は上がり/退場していない）を過不足なく判定してくれる。fastForward
+// （あなたが上がった後のCPU-only消化試合を高速化するフラグ）は、原理上あなたが
+// finishedOrder入りしていないと立たないので実質doubtAvailableForに包含されるが、
+// 「高速消化中はウィンドウを開かない」という意図を明示するために重ねて書いておく。
+function shouldOpenDoubtWindow(){
+  return isDoubtMode() && !!rules.openDoubt && onlineRole==='offline' && !fastForward
+    && doubtAvailableFor(mySeat);
+}
+// あなたの手番外ダウトの猶予を開始する。gameGenで「別ゲームに切り替わっていないか」を
+// ガードしつつ、DOUBT_WINDOW_MS後に誰もダウトしなければCPUの手をそのまま確定する。
+function openDoubtWindow(idx, decl, actual){
+  pendingCpuPlay = {idx, decl, actual};
+  render();
+  const myGen = gameGen;
+  doubtWindowTimer = setTimeout(()=>{
+    doubtWindowTimer = null;
+    if(myGen!==gameGen) return; // 新しいゲームに切り替わっている
+    resolvePendingCpuPlay();
+  }, turboMs(DOUBT_WINDOW_MS));
+}
+// 猶予が満了、または「様子見」で明示的にスキップされたときに、保留していたCPUの手を
+// そのまま確定する。
+function resolvePendingCpuPlay(){
+  const p = pendingCpuPlay;
+  if(!p) return;
+  pendingCpuPlay = null;
+  const info = cpuResolvePlay(p.idx, p.decl, p.actual);
+  render();
+  afterPlayEffects(info);
+}
+// あなたが猶予中に「様子見」ボタンでスキップした：タイマーを止めてすぐ確定する。
+function skipDoubtWindow(){
+  if(!pendingCpuPlay) return;
+  if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+  resolvePendingCpuPlay();
 }
 // スペ3返し・4止めという2つの狭い戦術カウンター。全ティア正直のまま扱う（実装スコープの
 // 都合）。ダウトモードでも通常モードでも挙動は同じなので共通化する。処理したら true を
@@ -4709,6 +4772,17 @@ function humanPass(){
 }
 
 function humanDoubt(){
+  // 手番外ダウトの猶予中（openDoubtルール）：自分の手番でなくてもここで確定する。
+  // CPUが確定させかけていた手はまるごと破棄し、今の場（まだ上書きされていない伏せ札）
+  // に対してダウトする。
+  if(pendingCpuPlay){
+    if(gameOver || pendingAction || exchangeInProgress || revealPending) return;
+    if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+    pendingCpuPlay = null;
+    selected.clear();
+    doubtAction(mySeat);
+    return;
+  }
   if(!humanCanAct()) return;
   if(!doubtAvailableFor(mySeat)){ flashMsg('いまダウトは宣言できません'); return; }
   selected.clear();
@@ -4953,11 +5027,18 @@ function render(){
     handHint.style.display = 'none';
   }
 
-  const canDoubt = isYourTurn && doubtAvailableFor(mySeat);
+  // 手番外ダウトの猶予中は、自分の手番でなくてもダウトボタンを有効化する
+  // （pendingCpuPlayがある時点でshouldOpenDoubtWindowの条件を満たしている＝
+  // doubtAvailableFor(mySeat)は真であり続けるはずだが、保険として再チェックする）。
+  const doubtWindowOpen = !!pendingCpuPlay;
+  const canDoubt = doubtWindowOpen ? doubtAvailableFor(mySeat) : (isYourTurn && doubtAvailableFor(mySeat));
   const doubtBtn = document.getElementById('doubtBtn');
   doubtBtn.style.display = isDoubtMode() ? 'inline-block' : 'none';
   doubtBtn.disabled = !canDoubt;
   doubtBtn.classList.toggle('available', canDoubt);
+
+  const skipDoubtBtn = document.getElementById('skipDoubtBtn');
+  if(skipDoubtBtn) skipDoubtBtn.style.display = doubtWindowOpen ? 'inline-block' : 'none';
 
   document.getElementById('playBtn').disabled = !isYourTurn || forcedPassOnly;
   const honestBtn = document.getElementById('honestBtn');
@@ -4974,6 +5055,9 @@ function render(){
   } else if(revealPending){
     banner.textContent = 'ダウト！ カードをめくっています…';
     banner.className = 'turn-banner neutral';
+  } else if(doubtWindowOpen){
+    banner.textContent = playerName(pendingCpuPlay.idx)+' が重ねようとしています…ダウトしますか？';
+    banner.className = 'turn-banner doubt-window';
   } else if(exchangeInProgress){
     banner.textContent = (pendingAction && pendingAction.type==='exchange') ? 'あなたが渡すカードを選んでください' : 'カード交換中…';
     banner.className = 'turn-banner neutral';
@@ -5345,6 +5429,7 @@ document.getElementById('statsCloseBtn').addEventListener('click', ()=>{
 document.getElementById('cloudSignInBtn').addEventListener('click', ()=>{ CloudSync.signIn(); });
 document.getElementById('cloudSignOutBtn').addEventListener('click', ()=>{ CloudSync.signOut(); });
 document.getElementById('doubtBtn').addEventListener('click', humanDoubt);
+document.getElementById('skipDoubtBtn').addEventListener('click', skipDoubtWindow);
 document.getElementById('startGameBtn').addEventListener('click', ()=>{
   rules = {};
   RULE_DEFS.forEach(r=> rules[r.key] = document.getElementById('rule_'+r.key).checked);
@@ -5387,6 +5472,11 @@ document.getElementById('logCollapseBtn').addEventListener('click', ()=>{
 // （＝pendingActionが残ったまま）戻ると、「操作画面に戻る」タブがセットアップ画面にまで
 // 表示され続けてしまうため、actionOverlay・restoreTab・pendingActionもあわせてリセットする。
 function returnToSetupScreen(){
+  // 手番外ダウトの猶予中に画面を抜けるケースへの保険（通常は結果画面後のみ辿り着く
+  // ボタンなので起きないはずだが、残ったままだと次にrender()する画面でダウトボタンが
+  // 誤表示されうる）。
+  if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
+  pendingCpuPlay = null;
   // オンライン対局中に抜ける場合は、ルーム同期を止めてロビーへ戻す（オフラインの
   // ルール設定画面ではなく）。エンジンの状態も onlineRole='offline' に片付けられる。
   if(onlineRole!=='offline'){
