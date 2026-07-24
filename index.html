@@ -185,6 +185,7 @@
     color:#2b2200; font-size:10px; font-weight:800; margin-right:6px; flex-shrink:0;
     vertical-align:middle;
   }
+  .joker-stepper-col{ display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
   .joker-stepper{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
   .joker-step-btn{
     width:22px; height:22px; border-radius:6px; border:1px solid var(--gold);
@@ -192,6 +193,8 @@
   }
   .joker-step-btn:disabled{ opacity:0.35; cursor:not-allowed; }
   #jokerCountDisplay{ font-size:13px; font-weight:700; color:var(--gold-soft); min-width:14px; text-align:center; }
+  .joker-random-label{ display:flex; align-items:center; gap:4px; font-size:11px; color:var(--gold-soft); white-space:nowrap; cursor:pointer; }
+  .joker-random-label input{ margin:0; }
   @media (max-width:760px){
     .rule-columns{ grid-template-columns:1fr; }
   }
@@ -249,6 +252,18 @@
     margin-left:-8px;
   }
   .cardback:first-child{ margin-left:0; }
+  .opp.spectate{ min-width:120px; }
+  .spec-hand{ display:flex; flex-wrap:wrap; justify-content:center; gap:2px; margin-top:5px; max-width:150px; }
+  .spec-hand.spec-empty{ font-size:11px; color:#9fb0a4; }
+  .spec-card{
+    font-size:11px; font-weight:700; line-height:1.1; padding:2px 3px; border-radius:3px;
+    background:var(--cream); border:1px solid rgba(0,0,0,0.25); white-space:nowrap;
+  }
+  .spec-card.red{ color:var(--red-hanko); }
+  .spec-card.black{ color:#1a1a1a; }
+  .spec-card.joker{ color:#2e7d32; }
+  /* 観戦者向け：伏せ札の実体を「うっすら」見せる。公開されためくりとは異なる見た目にする。 */
+  .card.spec-peek{ opacity:0.55; outline:2px dashed var(--gold); outline-offset:-3px; }
   .opp .count{ font-size:11px; color:#cfd8d0; margin-top:2px; }
   .out-row{ display:flex; justify-content:center; gap:4px; margin-top:4px; }
   .out-pip{
@@ -1012,6 +1027,7 @@
       <button class="action play" id="createRoomBtn" type="button" style="display:none;">この設定でルームを作る</button>
       <button class="action play" id="saveRoomRulesBtn" type="button" style="display:none;">ルール変更を保存</button>
       <button class="ghost" id="hostConfigBackBtn" type="button" style="display:none;">戻る</button>
+      <button class="ghost" id="modeBackBtn" type="button" style="display:none;">モード選択に戻る</button>
     </div>
     <div class="setup-box">
       <div class="setup-title">対戦ルール設定</div>
@@ -1570,6 +1586,10 @@ let onlineRole = 'offline';
 // 席→ 'host-ui'（ホスト自身の席）／'local-cpu'（CPU補充席）／'remote-human'（リモートのゲスト）。
 // オフラインでは使わず、seatController() が mySeat 基準の従来判定を返す。
 let seatControllers = [];
+// ゲスト用：受信ビューの observer フラグ（＝ホストが「この席は順位確定済み」と判定した）。
+// 観戦モードの描画（全手札の開示）はこのフラグに従うが、開示データ自体はホストが
+// finishedOrder に基づいて出し分けているため、ここを改竄しても他家の手札は見えない。
+let spectating = false;
 let suitLock, numberLock, prevPlaySuits;
 let pendingAction = null;
 // ホストがリモート席の追加アクション（7渡し/10捨て/12ボンバー）の選択を待っている状態。
@@ -1592,6 +1612,9 @@ let handSortDescending = false;
 let discardHistory = [];
 let currentTrickCards = [];
 let jokerCount = 2;
+// trueなら、ゲームが始まる（連戦の再戦も含む）たびに jokerCount を1〜8でランダムに
+// 引き直す。実際に使う枚数は dealFreshHands() 内で rules.jokerCount へ確定させる。
+let jokerCountRandom = false;
 let nextStartingPlayerOverride = null;
 let turnDirection = 1;
 let lastReceivedCardIds = new Set();
@@ -1794,6 +1817,7 @@ function captureRulesToDoc(){
     doubtMode: document.getElementById('doubtModeToggle').checked,
     cpuLevel: levelInput ? levelInput.value : 'normal',
     jokerCount: jokerCount,
+    jokerCountRandom: jokerCountRandom,
     flags: flags
   };
 }
@@ -1813,6 +1837,9 @@ function applyRulesFromDoc(){
     const disp = document.getElementById('jokerCountDisplay');
     if(disp) disp.textContent = jokerCount;
   }
+  jokerCountRandom = !!r.jokerCountRandom;
+  const randomCb = document.getElementById('jokerCountRandomCb');
+  if(randomCb) randomCb.checked = jokerCountRandom;
   if(typeof r.doubtMode==='boolean'){
     document.getElementById('doubtModeToggle').checked = r.doubtMode;
     applyDoubtTheme(r.doubtMode);
@@ -2491,6 +2518,15 @@ function dealFreshHands(){
   if(cutInHost) cutInHost.innerHTML = '';
   const bomberFlyHost = document.getElementById('bomberFlyHost');
   if(bomberFlyHost) bomberFlyHost.innerHTML = '';
+  // 「毎回ランダム」が有効なら、このゲーム（連戦の再戦も含む）で使うジョーカー枚数を
+  // ここで引き直す。buildDeck()より前に確定させ、rules.jokerCountを実際に使う枚数の
+  // 単一の真実源にする（jokerCount・#jokerCountDisplayはUI表示用のミラー）。
+  if(rules.jokers && rules.jokerCountRandom){
+    rules.jokerCount = 1 + Math.floor(Math.random()*8);
+    jokerCount = rules.jokerCount;
+    const disp = document.getElementById('jokerCountDisplay');
+    if(disp) disp.textContent = jokerCount;
+  }
   const deck = buildDeck();
   hands = Array.from({length: seatCount}, ()=>[]);
   for(let i=0;i<deck.length;i++) hands[i%seatCount].push(deck[i]);
@@ -2520,6 +2556,7 @@ function dealFreshHands(){
   logLines = [];
   pendingAction = null;
   pendingRemoteAction = null;
+  spectating = false;
   exchangeInProgress = false;
   clearField();
   document.getElementById('overlay').classList.remove('show');
@@ -4610,11 +4647,37 @@ function outPipsHtml(i){
   return '<div class="out-row" title="アウト '+outs[i]+'/3">'+pips+'</div>';
 }
 
+// 観戦モードが有効か。オンラインで「自分の順位が確定済み（上がり・反則負け・都落ち・
+// アウト3回）」のときだけ true。オフラインは常に false（従来挙動を変えない）。
+// ホストは finishedOrder から直接判定、ゲストはホストが載せた observer フラグに従う。
+// いずれも「自席の確定」だけが条件で、他家の情報を見る権利は自席確定まで生じない。
+function isSpectating(){
+  if(onlineRole==='offline') return false;
+  if(onlineRole==='host') return finishedOrder.includes(mySeat);
+  return !!spectating;
+}
+function specSuitClass(card){
+  if(card.rank==='JOKER') return 'joker';
+  return (card.suit==='♥'||card.suit==='♦') ? 'red' : 'black';
+}
+// 観戦時に相手の手札を小さなチップで一覧表示する（弱い順にソート）。
+function specHandHtml(cards){
+  if(!cards || cards.length===0) return '<div class="spec-hand spec-empty">なし</div>';
+  const sorted = cards.slice().sort((a,b)=> effStrength(a.rank)-effStrength(b.rank));
+  const chips = sorted.map(c=>{
+    const r = c.rank==='JOKER' ? 'JK' : c.rank;
+    const s = c.rank==='JOKER' ? '★' : c.suit;
+    return '<span class="spec-card '+specSuitClass(c)+'">'+s+r+'</span>';
+  }).join('');
+  return '<div class="spec-hand">'+chips+'</div>';
+}
+
 function render(){
   document.getElementById('rulesBox').classList.toggle('show', document.getElementById('rulesBox').dataset.open==='1');
 
   const finalRankingForBadges = gameOver ? computeFinalRanking() : null;
   const titleList = seatTitles();
+  const spectate = isSpectating();
   // 相手席＝自席以外の全席（mySeatはオフライン／ホストでは0、ゲストでは自分の席）。
   const oppSeats = allSeats().filter(i=>i!==mySeat);
   const oppHtml = oppSeats.map(i=>{
@@ -4628,12 +4691,15 @@ function render(){
         badge = '<div class="badge violation-badge">反則</div>';
       }
     }
-    const backs = hands[i].map(()=>'<div class="cardback"></div>').join('');
+    // 観戦モードでは相手の手札を実カードのチップで開示。通常は裏向きの枚数表示。
+    const cardsCell = spectate
+      ? specHandHtml(hands[i])
+      : '<div class="cardback-row">'+(hands[i].map(()=>'<div class="cardback"></div>').join('')||'&nbsp;')+'</div>';
     const activeClass = (currentPlayerIndex===i && !gameOver && !pendingAction && !exchangeInProgress) ? 'active' : '';
     const sitOut = (isDoubtMode() && sitOutTricks[i]>0 && !finishedOrder.includes(i))
       ? '<div class="sitout-badge">休み</div>' : '';
-    return '<div class="opp '+activeClass+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
-      + '<div class="cardback-row">'+(backs||'&nbsp;')+'</div>'
+    return '<div class="opp '+activeClass+(spectate?' spectate':'')+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
+      + cardsCell
       + '<div class="count">残り '+hands[i].length+'枚</div>'
       + outPipsHtml(i)+'</div>';
   }).join('');
@@ -4668,15 +4734,24 @@ function render(){
   if(field===null){
     if(flowingOutCards){
       document.getElementById('fieldOwner').textContent = '場が流れました';
-      document.getElementById('fieldCards').innerHTML = flowingOutCards.map(c=>
-        flowingOutFaceDown ? cardBackHtml('mini flow-out') : cardHtml(c,'mini flow-out',false,false)).join('');
+      document.getElementById('fieldCards').innerHTML = flowingOutCards.map(c=>{
+        if(!flowingOutFaceDown) return cardHtml(c,'mini flow-out',false,false);
+        // 伏せたまま流れた札：観戦者にはうっすら実体を、それ以外には裏向きを表示。
+        return (spectate && c && c.rank && c.rank!=='?')
+          ? cardHtml(c,'mini flow-out spec-peek',false,false)
+          : cardBackHtml('mini flow-out');
+      }).join('');
     } else {
       document.getElementById('fieldOwner').textContent = '';
       document.getElementById('fieldCards').innerHTML = '<div class="field-empty">場は空です &mdash; 好きなカードを出せます</div>';
     }
   } else if(field.faceDown && !field.revealed){
     document.getElementById('fieldOwner').textContent = playerName(field.owner)+' の宣言： '+declLabel(field.cards)+pendingSuffix;
-    document.getElementById('fieldCards').innerHTML = field.actual.map(()=>cardBackHtml('mini'+(isNewField?' deal-in':''))).join('');
+    // 観戦モードなら伏せ札の実体をうっすら表示（spec-peek）。通常は裏向き。
+    const canPeek = spectate && field.actual && field.actual.length && field.actual.every(c=>c && c.rank && c.rank!=='?');
+    document.getElementById('fieldCards').innerHTML = canPeek
+      ? field.actual.map(c=>cardHtml(c,'mini spec-peek',false,false)).join('')
+      : field.actual.map(()=>cardBackHtml('mini'+(isNewField?' deal-in':''))).join('');
   } else if(field.faceDown){
     document.getElementById('fieldOwner').textContent = playerName(field.owner)+' の宣言： '+declLabel(field.cards)+'（ダウトでめくれた）'+pendingSuffix;
     document.getElementById('fieldCards').innerHTML = field.actual.map(c=>cardHtml(c,'mini',false,false)).join('');
@@ -4754,6 +4829,9 @@ function render(){
   } else if(pendingRemoteAction){
     banner.textContent = playerName(pendingRemoteAction.seat)+' の追加アクション中…';
     banner.className = 'turn-banner neutral';
+  } else if(isSpectating()){
+    banner.textContent = '👁 観戦モード：全員の手札が見えています';
+    banner.className = 'turn-banner neutral';
   } else if(currentPlayerIndex===mySeat){
     banner.textContent = '★ あなたの番です ★';
     banner.className = 'turn-banner your-turn';
@@ -4763,7 +4841,8 @@ function render(){
   }
 
   const skipBtn = document.getElementById('skipBtn');
-  const canFastForward = !gameOver && finishedOrder.includes(mySeat);
+  // 高速スキップはエンジンを動かすホスト／オフラインでのみ意味を持つ（ゲストでは無効）。
+  const canFastForward = !gameOver && finishedOrder.includes(mySeat) && onlineRole!=='guest';
   skipBtn.style.display = canFastForward ? 'block' : 'none';
   if(canFastForward){
     skipBtn.textContent = fastForward ? '⏩ 高速再生中（押すと通常速度に戻す）' : '⏩ 残りをスキップ（CPUだけの消化試合を高速処理）';
@@ -4779,14 +4858,19 @@ function render(){
 
 // ===== オンライン対戦：スナップショット（redacted view）とゲストへの反映 =====
 // ダウトの秘匿を守るため、他席の手札・伏せ札の実体・伏せたまま流れた札は絶対に含めない。
-function redactField(f, viewerSeat){
+function redactField(f, viewerSeat, observer){
   if(f===null) return null;
   const base = { rank:f.rank, count:f.count, owner:f.owner, faceDown:!!f.faceDown,
     revealed:!!f.revealed, pendingClear:f.pendingClear||null, seq:f.seq,
     cards:(f.cards||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id})) };
   if(f.faceDown && !f.revealed){
-    // 伏せ中は実カード（actual）を絶対に送らない。枚数だけ分かるプレースホルダにする。
-    base.actual = (f.actual||[]).map(()=>({hidden:true}));
+    if(observer){
+      // 観戦者（順位確定済み）にだけ、伏せ札の実体を peek 付きで送る。描画側でうっすら表示。
+      base.actual = (f.actual||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id, peek:true}));
+    } else {
+      // まだ確定していない席には実カード（actual）を絶対に送らない。枚数だけのプレースホルダ。
+      base.actual = (f.actual||[]).map(()=>({hidden:true}));
+    }
   } else {
     base.actual = (f.actual||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id}));
   }
@@ -4805,6 +4889,10 @@ function redactDiscardEntry(h){
 }
 // viewerSeat 視点のスナップショット。自席は実カード、他席は枚数だけ。
 function buildRedactedView(viewerSeat){
+  // 観戦の可否は「この席の順位が確定済みか」だけで決まる（不正防止の要）。finishedOrder は
+  // 上がり・反則負け・都落ち・アウト3回による強制敗北をすべて含むホスト権威の状態。
+  // 確定していなければ observerHands は null、伏せ札の実体も送らない＝他家は一切見えない。
+  const observer = finishedOrder.includes(viewerSeat);
   return {
     seatCount, mySeat: viewerSeat, seatNames: seatNames.slice(),
     currentPlayerIndex, turnDirection, revolution, elevenBack,
@@ -4815,7 +4903,13 @@ function buildRedactedView(viewerSeat){
     skipQuota, forcedPassOnly, revealPending,
     declHistory: declHistory.map(d=>({playerIdx:d.playerIdx, label:d.label})),
     rules: Object.assign({}, rules), cpuLevel,
-    flowingOutCards: flowingOutCards ? flowingOutCards.map(c=>({rank:c.rank, suit:c.suit, id:c.id})) : null,
+    // 伏せたまま流れた札の実体も、確定していない席には送らない（描画では裏向きなので
+    // 表示上は同じだが、送ると view のJSONに実カードが載って秘匿が破れる）。観戦者にだけ送る。
+    flowingOutCards: flowingOutCards
+      ? ((flowingOutFaceDown && !observer)
+          ? flowingOutCards.map(()=>({hidden:true}))
+          : flowingOutCards.map(c=>({rank:c.rank, suit:c.suit, id:c.id})))
+      : null,
     flowingOutFaceDown: !!flowingOutFaceDown,
     // 手札はFirebase安全な形で送る。RTDBは空配列（[]）を保存しないため、席が0枚に
     // なると hands 配列が欠落・短縮し、ゲスト側の再構成が壊れる（hands[mySeat] が
@@ -4823,7 +4917,13 @@ function buildRedactedView(viewerSeat){
     // 実カードだけ」に分けて送り、ゲスト側で枚数から他席の伏せプレースホルダを再構成する。
     handCounts: hands.map(h=>h.length),
     myHand: (hands[viewerSeat]||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id})),
-    field: redactField(field, viewerSeat),
+    // 観戦モード：確定済みの席にだけ全席の実カードを渡す。席番号キーのオブジェクトにして、
+    // 空席は自然に欠落させる（Firebaseは空配列を保存しないため、配列だと壊れる）。
+    observer,
+    observerHands: observer
+      ? hands.reduce((o,h,i)=>{ if(h.length) o[i]=h.map(c=>({rank:c.rank, suit:c.suit, id:c.id})); return o; }, {})
+      : null,
+    field: redactField(field, viewerSeat, observer),
     discardHistory: discardHistory.map(redactDiscardEntry),
     logLines: logLines.slice(-80),
     // このゲストに追加アクションを要求しているときだけ pendingRemote を載せる。
@@ -4853,9 +4953,16 @@ function applyView(v){
   logLines = v.logLines || [];
   // handCounts（数値・全席分）＋ myHand（自席の実カード）から手札を再構成する。
   // 他席は枚数ぶんの伏せプレースホルダにする。Firebaseの空配列ドロップに影響されない。
+  // 観戦時（v.observer）は他席も v.observerHands の実カードで埋める。
+  spectating = !!v.observer;
   const _counts = v.handCounts || [];
   const _myHand = (v.myHand||[]).map(c=>c);
-  hands = _counts.map((n,i)=> i===mySeat ? _myHand : Array.from({length:n},()=>({hidden:true})));
+  const _obs = spectating ? (v.observerHands || {}) : null;
+  hands = _counts.map((n,i)=>{
+    if(i===mySeat) return _myHand;
+    if(_obs && _obs[i]) return _obs[i].map(c=>c);
+    return Array.from({length:n},()=>({hidden:true}));
+  });
   field = reviveField(v.field);
   discardHistory = (v.discardHistory||[]).map(d=>({reason:d.reason, cards:d.cards, hiddenIds:new Set(d.hiddenIds||[])}));
   currentTrickCards = []; currentTrickHiddenIds = new Set();
@@ -4906,13 +5013,23 @@ function adjustJokerCount(delta){
   if(disp) disp.textContent = jokerCount;
   if(jokerCount!==before && typeof onRulesChanged==='function') onRulesChanged();
 }
+// チェックボックスのネイティブchangeイベントが #ruleList の委任リスナーまでバブルし、
+// そちらで onRulesChanged（クラウド同期）が呼ばれるため、ここでは呼ばない
+// （adjustJokerCountのボタンclickとは異なりバブルするので二重呼び出しになる）。
+function toggleJokerCountRandom(checked){
+  jokerCountRandom = !!checked;
+  syncJokerStepperState();
+}
 function syncJokerStepperState(){
   const cb = document.getElementById('rule_jokers');
   const enabled = cb && cb.checked;
+  const randomCb = document.getElementById('jokerCountRandomCb');
+  if(randomCb) randomCb.disabled = !enabled;
   const minus = document.getElementById('jokerMinusBtn');
   const plus = document.getElementById('jokerPlusBtn');
-  if(minus) minus.disabled = !enabled;
-  if(plus) plus.disabled = !enabled;
+  const stepperEnabled = enabled && !jokerCountRandom;
+  if(minus) minus.disabled = !stepperEnabled;
+  if(plus) plus.disabled = !stepperEnabled;
 }
 
 function ruleNumBadge(r){
@@ -4930,10 +5047,13 @@ function jokerItemHtml(r){
     + '<input type="checkbox" id="rule_'+r.key+'">'
     + '<div style="flex:1;"><div class="rule-label">'+r.label+'</div><div class="rule-desc">'+r.desc+'</div></div>'
     + '</label>'
-    + '<div class="joker-stepper" onclick="event.stopPropagation()">'
+    + '<div class="joker-stepper-col" onclick="event.stopPropagation()">'
+    + '<div class="joker-stepper">'
     + '<button type="button" class="joker-step-btn" id="jokerMinusBtn" onclick="adjustJokerCount(-1)">－</button>'
     + '<span id="jokerCountDisplay">'+jokerCount+'</span>'
     + '<button type="button" class="joker-step-btn" id="jokerPlusBtn" onclick="adjustJokerCount(1)">＋</button>'
+    + '</div>'
+    + '<label class="joker-random-label"><input type="checkbox" id="jokerCountRandomCb" onchange="toggleJokerCountRandom(this.checked)">🎲 毎回ランダム</label>'
     + '</div>'
     + '</div>';
 }
@@ -5037,6 +5157,7 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
   rules = {};
   RULE_DEFS.forEach(r=> rules[r.key] = document.getElementById('rule_'+r.key).checked);
   rules.jokerCount = jokerCount;
+  rules.jokerCountRandom = jokerCountRandom;
   rules.doubtMode = document.getElementById('doubtModeToggle').checked;
   applyDoubtTheme(rules.doubtMode);
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
@@ -5148,6 +5269,7 @@ function handleAndroidBackButton(){
   const roomScreen = document.getElementById('roomScreen');
   if(roomScreen.style.display === 'block'){ Online.leave(); return; }
   if(setupMode !== 'offline' && document.getElementById('setupScreen').style.display === 'block'){ Online.hostConfigBack(); return; }
+  if(setupMode === 'offline' && document.getElementById('setupScreen').style.display === 'block'){ showTopScreen('modeScreen'); return; }
   const lobbyScreen = document.getElementById('lobbyScreen');
   if(lobbyScreen.style.display === 'block'){ Online.teardownLobby(); showTopScreen('modeScreen'); return; }
   const modeScreen = document.getElementById('modeScreen');
@@ -5230,6 +5352,7 @@ function applySetupMode(mode){
   show('createRoomBtn',   mode==='createRoom');
   show('saveRoomRulesBtn',mode==='editRoom');
   show('hostConfigBackBtn', mode!=='offline');
+  show('modeBackBtn',     mode==='offline');
   show('hostConfigBar',   mode==='createRoom');
   show('cloudBar',        mode==='offline');
 }
@@ -5240,19 +5363,21 @@ function readRoomRulesFromUI(){
   const flags={};
   RULE_DEFS.forEach(r=>{ const cb=document.getElementById('rule_'+r.key); if(cb) flags[r.key]=cb.checked; });
   const lvl=document.querySelector('input[name="cpuLevelChoice"]:checked');
-  return { flags, doubtMode: document.getElementById('doubtModeToggle').checked, jokerCount: jokerCount, cpuLevel: lvl?lvl.value:'normal' };
+  return { flags, doubtMode: document.getElementById('doubtModeToggle').checked, jokerCount: jokerCount, jokerCountRandom: jokerCountRandom, cpuLevel: lvl?lvl.value:'normal' };
 }
 function applyRoomRulesToUI(rr){
   if(!rr) return;
   if(rr.flags){ RULE_DEFS.forEach(r=>{ const cb=document.getElementById('rule_'+r.key); if(cb && typeof rr.flags[r.key]==='boolean') cb.checked=rr.flags[r.key]; }); }
   if(typeof rr.jokerCount==='number'){ jokerCount=Math.max(1,Math.min(8,rr.jokerCount)); const d=document.getElementById('jokerCountDisplay'); if(d) d.textContent=jokerCount; }
+  jokerCountRandom = !!rr.jokerCountRandom;
+  const randomCb=document.getElementById('jokerCountRandomCb'); if(randomCb) randomCb.checked=jokerCountRandom;
   if(typeof rr.doubtMode==='boolean'){ document.getElementById('doubtModeToggle').checked=rr.doubtMode; applyDoubtTheme(rr.doubtMode); }
   if(rr.cpuLevel){ const radio=document.querySelector('input[name="cpuLevelChoice"][value="'+rr.cpuLevel+'"]'); if(radio) radio.checked=true; }
   syncSubRuleStates(); syncJokerStepperState();
 }
 function roomRulesSummaryText(rr){
   if(!rr) return '—';
-  const active=RULE_DEFS.filter(r=>rr.flags && rr.flags[r.key]).map(r=> r.key==='jokers' ? 'ジョーカー'+(rr.jokerCount||2)+'枚' : r.label);
+  const active=RULE_DEFS.filter(r=>rr.flags && rr.flags[r.key]).map(r=> r.key==='jokers' ? (rr.jokerCountRandom ? 'ジョーカー1〜8枚（毎ゲームランダム）' : 'ジョーカー'+(rr.jokerCount||2)+'枚') : r.label);
   const rulesPart=active.length ? active.join('、') : '追加ルールなし（基本ルールのみ）';
   const modePart=rr.doubtMode ? 'ダウト大富豪モード ／ ' : '';
   return modePart+'CPU強さ: '+(CPU_LEVEL_LABELS[rr.cpuLevel]||rr.cpuLevel||'ノーマル')+' ／ '+rulesPart;
@@ -5540,8 +5665,10 @@ const Online = (function(){
     rules = {};
     RULE_DEFS.forEach(r=> rules[r.key] = !!(rr.flags && rr.flags[r.key]));
     rules.jokerCount = (typeof rr.jokerCount==='number') ? rr.jokerCount : 2;
+    rules.jokerCountRandom = !!rr.jokerCountRandom;
     rules.doubtMode = !!rr.doubtMode;
     jokerCount = rules.jokerCount;
+    jokerCountRandom = rules.jokerCountRandom;
     cpuLevelSetting = rr.cpuLevel || 'normal';
     cpuLevel = resolveCpuLevel(cpuLevelSetting);
     applyDoubtTheme(rules.doubtMode);
@@ -5758,6 +5885,7 @@ function initOnlineUI(){
   on('createRoomBtn','click', ()=>{ Online.createRoomFromSetup(); });
   on('saveRoomRulesBtn','click', ()=>{ Online.saveRules(); });
   on('hostConfigBackBtn','click', ()=>{ Online.hostConfigBack(); });
+  on('modeBackBtn','click', ()=>{ showTopScreen('modeScreen'); });
   on('leaveRoomBtn','click', ()=>{ Online.leave(); });
   on('readyToggleBtn','click', ()=>{ Online.toggleReady(); });
   on('startRoomBtn','click', ()=>{ Online.startRoom(); });
