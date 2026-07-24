@@ -1599,6 +1599,9 @@ let pendingAction = null;
 // ホストがリモート席の追加アクション（7渡し/10捨て/12ボンバー）の選択を待っている状態。
 // {seat, kind:'give'|'discard'|'bomber', count, info, extraSkips}。待ち中は手番を進めない。
 let pendingRemoteAction = null;
+// ホストがリモート席のカード交換（連戦の再戦時、前回大富豪/富豪の任意選択）を待っている状態。
+// {seat, task}。task は buildExchangeQueue が作る giverChoice:true のタスクそのもの。
+let pendingRemoteExchange = null;
 let fieldSeqCounter = 0;
 let pendingDealAnimation = false;
 let dealAnimationTimer = null;
@@ -2560,6 +2563,7 @@ function dealFreshHands(){
   logLines = [];
   pendingAction = null;
   pendingRemoteAction = null;
+  pendingRemoteExchange = null;
   spectating = false;
   exchangeInProgress = false;
   clearField();
@@ -2651,6 +2655,9 @@ function processNextExchange(){
     processNextExchange();
   } else if(task.giver===mySeat){
     openExchangeGiveModal(task);
+  } else if(onlineRole==='host' && seatController(task.giver)==='remote-human'){
+    // リモートの前回大富豪/富豪：CPU代行せず、本人に選択を要求する（サブintent往復）。
+    requestRemoteExchange(task);
   } else {
     const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
     const chosen = sorted.slice(0, task.count);
@@ -2661,6 +2668,47 @@ function processNextExchange(){
     render();
     processNextExchange();
   }
+}
+// ホスト：リモート席（前回大富豪/富豪）に、渡すカードの選択を要求する。
+// pendingRemoteExchange が該当ゲストのビューに載り、ゲストが openRemoteExchangeModal を開く。
+function requestRemoteExchange(task){
+  pendingRemoteExchange = {seat:task.giver, task};
+  log(playerName(task.giver)+'（前回の'+task.giverRole+'）のカード交換選択を待っています…');
+  render();
+}
+// ホスト：リモートから届いたカード交換のサブintentを適用する。
+function applyRemoteExchange(seat, cardIds){
+  const pre = pendingRemoteExchange; if(!pre || pre.seat!==seat) return;
+  const task = pre.task;
+  const ids = new Set(cardIds||[]);
+  let giveCards = hands[seat].filter(c=>ids.has(c.id)).slice(0, task.count);
+  // 指定不足（枚数不足・不正なid等）は弱い順で機械的に補って必ず規定枚数を渡す。
+  if(giveCards.length < task.count){
+    const chosenIds = new Set(giveCards.map(c=>c.id));
+    const rest = hands[seat].filter(c=>!chosenIds.has(c.id)).sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+    giveCards = giveCards.concat(rest.slice(0, task.count-giveCards.length));
+  }
+  pendingRemoteExchange = null;
+  const gset = new Set(giveCards.map(c=>c.id));
+  hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
+  hands[task.receiver] = hands[task.receiver].concat(giveCards);
+  log(playerName(seat)+'が'+playerName(task.receiver)+'に'+giveCards.length+'枚渡した');
+  render();
+  processNextExchange();
+}
+// 切断でCPU化した席のカード交換選択待ちを、CPUの選択（最弱カード）で解決する。
+function resolvePendingRemoteExchangeWithCpu(){
+  const pre = pendingRemoteExchange; if(!pre) return;
+  const task = pre.task;
+  pendingRemoteExchange = null;
+  const sorted = hands[task.giver].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const chosen = sorted.slice(0, task.count);
+  const ids = new Set(chosen.map(c=>c.id));
+  hands[task.giver] = hands[task.giver].filter(c=>!ids.has(c.id));
+  hands[task.receiver] = hands[task.receiver].concat(chosen);
+  log(playerName(task.giver)+'（前回の'+task.giverRole+'）が'+task.count+'枚を'+playerName(task.receiver)+'（前回の'+task.receiverRole+'）に渡した');
+  render();
+  processNextExchange();
 }
 
 function openExchangeGiveModal(task){
@@ -2690,6 +2738,10 @@ function exchangeToggleCard(id){
 function confirmExchange(){
   const pa = pendingAction;
   const task = pa.task;
+  if(pa.remote){
+    Online.sendIntent({type:'exchange', cardIds:[...pa.chosen]});
+    hideActionModal(); pendingAction=null; render(); return;
+  }
   const giveCards = hands[task.giver].filter(c=>pa.chosen.has(c.id));
   hands[task.giver] = hands[task.giver].filter(c=>!pa.chosen.has(c.id));
   hands[task.receiver] = hands[task.receiver].concat(giveCards);
@@ -4925,7 +4977,7 @@ function buildRedactedView(viewerSeat){
     finishedOrder: finishedOrder.slice(), legitFinishOrder: legitFinishOrder.slice(),
     violationFinishOrder: violationFinishOrder.slice(), violationReasons: Object.assign({}, violationReasons),
     gameOver, outs: outs.slice(), sitOutTricks: sitOutTricks.slice(),
-    skipQuota, forcedPassOnly, revealPending,
+    skipQuota, forcedPassOnly, revealPending, exchangeInProgress,
     declHistory: declHistory.map(d=>({playerIdx:d.playerIdx, label:d.label})),
     rules: Object.assign({}, rules), cpuLevel,
     // 伏せたまま流れた札の実体も、確定していない席には送らない（描画では裏向きなので
@@ -4953,7 +5005,14 @@ function buildRedactedView(viewerSeat){
     logLines: logLines.slice(-80),
     // このゲストに追加アクションを要求しているときだけ pendingRemote を載せる。
     pendingRemote: (pendingRemoteAction && pendingRemoteAction.seat===viewerSeat)
-      ? {kind: pendingRemoteAction.kind, count: pendingRemoteAction.count} : null
+      ? {kind: pendingRemoteAction.kind, count: pendingRemoteAction.count} : null,
+    // このゲストにカード交換の選択を要求しているときだけ pendingRemoteExchange を載せる。
+    pendingRemoteExchange: (pendingRemoteExchange && pendingRemoteExchange.seat===viewerSeat)
+      ? {count: pendingRemoteExchange.task.count, receiver: pendingRemoteExchange.task.receiver,
+         giverRole: pendingRemoteExchange.task.giverRole, receiverRole: pendingRemoteExchange.task.receiverRole}
+      : null,
+    // カード交換モーダルの「オレンジの枠＝直前に受け取ったカード」表示用。
+    lastReceivedCardIds: [...lastReceivedCardIds]
   };
 }
 // ゲスト：受信したスナップショットをグローバルへ反映して、既存の render() で描画する。
@@ -4972,6 +5031,8 @@ function applyView(v){
   violationFinishOrder = v.violationFinishOrder||[]; violationReasons = v.violationReasons||{};
   gameOver = v.gameOver; outs = v.outs||[]; sitOutTricks = v.sitOutTricks||[];
   skipQuota = v.skipQuota||0; forcedPassOnly = !!v.forcedPassOnly; revealPending = !!v.revealPending;
+  exchangeInProgress = !!v.exchangeInProgress;
+  lastReceivedCardIds = new Set(v.lastReceivedCardIds||[]);
   declHistory = v.declHistory||[]; rules = v.rules||{}; cpuLevel = v.cpuLevel||'normal';
   flowingOutCards = v.flowingOutCards || null; flowingOutFaceDown = !!v.flowingOutFaceDown;
   pendingDealAnimation = false; fastForward = false;
@@ -4998,10 +5059,15 @@ function applyView(v){
   if(panel){ panel.innerHTML = logLines.map(l=>'<div>'+l+'</div>').join(''); panel.scrollTop = panel.scrollHeight; }
   render();
 
-  // ホストから追加アクションを要求されたら、自分のモーダルを開いてサブintentで応答する。
+  // ホストから追加アクション（7渡し/10捨て/12ボンバー）またはカード交換の選択を要求
+  // されたら、該当モーダルを開いてサブintentで応答する。
   if(v.pendingRemote){
     if(!(pendingAction && pendingAction.remote && pendingAction.type===v.pendingRemote.kind)){
       openRemoteActionModal(v.pendingRemote.kind, v.pendingRemote.count);
+    }
+  } else if(v.pendingRemoteExchange){
+    if(!(pendingAction && pendingAction.remote && pendingAction.type==='exchange')){
+      openRemoteExchangeModal(Object.assign({giver: mySeat, giverChoice:true}, v.pendingRemoteExchange));
     }
   } else if(pendingAction && pendingAction.remote){
     // もう要求されていない（ホストが解決済み）ならモーダルを閉じる。
@@ -5022,6 +5088,12 @@ function openRemoteActionModal(kind, count){
   if(kind==='give') openGiveModal(mySeat, count, null, null);
   else if(kind==='discard') openDiscardModal(mySeat, count, null, null);
   else if(kind==='bomber') openBomberModal(mySeat, count, null, null);
+  if(pendingAction) pendingAction.remote = true;
+}
+// ゲスト：ホストの pendingRemoteExchange 要求に応じて、カード交換モーダルを開く
+// （前回大富豪/富豪としての任意選択）。確定は confirmExchange の pa.remote 分岐が担う。
+function openRemoteExchangeModal(task){
+  openExchangeGiveModal(task);
   if(pendingAction) pendingAction.remote = true;
 }
 
@@ -5789,6 +5861,11 @@ const Online = (function(){
       if(intent.type==='bomber'  && pendingRemoteAction.kind==='bomber')  { applyRemoteBomber(seat, intent.ranks); return; }
       return; // 待ち中は他のintentは受け付けない
     }
+    // カード交換（連戦時、前回大富豪/富豪の任意選択）のサブintent。
+    if(pendingRemoteExchange && pendingRemoteExchange.seat===seat){
+      if(intent.type==='exchange') applyRemoteExchange(seat, intent.cardIds);
+      return; // 待ち中は他のintentは受け付けない
+    }
     const busy = gameOver || pendingAction || pendingRemoteAction || exchangeInProgress || revealPending;
     if(intent.type==='pass'){
       if(busy || currentPlayerIndex!==seat || field===null) return;
@@ -5842,12 +5919,15 @@ const Online = (function(){
         log(playerName(seat)+'が切断しました。CPUが引き継ぎます');
         changed=true;
         if(pendingRemoteAction && pendingRemoteAction.seat===seat){ resolvePendingRemoteWithCpu(); }
+        if(pendingRemoteExchange && pendingRemoteExchange.seat===seat){ resolvePendingRemoteExchangeWithCpu(); }
       }
     }
     if(changed){
       render();
-      // 切断席が手番のまま止まっていたらCPUを動かす。
-      if(!gameOver && !pendingAction && !pendingRemoteAction && !revealPending && seatController(currentPlayerIndex)==='local-cpu'){
+      // 切断席が手番のまま止まっていたらCPUを動かす（カード交換中は再戦の交換キュー側が
+      // 自律的に進むので、ここでは何もしない＝currentPlayerIndexがまだ前回対局の値のまま
+      // 誤って手番進行を試みるのを避ける）。
+      if(!gameOver && !pendingAction && !pendingRemoteAction && !exchangeInProgress && !revealPending && seatController(currentPlayerIndex)==='local-cpu'){
         scheduleNextIfCpu();
       }
     }
