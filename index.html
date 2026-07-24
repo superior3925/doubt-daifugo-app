@@ -824,6 +824,20 @@
     .opp{ min-width:76px; padding:6px 8px; }
     .table{ border-radius:36px; padding:14px 8px; }
     .setup-box{ padding:16px 14px; }
+    /* スマホでは相手を「卓を囲む」ダイヤ型に並べ、プレイの回る向き（左回り）を
+       空間的に一目でわかるようにする。自分は手前(you-row)にいる前提で、次の人=右、
+       その先=上(奥)、さらに先=左、という配置。grid-column/rowはflexアイテムでは
+       無視されるため、この位置指定はスマホ幅でグリッド化したときだけ効く。 */
+    .opponents-row{
+      display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:auto auto;
+      gap:6px 4px; align-items:start; justify-items:center;
+    }
+    .opponents-row .opp{ width:100%; max-width:118px; }
+    .opp.oc-1-1{ grid-column:1; grid-row:1; }
+    .opp.oc-2-1{ grid-column:2; grid-row:1; }
+    .opp.oc-3-1{ grid-column:3; grid-row:1; }
+    .opp.oc-1-2{ grid-column:1; grid-row:2; }
+    .opp.oc-3-2{ grid-column:3; grid-row:2; }
 
     /* --- タップしやすいサイズへ底上げ（推奨44px以上） --- */
     button.action{ font-size:15px; padding:13px 24px; min-height:48px; }
@@ -3339,6 +3353,9 @@ function scheduleNextIfCpu(){
       if(myGen!==gameGen) return;
       if(gameOver || pendingAction || exchangeInProgress || revealPending) return;
       if(currentPlayerIndex!==myTurnPlayer) return;
+      // タイマー予約後に席の操作者が変わっている（例：切断→CPU化した人が再接続して
+      // 操作権が本人に戻った）場合は、CPUが本人の代わりに指してしまわないよう中止する。
+      if(seatController(currentPlayerIndex)!=='local-cpu') return;
       cpuTurn(currentPlayerIndex);
     }, turboMs(850));
   }
@@ -4827,7 +4844,17 @@ function render(){
   const spectate = isSpectating();
   // 相手席は「自分の次が右端、そこから左へ辿る」固定順（＝卓を左回りに見た並び）。
   const oppSeats = oppSeatDisplayOrder();
-  const oppHtml = oppSeats.map(i=>{
+  // スマホでは卓を囲む配置（自分の図：D=右・A=上・B=左）が一目でわかるよう、各相手席に
+  // グリッド位置クラス（oc-列-行）を付ける。desktopのflex行ではgrid-column/rowは無視される
+  // ので影響しない（＝widescreenの従来レイアウトは不変）。
+  const slotClassFor = (idx, total)=>{
+    // total=相手人数。row1=上段（奥）、row2=下段（自分の左右）。中央列=col2。
+    if(total>=3) return ['oc-1-2','oc-2-1','oc-3-2'][idx] || '';   // 左・上・右
+    if(total===2) return ['oc-1-1','oc-3-1'][idx] || '';           // 左・右（上段に並べる）
+    return 'oc-2-1';                                                // 1人：上段中央
+  };
+  const oppHtml = oppSeats.map((i,idx)=>{
+    const slotClass = slotClassFor(idx, oppSeats.length);
     let badge = '';
     if(finishedOrder.includes(i)){
       if(gameOver){
@@ -4845,7 +4872,7 @@ function render(){
     const activeClass = (currentPlayerIndex===i && !gameOver && !pendingAction && !exchangeInProgress) ? 'active' : '';
     const sitOut = (isDoubtMode() && sitOutTricks[i]>0 && !finishedOrder.includes(i))
       ? '<div class="sitout-badge">休み</div>' : '';
-    return '<div class="opp '+activeClass+(spectate?' spectate':'')+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
+    return '<div class="opp '+activeClass+(spectate?' spectate':'')+' '+slotClass+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
       + cardsCell
       + '<div class="count">残り '+hands[i].length+'枚</div>'
       + outPipsHtml(i)+'</div>';
@@ -5758,15 +5785,25 @@ const Online = (function(){
   async function enterRoom(roomId, isHost){
     S.roomId=roomId; S.isHost=isHost; S.notifiedStart=false;
     const base=S.db.ref('rooms/'+roomId);
-    // プレゼンス：切断時に自席を connected=false に。ホストは切断でルームを閉じる。
-    try{
-      base.child('members/'+S.uid+'/connected').onDisconnect().set(false);
-      if(isHost) base.child('meta/status').onDisconnect().set('closed');
-    }catch(e){}
+    // プレゼンス：Firebaseの .info/connected を購読し、接続が確立／再確立するたびに
+    // onDisconnect を貼り直して自席を connected=true に戻す。これが無いと、モバイルで
+    // 一瞬バックグラウンドに入るなどで切断→再接続したときに connected が false のままになり、
+    // ホスト側でCPUに置き換えられたまま（＝再戦・カード交換のビューが届かない）復帰できない。
+    const connRef=S.db.ref('.info/connected');
+    const connCb=connRef.on('value', s=>{
+      if(s.val()!==true) return;
+      try{
+        base.child('members/'+S.uid+'/connected').onDisconnect().set(false);
+        if(isHost) base.child('meta/status').onDisconnect().set('closed');
+        // 自分がまだこの部屋のメンバーである間だけ true を書き戻す（退室後の復活を防ぐ）。
+        base.child('members/'+S.uid).once('value', ms=>{ if(ms.exists()) base.child('members/'+S.uid+'/connected').set(true); });
+      }catch(e){}
+    });
     const metaCb=base.child('meta').on('value', s=>{ S.meta=s.val(); onRoomData(); });
     const memCb =base.child('members').on('value', s=>{ S.members=s.val()||{}; if(onlineRole==='host' && S.inGame) hostHandleMembersUpdate(); onRoomData(); });
     const ruleCb=base.child('rules').on('value', s=>{ S.rules=s.val(); onRoomData(); });
     S.roomUnsub=()=>{
+      try{ connRef.off('value', connCb); }catch(e){}
       try{ base.child('meta').off('value', metaCb); }catch(e){}
       try{ base.child('members').off('value', memCb); }catch(e){}
       try{ base.child('rules').off('value', ruleCb); }catch(e){}
@@ -5895,7 +5932,10 @@ const Online = (function(){
         S.seatToUid[h.seat] = h.uid; S.uidToSeat[h.uid] = h.seat;
       }
     });
-    for(let s=0;s<sc;s++){ if(!seatControllers[s]){ seatControllers[s]='local-cpu'; seatNames[s]='CPU'; } }
+    // CPU補充席は CPU1, CPU2 … と連番で区別できる名前にする（同名「CPU」だと
+    // ログや相手表示でどのCPUか分からないため）。
+    let cpuNo=0;
+    for(let s=0;s<sc;s++){ if(!seatControllers[s]){ seatControllers[s]='local-cpu'; seatNames[s]='CPU'+(++cpuNo); } }
     applyRoomRulesToEngine(S.rules);
     S.lastViewHash = {}; S.processedSeq = {};
     showTopScreen('gameScreen');
@@ -6011,19 +6051,33 @@ const Online = (function(){
     S.viewUnsub = ()=>{ try{ ref.off('value', cb); }catch(e){} };
   }
 
-  // ホスト：対局中にメンバーの接続状態が変わったら、切断したリモート席をCPUに引き継がせる。
+  // ホスト：対局中にメンバーの接続状態が変わったら、切断したリモート席をCPUに引き継がせ、
+  // 復帰したら本人の操作に戻す。復帰対応が無いと、モバイルで一瞬切断した人が以後ずっと
+  // CPU扱いのまま（ブロードキャスト対象外で再戦・カード交換のビューも届かない）になってしまう。
   function hostHandleMembersUpdate(){
     if(onlineRole!=='host' || !S.inGame) return;
+    S.origSeatName = S.origSeatName || {};
     let changed=false;
     for(const seatStr in S.seatToUid){
       const seat=Number(seatStr); const uid=S.seatToUid[seatStr]; const m=S.members[uid];
-      if(seatControllers[seat]==='remote-human' && (!m || m.connected===false)){
+      const disconnected = (!m || m.connected===false);
+      if(seatControllers[seat]==='remote-human' && disconnected){
+        if(S.origSeatName[seat]===undefined) S.origSeatName[seat]=seatNames[seat];
         seatControllers[seat]='local-cpu';
         seatNames[seat]=((m&&m.name)||seatNames[seat]||'CPU')+'(CPU)';
         log(playerName(seat)+'が切断しました。CPUが引き継ぎます');
         changed=true;
         if(pendingRemoteAction && pendingRemoteAction.seat===seat){ resolvePendingRemoteWithCpu(); }
         if(pendingRemoteExchange && pendingRemoteExchange.seat===seat){ resolvePendingRemoteExchangeWithCpu(); }
+      } else if(seatControllers[seat]==='local-cpu' && !disconnected && m){
+        // 自席（S.seatToUidに載る＝元は人間の席）が復帰した：操作権を本人に戻す。
+        // CPU補充席はS.seatToUidに載らないので、ここには来ない（＝CPUのまま）。
+        seatControllers[seat]='remote-human';
+        seatNames[seat]=(S.origSeatName[seat]!==undefined ? S.origSeatName[seat] : (m.name||seatNames[seat]));
+        delete S.origSeatName[seat];
+        delete S.lastViewHash[uid]; // 復帰直後に最新ビューを必ず送り直す
+        log(playerName(seat)+'が再接続しました。操作を本人に戻します');
+        changed=true;
       }
     }
     if(changed){

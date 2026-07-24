@@ -4,7 +4,7 @@
 // デザインやコードを更新して配信し直した場合は、このCACHE_NAMEの値を
 // 変更してください。変更すると古いキャッシュはactivate時に破棄され、
 // 次回オンライン時に新しい内容が取り込まれる。
-const CACHE_NAME = 'doubt-daifugo-v13';
+const CACHE_NAME = 'doubt-daifugo-v14';
 const PRECACHE_URLS = [
   './',
   './index.html',
