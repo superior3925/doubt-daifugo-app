@@ -1574,6 +1574,10 @@ const RULE_DEFS = [
 
 let rules = {};
 let hands, field, revolution, elevenBack, passStreak, currentPlayerIndex, finishedOrder, gameOver, selected, logLines;
+// selected（手札の選択状態）は dealFreshHands で初期化されるが、オンラインのゲストは
+// エンジンを動かさない＝dealFreshHands を一度も呼ばないため、ここで初期化しておかないと
+// applyView→render の selected.has(...) で「undefined の has を読めない」でクラッシュする。
+selected = new Set();
 // 対戦人数の可変化（2〜4人）。オフラインは常に4・mySeat=0・seatNames=NAMESで、
 // 従来と完全に同じ挙動になる。オンライン（ホスト権威）では seatCount を実人数にし、
 // mySeat を各ブラウザの席、seatNames を各席の表示名に差し替える。
@@ -2833,6 +2837,14 @@ function representedRank(cards){
   const real = cards.filter(c=>c.rank!=='JOKER');
   return real.length ? real[0].rank : 'JOKER';
 }
+// 全ジョーカー構成（＝ワイルドカード運用）の「実効ランク」。数しばりが有効中は、
+// しばられているランクそのものとして扱う（スペ3対象外・強さ比較も8切り等の特殊効果も
+// そのランクとして受ける）。素のジョーカーとして振る舞うのは数しばりが無いときだけ。
+function wildcardAwareRank(cards){
+  const base = representedRank(cards);
+  if(base!=='JOKER') return base;
+  return (rules.numberLock && numberLock) ? numberLock : 'JOKER';
+}
 
 function isSpade3Counter(count, cards){
   return !!(rules.spade3Return && field && field.rank==='JOKER' && field.count===1
@@ -2855,13 +2867,20 @@ function canBeatField(rank, count, cards){
   }
   if(field!==null && count!==field.count) return { ok:false, reason:'場と同じ枚数を出してください（'+field.count+'枚）' };
   if(isSpade3Counter(count, cards)) return { ok:true };
-  // Pure joker plays (single joker, or jokers-only for a multi-card play) always ignore
-  // number/suit locks - they're only subject to the normal strength comparison below.
-  const isPureJoker = rank==='JOKER';
-  if(rules.numberLock && numberLock && !isPureJoker){
-    if(rank!==numberLock) return { ok:false, reason:'数しばり中：'+numberLock+'しか出せません' };
+  // Pure joker plays (single joker, or jokers-only for a multi-card play) ignore suit locks
+  // (they have no suit to offer) and, when no number lock is active, ignore number locks too
+  // and are only subject to the normal strength comparison below. isPureJoker is derived from
+  // the actual cards (not the rank argument) so this stays correct no matter what rank string
+  // a caller happens to pass in for an all-joker sample.
+  const isPureJoker = cards.length>0 && cards.every(c=>c.rank==='JOKER');
+  // 数しばり中は、純ジョーカーであってもバイパスさせない。しばられているランクそのもの
+  // として扱う（＝ワイルドカード）。呼び出し側が渡す rank が 'JOKER' のままでも、ここで
+  // 数しばりの対象ランクへ読み替えて判定する。
+  const effectiveRank = (isPureJoker && rules.numberLock && numberLock) ? numberLock : rank;
+  if(rules.numberLock && numberLock){
+    if(effectiveRank!==numberLock) return { ok:false, reason:'数しばり中：'+numberLock+'しか出せません' };
   } else if(field!==null){
-    if(effStrength(rank) <= effStrength(field.rank)) return { ok:false, reason:'その組み合わせは出せません' };
+    if(effStrength(effectiveRank) <= effStrength(field.rank)) return { ok:false, reason:'その組み合わせは出せません' };
   }
   if(rules.suitLock && suitLock && !isPureJoker){
     // 複数スートがロックされている場合は、そのすべてを実カードで含める必要がある。
@@ -2905,6 +2924,9 @@ function updateLocksAfterPlay(prevField, rank, count, cards, wasSpade3Counter, p
     // direction that was in effect when the play legally beat the field, i.e. BEFORE this play's
     // own revolution/11-back toggle. The resulting lock target, however, must point at the "next"
     // rank in whatever direction is in effect AFTER this play's toggle resolves.
+    // ワイルドカード（全ジョーカー）でランクを埋めた場合も、rank はしばられていたランクへ
+    // 読み替え済み（wildcardAwareRank）なので、本物の継続と同じ扱いで数しばりを次へ進める
+    // （5→6→JOKER[7扱い]→次は8のみ、それも別のJOKERを8扱いにして継続できる）。
     if(prevField && rank!=='JOKER' && prevField.rank!=='JOKER' && effStrength(rank)===effStrength(prevField.rank)+1){
       const nextIdx = strengthIndex(rank) + (postToggleReversed ? -1 : 1);
       const nextRank = (nextIdx>=0 && nextIdx<RANKS.length) ? RANKS[nextIdx] : null;
@@ -2925,7 +2947,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   const wasSpade3Counter = isSpade3Counter(cardsPlayed.length, cardsPlayed);
   const wasFourStopCounter = isFourStopCounter(cardsPlayed.length, cardsPlayed);
   hands[playerIdx] = hands[playerIdx].filter(c=>!actual.some(p=>p.id===c.id));
-  const rank = representedRank(cardsPlayed);
+  const rank = wildcardAwareRank(cardsPlayed);
   const count = cardsPlayed.length;
 
   const faceDown = isDoubtMode();
@@ -3534,7 +3556,7 @@ function cpuDecideElevenBack(idx){
 // 11バックの発動判断は宣言されたランクで行う（効果は宣言に対して発火する設計のため）。
 function cpuResolvePlay(idx, declCards, actualCards){
   let decision;
-  if(rules.elevenBack && rules.elevenBackChoice && representedRank(declCards)==='J'){
+  if(rules.elevenBack && rules.elevenBackChoice && wildcardAwareRank(declCards)==='J'){
     decision = cpuDecideElevenBack(idx);
   }
   return resolvePlayCore(idx, declCards, decision, actualCards);
@@ -3552,10 +3574,13 @@ function gatherFollowCandidates(hand, groups){
   for(const r of Object.keys(groups)){
     if(groups[r].length < field.count) continue;
     const isPureJokerR = r==='JOKER';
-    if(rules.numberLock && numberLock && !isPureJokerR){
-      if(r!==numberLock) continue;
+    // 数しばり中は純ジョーカーもバイパスさせない。しばられているランクそのものとして
+    // 扱う（ワイルドカード＝canBeatField / wildcardAwareRank と同じ考え方）。
+    const effectiveR = (isPureJokerR && rules.numberLock && numberLock) ? numberLock : r;
+    if(rules.numberLock && numberLock){
+      if(effectiveR!==numberLock) continue;
     } else {
-      if(effStrength(r) <= effStrength(field.rank)) continue;
+      if(effStrength(effectiveR) <= effStrength(field.rank)) continue;
     }
     if(rules.suitLock && suitLock && !isPureJokerR){
       // ロックされたスートすべてを、このランクの実カードで賄えなければ出せない。
@@ -3570,7 +3595,7 @@ function gatherFollowCandidates(hand, groups){
     } else {
       cardsToPlay = groups[r].slice(0, field.count);
     }
-    out.push({rank:r, cards:cardsToPlay, es:effStrength(r), groupSize:groups[r].length});
+    out.push({rank:effectiveR, cards:cardsToPlay, es:effStrength(effectiveR), groupSize:groups[r].length});
   }
   return out;
 }
@@ -4394,7 +4419,7 @@ function confirmDeclare(){
   hideActionModal();
   pendingAction = null;
   selected.clear();
-  const declRank = representedRank(declCards);
+  const declRank = wildcardAwareRank(declCards);
   if(declRank==='J' && rules.elevenBack && rules.elevenBackChoice){
     openElevenBackChoiceModal(declCards, actual);
     return;
@@ -4550,7 +4575,7 @@ function humanPlay(){
 // （actualCardsを渡さず cardsPlayed=actual にすることで、常に完全に正直な宣言になる）。
 function tryPlayCardsAsIs(cards){
   if(!isValidGroup(cards)){ flashMsg('同じランクのカードを選んでください（ジョーカーはワイルドとして使えます）'); return; }
-  const rank = representedRank(cards);
+  const rank = wildcardAwareRank(cards);
   const count = cards.length;
   const check = canBeatField(rank, count, cards);
   if(!check.ok){ flashMsg(check.reason); return; }
@@ -4950,6 +4975,9 @@ function applyView(v){
   declHistory = v.declHistory||[]; rules = v.rules||{}; cpuLevel = v.cpuLevel||'normal';
   flowingOutCards = v.flowingOutCards || null; flowingOutFaceDown = !!v.flowingOutFaceDown;
   pendingDealAnimation = false; fastForward = false;
+  // ゲストは dealFreshHands を通らないので、手札選択状態を明示的に用意しておく
+  // （render の selected.has(...) が undefined でクラッシュするのを防ぐ。二重の安全策）。
+  if(!selected) selected = new Set();
   logLines = v.logLines || [];
   // handCounts（数値・全席分）＋ myHand（自席の実カード）から手札を再構成する。
   // 他席は枚数ぶんの伏せプレースホルダにする。Firebaseの空配列ドロップに影響されない。
