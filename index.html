@@ -2801,7 +2801,7 @@ function openExchangeGiveModal(task, sel){
 function renderExchangeModal(){
   const pa = pendingAction;
   const sel = pa.sel;
-  const hand = sel.choicePool.slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const hand = sortByStrength(sel.choicePool);
   const cardsHtml = hand.map(c=>{
     const extra = 'mini' + (lastReceivedCardIds.has(c.id) ? ' received' : '');
     return cardHtml(c, extra, true, pa.chosen.has(c.id), 'exchangeToggleCard');
@@ -3366,6 +3366,11 @@ function groupByRank(hand){
   for(const c of hand){ (map[c.rank] = map[c.rank]||[]).push(c); }
   return map;
 }
+// カードを「弱い→強い」に並べた新しい配列を返す（元配列は変更しない）。手札から弱い順に
+// 何枚か渡す・捨てるといった処理で頻出するイディオムをまとめたもの。
+function sortByStrength(cards){
+  return cards.slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+}
 
 // ---- 禁止上がり（最強カード）回避ガード：全ティア共通の安全網 ----
 // forbiddenWin + fwStrongest が有効なとき、そのランクで手札を使い切る手は
@@ -3527,7 +3532,7 @@ function pickPlayCards(hand, count, opts){
   const rest = hand.filter(c=>c.rank!=='JOKER' && c.rank!==excludeRank);
   const useJokers = jokers.slice(0, count);
   const remaining = count - useJokers.length;
-  const filler = rest.slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank)).slice(0, remaining);
+  const filler = sortByStrength(rest).slice(0, remaining);
   if(useJokers.length + filler.length < count) return null;
   return useJokers.concat(filler);
 }
@@ -3995,64 +4000,21 @@ function cpuDeclareFollow(idx, hand, groups){
   return bluffFollowFallback(idx, hand);
 }
 
-function cpuTurn(idx){
-  if(gameOver) return;
-  if(isDoubtMode()){
-    if(doubtAvailableFor(idx) && cpuChooseDoubt(idx)){ doubtAction(idx); return; }
-    if(forcedPassOnly){ log(playerName(idx)+'：5スキップの対象のため出せない'); passAction(idx); return; }
-
-    const hand = hands[idx];
-    // スペ3返し・4止めは、この2つの狭い戦術カウンターに限っては全ティア正直のまま
-    // （実装スコープの都合。持っていなければ素直にパス）。
-    if(rules.spade3Return && field && field.rank==='JOKER' && field.count===1){
-      const spade3 = hand.find(c=>c.rank==='3' && c.suit==='♠');
-      if(spade3){
-        const info = cpuResolvePlay(idx, [spade3]);
-        render();
-        afterPlayEffects(info);
-        return;
-      }
-    }
-    if(field && field.rank==='8' && rules.fourStop){
-      const needed = field.count*2;
-      const fours = hand.filter(c=>c.rank==='4');
-      const jokers = hand.filter(c=>c.rank==='JOKER');
-      if(fours.length>=1 && fours.length + jokers.length >= needed){
-        const cardsToPlay = fours.concat(jokers).slice(0, needed);
-        const info = cpuResolvePlay(idx, cardsToPlay);
-        render();
-        afterPlayEffects(info);
-        return;
-      }
-      passAction(idx);
-      return;
-    }
-
-    const groups = groupByRank(hand);
-    const declared = (field===null) ? cpuDeclareLead(idx, hand, groups) : cpuDeclareFollow(idx, hand, groups);
-    if(declared){
-      const info = cpuResolvePlay(idx, declared.decl, declared.actual);
-      render();
-      afterPlayEffects(info);
-      return;
-    }
-    passAction(idx);
-    return;
-  }
-
-  const hand = hands[idx];
-
+// CPUが手を確定するときの定型（宣言→再描画→後処理）。cpuTurn内で何度も繰り返す
+// ので1か所にまとめる。actual省略時はdeclがそのまま実札（ダウトなしの正直プレイ）。
+function cpuCommitPlay(idx, decl, actual){
+  const info = cpuResolvePlay(idx, decl, actual);
+  render();
+  afterPlayEffects(info);
+}
+// スペ3返し・4止めという2つの狭い戦術カウンター。全ティア正直のまま扱う（実装スコープの
+// 都合）。ダウトモードでも通常モードでも挙動は同じなので共通化する。処理したら true を
+// 返す（呼び出し側は return する）。持っていなければ、4止め局面ではパスまで確定させる。
+function cpuTrySpecialCounter(idx, hand){
   if(rules.spade3Return && field && field.rank==='JOKER' && field.count===1){
     const spade3 = hand.find(c=>c.rank==='3' && c.suit==='♠');
-    if(spade3){
-      const cardsToPlay=[spade3];
-      const info = cpuResolvePlay(idx, cardsToPlay);
-      render();
-      afterPlayEffects(info);
-      return;
-    }
+    if(spade3){ cpuCommitPlay(idx, [spade3]); return true; }
   }
-
   if(field && field.rank==='8' && rules.fourStop){
     const needed = field.count*2;
     const fours = hand.filter(c=>c.rank==='4');
@@ -4060,41 +4022,40 @@ function cpuTurn(idx){
     // A joker can only stand in for "4" alongside at least one real 4; a pure-joker
     // group is always just "strongest single card x N", not a 4-stop counter.
     if(fours.length>=1 && fours.length + jokers.length >= needed){
-      const cardsToPlay = fours.concat(jokers).slice(0, needed);
-      const info = cpuResolvePlay(idx, cardsToPlay);
-      render();
-      afterPlayEffects(info);
-      return;
+      cpuCommitPlay(idx, fours.concat(jokers).slice(0, needed));
+    } else {
+      passAction(idx);
     }
+    return true;
+  }
+  return false;
+}
+
+function cpuTurn(idx){
+  if(gameOver) return;
+  const hand = hands[idx];
+
+  if(isDoubtMode()){
+    if(doubtAvailableFor(idx) && cpuChooseDoubt(idx)){ doubtAction(idx); return; }
+    if(forcedPassOnly){ log(playerName(idx)+'：5スキップの対象のため出せない'); passAction(idx); return; }
+    if(cpuTrySpecialCounter(idx, hand)) return;
+
+    const groups = groupByRank(hand);
+    const declared = (field===null) ? cpuDeclareLead(idx, hand, groups) : cpuDeclareFollow(idx, hand, groups);
+    if(declared){ cpuCommitPlay(idx, declared.decl, declared.actual); return; }
     passAction(idx);
     return;
   }
+
+  if(cpuTrySpecialCounter(idx, hand)) return;
 
   const groups = groupByRank(hand);
-
-  if(field===null){
-    const candidates = gatherLeadCandidates(hand, groups);
-    const chosen = candidates.length ? chooseLeadPlay(idx, hand, candidates) : null;
-    if(chosen){
-      const info = cpuResolvePlay(idx, chosen.cards);
-      render();
-      afterPlayEffects(info);
-      return;
-    }
-    passAction(idx);
-    return;
-  } else {
-    const candidates = gatherFollowCandidates(hand, groups);
-    const chosen = chooseFollowPlay(idx, hand, candidates);
-    if(chosen){
-      const info = cpuResolvePlay(idx, chosen.cards);
-      render();
-      afterPlayEffects(info);
-      return;
-    }
-    passAction(idx);
-    return;
-  }
+  const candidates = (field===null) ? gatherLeadCandidates(hand, groups) : gatherFollowCandidates(hand, groups);
+  const chosen = (field===null)
+    ? (candidates.length ? chooseLeadPlay(idx, hand, candidates) : null)
+    : chooseFollowPlay(idx, hand, candidates);
+  if(chosen){ cpuCommitPlay(idx, chosen.cards); return; }
+  passAction(idx);
 }
 
 function chooseGiveRecipient(idx, others){
@@ -4113,7 +4074,7 @@ function cpuDoGive(idx, count){
   const recipient = chooseGiveRecipient(idx, others);
   const need = Math.min(count, hands[idx].length);
   if(need<=0) return;
-  const sorted = hands[idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const sorted = sortByStrength(hands[idx]);
   const giveCards = sorted.slice(0, need);
   const giveIds = new Set(giveCards.map(c=>c.id));
   hands[idx] = hands[idx].filter(c=>!giveIds.has(c.id));
@@ -4126,7 +4087,7 @@ function cpuDoGive(idx, count){
 function chooseDiscardCards(idx, need){
   const hand = hands[idx];
   if(cpuLevel==='normal'){
-    return hand.slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank)).slice(0, need);
+    return sortByStrength(hand).slice(0, need);
   }
   const groups = groupByRank(hand);
   const scored = hand.map(c=>{
@@ -4342,7 +4303,7 @@ function renderGiveModalStep(){
     const buttons = others.map(i=>'<button class="action play" onclick="giveChooseRecipient('+i+')">'+playerName(i)+'</button>').join(' ');
     showActionModal('<h2>7渡し</h2><p>誰にカードを渡しますか？</p><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">'+buttons+'</div>');
   } else {
-    const hand = hands[pa.idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+    const hand = sortByStrength(hands[pa.idx]);
     const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'giveToggleCard')).join('');
     showActionModal('<h2>7渡し</h2><p>'+playerName(pa.recipient)+'に渡すカードを最大'+pa.need+'枚まで選べます（'+pa.chosen.size+'/'+pa.need+'）</p>'
       + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
@@ -4386,7 +4347,7 @@ function openDiscardModal(idx, count, info, extraSkips){
 }
 function renderDiscardModal(){
   const pa = pendingAction;
-  const hand = hands[pa.idx].slice().sort((a,b)=>effStrength(a.rank)-effStrength(b.rank));
+  const hand = sortByStrength(hands[pa.idx]);
   const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,pa.chosen.has(c.id),'discardToggleCard')).join('');
   showActionModal('<h2>10捨て</h2><p>捨てるカードを最大'+pa.need+'枚まで選べます（'+pa.chosen.size+'/'+pa.need+'）</p>'
     + '<div class="hand" style="justify-content:center;">'+cardsHtml+'</div>'
