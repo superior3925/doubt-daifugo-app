@@ -1687,13 +1687,17 @@ function turboMs(ms){ return fastForward ? 20 : ms; }
 
 // ---- 手番外ダウト（openDoubtルール）：CPUが場に重ねる直前に、自分がダウト可能な
 // 局面だけ短い猶予を挟み、その間だけ手番でなくてもダウトできるようにする。----
-// pendingCpuPlay: 猶予中のまま保留されているCPUの手（{idx, decl, actual, deadline}）。
-// deadlineはDate.now()基準の終了時刻（カウントダウン表示用）。nullならウィンドウは
-// 開いていない。doubtActionが呼ばれたらこの手はまるごと破棄される（場が変わるので、
-// CPUは自分の手番が来たときに新しい場を見て考え直す）。
+// pendingCpuPlay: 猶予中のまま保留されているCPUの手。オフライン／オンラインhostでは
+// {idx, decl, actual, deadline}（decl/actualはエンジンが確定に使う本物のデータ）。
+// オンラインゲストでは {idx, deadline} だけの軽量な表示用ミラー（CPUがこれから出す
+// 実際のカードはネタバレになるため一切送らない・持たない）。deadlineはDate.now()基準の
+// 終了時刻（カウントダウン表示用）。nullならウィンドウは開いていない。doubtActionが
+// 呼ばれたらこの手はまるごと破棄される（場が変わるので、CPUは自分の手番が来たときに
+// 新しい場を見て考え直す）。
 let pendingCpuPlay = null;
-let doubtWindowTimer = null;    // 猶予満了時にCPUの手を確定させるタイマー
-let doubtCountdownTimer = null; // カウントダウン表示を更新するための周期tick
+let doubtWindowTimer = null;      // （オフライン／host）猶予満了時にCPUの手を確定させるタイマー
+let doubtCountdownTimer = null;   // （オフライン／host）カウントダウン表示を更新する周期tick
+let guestDoubtCountdownTimer = null; // （ゲスト）自分の画面のカウントダウン表示だけを更新する周期tick
 
 // ---- スコア制度：大富豪+3・富豪+1・貧民0・大貧民-1を対戦ごとに合算し、ブラウザに保存する ----
 const SCORE_BY_RANK = [3, 1, 0, -1];
@@ -4056,15 +4060,19 @@ function cpuCommitPlay(idx, decl, actual){
   render();
   afterPlayEffects(info);
 }
-// 「今の場（まだCPUの新しい手で上書きされていない伏せ札）」をあなたがダウトできるか。
-// doubtAvailableFor(mySeat)がまさにこの条件（ダウトモード・伏せたまま未公開・自分の
-// 宣言ではない・自分は上がり/退場していない）を過不足なく判定してくれる。fastForward
-// （あなたが上がった後のCPU-only消化試合を高速化するフラグ）は、原理上あなたが
+// 「今の場（まだCPUの新しい手で上書きされていない伏せ札）」を、誰か人間がダウトできるか。
+// オフラインは自分（mySeat）だけが対象。オンラインhostは、ホストが管理するローカルCPU席
+// （切断後の自動化席・人数不足の補充CPU）が重ねようとする直前に限り、host自身と全リモート
+// ゲスト（人間の席全員）に猶予を配る対象範囲になる——人間同士（host-ui/remote-human）が
+// 重ねる場合は対象外（ネットワーク遅延の影響を受ける人間の操作テンポに介入したくない）。
+// fastForward（あなたが上がった後のCPU-only消化試合を高速化するフラグ）は、原理上あなたが
 // finishedOrder入りしていないと立たないので実質doubtAvailableForに包含されるが、
 // 「高速消化中はウィンドウを開かない」という意図を明示するために重ねて書いておく。
 function shouldOpenDoubtWindow(){
-  return isDoubtMode() && !!rules.openDoubt && onlineRole==='offline' && !fastForward
-    && doubtAvailableFor(mySeat);
+  if(!isDoubtMode() || !rules.openDoubt || fastForward) return false;
+  if(onlineRole==='offline') return doubtAvailableFor(mySeat);
+  if(onlineRole==='host') return allSeats().some(s=> seatController(s)!=='local-cpu' && doubtAvailableFor(s));
+  return false; // ゲストはエンジンを動かさないので、ここには来ない
 }
 // ルール設定の秒数（1〜10、既定3）をミリ秒へ。rules未設定時（保険）は既定値を使う。
 function doubtWindowMs(){
@@ -4094,11 +4102,13 @@ function scheduleDoubtCountdownTick(myGen){
     scheduleDoubtCountdownTick(myGen);
   }, 250);
 }
-// 猶予関連の2本のタイマーをまとめて止める（満了・様子見・ダウト介入・後始末のどこから
-// 呼んでも安全なようclearTimeout(null)を許容する形にしてある）。
+// 猶予関連のタイマーをまとめて止める（満了・様子見・ダウト介入・後始末のどこから呼んでも
+// 安全なようclearTimeout(null)を許容する形にしてある）。ゲスト側のカウントダウンtickも
+// ここでまとめて止めるので、呼び出し側は自分がホストかゲストかを気にしなくてよい。
 function clearDoubtWindowTimers(){
   if(doubtWindowTimer){ clearTimeout(doubtWindowTimer); doubtWindowTimer=null; }
   if(doubtCountdownTimer){ clearTimeout(doubtCountdownTimer); doubtCountdownTimer=null; }
+  if(guestDoubtCountdownTimer){ clearTimeout(guestDoubtCountdownTimer); guestDoubtCountdownTimer=null; }
 }
 // 猶予が満了、または「様子見」で明示的にスキップされたときに、保留していたCPUの手を
 // そのまま確定する。
@@ -4112,9 +4122,25 @@ function resolvePendingCpuPlay(){
   afterPlayEffects(info);
 }
 // あなたが猶予中に「様子見」ボタンでスキップした：タイマーを止めてすぐ確定する。
+// （ゲストには様子見ボタンを出していない。1人のゲストの都合で、まだ考え中かもしれない
+// 他の参加者の猶予を早期終了させてしまうのを避けるため。ゲストは「ダウトする」か
+// 「何もせず待つ（ホストのタイマー満了で自動的に進む）」のどちらかになる。）
 function skipDoubtWindow(){
   if(!pendingCpuPlay) return;
   resolvePendingCpuPlay();
+}
+// ゲスト：ホストから届いたpendingOpenDoubt（猶予情報）を表示するため、自分の画面だけの
+// カウントダウンtickを回す。ホスト側のdoubtCountdownTimerとは完全に独立（ゲストは
+// エンジンを持たないので、確定判断は一切せずrender()で残り秒数を更新するだけ）。
+function startGuestDoubtCountdownTick(){
+  if(guestDoubtCountdownTimer) return; // 既に回っていれば二重起動しない
+  const tick=()=>{
+    guestDoubtCountdownTimer = null;
+    if(!pendingCpuPlay) return; // ホストから「解決済み」の新しいviewが既に届いている
+    render();
+    guestDoubtCountdownTimer = setTimeout(tick, 250);
+  };
+  guestDoubtCountdownTimer = setTimeout(tick, 250);
 }
 // スペ3返し・4止めという2つの狭い戦術カウンター。全ティア正直のまま扱う（実装スコープの
 // 都合）。ダウトモードでも通常モードでも挙動は同じなので共通化する。処理したら true を
@@ -4823,6 +4849,13 @@ function humanDoubt(){
   // に対してダウトする。
   if(pendingCpuPlay){
     if(gameOver || pendingAction || exchangeInProgress || revealPending) return;
+    // ゲストはエンジンを持たないので doubtAction をローカルで呼べない。サブintentで
+    // ホストへ通知するだけ（早い者勝ち＝ホストが最初に受理した1件だけを採用する）。
+    if(onlineRole==='guest'){
+      selected.clear();
+      Online.sendIntent({type:'doubtIntervene'});
+      return;
+    }
     clearDoubtWindowTimers();
     pendingCpuPlay = null;
     selected.clear();
@@ -5083,8 +5116,11 @@ function render(){
   doubtBtn.disabled = !canDoubt;
   doubtBtn.classList.toggle('available', canDoubt);
 
+  // 様子見ボタンはホスト自身（オフライン／オンラインhost-ui）だけに出す。1人のゲストの
+  // 都合で、まだ考え中かもしれない他の参加者の猶予を早期終了させてしまうのを避けるため
+  // （ゲストは「ダウトする」か「何もせず待つ」のどちらかになる）。
   const skipDoubtBtn = document.getElementById('skipDoubtBtn');
-  if(skipDoubtBtn) skipDoubtBtn.style.display = doubtWindowOpen ? 'inline-block' : 'none';
+  if(skipDoubtBtn) skipDoubtBtn.style.display = (doubtWindowOpen && onlineRole!=='guest') ? 'inline-block' : 'none';
 
   document.getElementById('playBtn').disabled = !isYourTurn || forcedPassOnly;
   const honestBtn = document.getElementById('honestBtn');
@@ -5225,7 +5261,14 @@ function buildRedactedView(viewerSeat){
          forcedIds: pendingRemoteExchange.sel.forced.map(c=>c.id)}
       : null,
     // カード交換モーダルの「オレンジの枠＝直前に受け取ったカード」表示用。
-    lastReceivedCardIds: [...lastReceivedCardIds]
+    lastReceivedCardIds: [...lastReceivedCardIds],
+    // 手番外ダウト（openDoubtルール）：ホスト管理のCPU席が場に重ねようとする直前、
+    // このゲストが実際にダウトできる局面のときだけ載せる。CPUがこれから出す実際の
+    // カード（decl/actual）は絶対に含めない——ネタバレになるため、「誰が」「いつまでに」
+    // という表示に必要な情報だけの軽量なミラー。
+    pendingOpenDoubt: (pendingCpuPlay && doubtAvailableFor(viewerSeat))
+      ? {idx: pendingCpuPlay.idx, deadline: pendingCpuPlay.deadline}
+      : null
   };
 }
 // ゲスト：受信したスナップショットをグローバルへ反映して、既存の render() で描画する。
@@ -5268,6 +5311,16 @@ function applyView(v){
   field = reviveField(v.field);
   discardHistory = (v.discardHistory||[]).map(d=>({reason:d.reason, cards:d.cards, hiddenIds:new Set(d.hiddenIds||[])}));
   currentTrickCards = []; currentTrickHiddenIds = new Set();
+  // 手番外ダウト（openDoubtルール）：pendingOpenDoubtが届いたら軽量なpendingCpuPlayを
+  // 再構成し、自分の画面だけのカウントダウンtickを回す（render()より前にセットしないと
+  // このタイミングの描画に反映されない）。届かなくなったら（ホストが解決済み）クリアする。
+  if(v.pendingOpenDoubt){
+    pendingCpuPlay = {idx: v.pendingOpenDoubt.idx, deadline: v.pendingOpenDoubt.deadline};
+    startGuestDoubtCountdownTick();
+  } else if(pendingCpuPlay){
+    clearDoubtWindowTimers();
+    pendingCpuPlay = null;
+  }
   const panel = document.getElementById('logPanel');
   if(panel){ panel.innerHTML = logLines.map(l=>'<div>'+l+'</div>').join(''); panel.scrollTop = panel.scrollHeight; }
   render();
@@ -6135,6 +6188,20 @@ const Online = (function(){
   // ホスト：受信intentを審判として検証・実行する。
   function handleIntent(seat, intent){
     if(seatController(seat)!=='remote-human') return;
+    // 手番外ダウト（openDoubtルール）の介入は最優先で処理する。早い者勝ち＝ホストが
+    // 最初に受理した1件だけ有効にし（pendingCpuPlayを即座にnullへ）、他の参加者から
+    // 後追いで届いた同種intentは「もう猶予が無い」ので自然に無視される。
+    if(intent.type==='doubtIntervene'){
+      if(!pendingCpuPlay || !doubtAvailableFor(seat)) return;
+      clearDoubtWindowTimers();
+      pendingCpuPlay = null;
+      doubtAction(seat);
+      return;
+    }
+    // 猶予が開いている間は、doubtIntervene以外のintentを一切受け付けない（この時点で
+    // currentPlayerIndexはまだCPUの席のままなので通常はplay/pass/doubtも自然に弾かれる
+    // はずだが、意図を明示するため）。
+    if(pendingCpuPlay) return;
     // 追加アクションのサブintent（該当席の選択待ち中のときだけ受理）。
     if(pendingRemoteAction && pendingRemoteAction.seat===seat){
       if(intent.type==='give'    && pendingRemoteAction.kind==='give')    { applyRemoteGive(seat, intent.recipient, intent.cardIds); return; }
@@ -6233,6 +6300,7 @@ const Online = (function(){
     if(S.intentUnsub){ try{S.intentUnsub();}catch(e){} S.intentUnsub=null; }
     S.inGame=false; S.seatToUid={}; S.uidToSeat={}; S.processedSeq={}; S.lastViewHash={};
     onlineRole='offline'; seatControllers=[]; pendingRemoteAction=null;
+    clearDoubtWindowTimers(); pendingCpuPlay=null;
   }
 
   async function leave(){
