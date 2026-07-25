@@ -232,6 +232,12 @@
     gap:8px;
     flex-wrap:wrap;
   }
+  /* 相手が5人以上（＝6人戦以上）のときは1枚あたりを詰めて、なるべく1段に収める。
+     人数が増えるほど1人の手札は薄くなるので、札の見た目も小さくして構わない。 */
+  .opponents-row.many .opp{ min-width:76px; padding:6px 8px; }
+  .opponents-row.many .opp .name{ font-size:12px; }
+  .opponents-row.many .opp .count{ font-size:10px; }
+  .opponents-row.many .cardback{ width:16px; height:23px; margin-left:-7px; }
   .turn-order-strip{
     display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:3px;
     font-size:11px; color:#b9c4bd; margin-bottom:6px; min-height:16px;
@@ -1009,7 +1015,7 @@
         <span class="mode-emoji">🌐</span>
         <span>
           <span class="mode-card-title">オンライン対戦</span>
-          <span class="mode-card-desc">友人と最大4人でオンライン対戦。登録不要、ニックネームだけで参加できます。</span>
+          <span class="mode-card-desc">友人と最大8人でオンライン対戦。登録不要、ニックネームだけで参加できます。</span>
         </span>
       </button>
     </div>
@@ -1061,6 +1067,23 @@
     <div class="setup-box">
       <div class="setup-title">対戦ルール設定</div>
       <div class="setup-desc">今回の対戦で有効にするローカルルールを選んでください。何も選ばなければ基本ルールのみで遊べます。</div>
+
+      <div class="cpu-level-block" id="offlineSeatBlock">
+        <div class="rule-column-title">対戦人数</div>
+        <div class="rule-item">
+          <div style="flex:1;">
+            <div class="rule-label">あなた＋CPU</div>
+            <div class="rule-desc">2〜8人で対戦できます。山札は常に1組なので、人数が多いほど1人あたりの手札は少なくなります（8人なら6〜7枚）。</div>
+          </div>
+          <div class="joker-stepper-col" onclick="event.stopPropagation()">
+            <div class="joker-stepper">
+              <button type="button" class="joker-step-btn" id="offlineSeatMinusBtn" onclick="adjustOfflineSeatCount(-1)">－</button>
+              <span id="offlineSeatCountDisplay">4</span>人
+              <button type="button" class="joker-step-btn" id="offlineSeatPlusBtn" onclick="adjustOfflineSeatCount(1)">＋</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="cpu-level-block">
         <div class="rule-column-title">CPUの強さ</div>
@@ -1119,18 +1142,25 @@
       </div>
 
       <div class="online-box">
-        <div class="online-box-title">参加者（<span id="memberCount">0</span>/4）</div>
+        <div class="online-box-title">参加者（<span id="memberCount">0</span>/<span id="memberCountMax">8</span>）</div>
         <div class="member-list" id="memberList"></div>
       </div>
 
       <div class="online-box" id="hostControlsBox" style="display:none;">
         <div class="online-box-title">ホスト設定</div>
         <div class="online-field">
-          <label>4人に満たないとき</label>
+          <label>人数が足りないとき</label>
           <div class="online-radio-row">
-            <label><input type="radio" name="cpuFillChoice" value="fill" checked> CPUで4人に補充</label>
+            <label><input type="radio" name="cpuFillChoice" value="fill" checked> CPUで補充する</label>
             <label><input type="radio" name="cpuFillChoice" value="none"> CPUなし（今いる人数で）</label>
           </div>
+          <div class="joker-stepper" id="fillTargetStepper" style="margin-top:8px; justify-content:flex-start;">
+            <span style="font-size:12px; color:var(--gold-soft);">合計</span>
+            <button type="button" class="joker-step-btn" id="fillTargetMinusBtn" onclick="Online.adjustFillTarget(-1)">－</button>
+            <span id="fillTargetDisplay">4</span>人
+            <button type="button" class="joker-step-btn" id="fillTargetPlusBtn" onclick="Online.adjustFillTarget(1)">＋</button>
+          </div>
+          <div class="online-note">参加者がこの人数に満たない分をCPUが埋めます（最大<span id="maxSeatsNote">8</span>人）。参加者の方が多いときは全員がそのまま参加します。</div>
         </div>
         <div class="online-btn-row" style="justify-content:flex-start;">
           <button class="ghost" id="editRoomRulesBtn" type="button">ルールを変更</button>
@@ -1304,8 +1334,10 @@
 <script>
 const RANKS = ['3','4','5','6','7','8','9','10','J','Q','K','A','2'];
 const SUITS = ['♠','♥','♦','♣'];
-const RANK_TITLES = ['大富豪','富豪','貧民','大貧民'];
-const NAMES = ['あなた','CPU 1','CPU 2','CPU 3'];
+// 対戦人数の上限（オフライン・オンライン共通）。山札は常に1組（52枚＋ジョーカー）なので、
+// 人数が増えるほど1人あたりの手札は薄くなる（8人なら6〜7枚の短期決戦）。
+const MAX_SEATS = 8;
+const NAMES = ['あなた','CPU 1','CPU 2','CPU 3','CPU 4','CPU 5','CPU 6','CPU 7'];
 
 /* =====================================================================
    Feedback: BGM・効果音（Web Audio APIで合成）・触覚フィードバックを
@@ -1658,6 +1690,9 @@ let jokerCountRandom = false;
 // ゲーム開始時にrules.doubtWindowSecへ確定」のパターンで扱う。既定3秒（初期実装の
 // 1.5秒固定が短すぎたというフィードバックを受け、ユーザーが1〜10秒で調整できるようにした）。
 let doubtWindowSec = 3;
+// オフライン対戦の人数（あなた＋CPU、2〜MAX_SEATS）。オンラインは待機室の参加者数と
+// CPU補充設定から決まるので、この値は使わない。
+let offlineSeatCount = 4;
 let nextStartingPlayerOverride = null;
 let turnDirection = 1;
 let lastReceivedCardIds = new Set();
@@ -1700,16 +1735,30 @@ let doubtCountdownTimer = null;   // （オフライン／host）カウントダ
 let guestDoubtCountdownTimer = null; // （ゲスト）自分の画面のカウントダウン表示だけを更新する周期tick
 
 // ---- スコア制度：大富豪+3・富豪+1・貧民0・大貧民-1を対戦ごとに合算し、ブラウザに保存する ----
-const SCORE_BY_RANK = [3, 1, 0, -1];
+// 順位の呼び名は人数で変わる（rankTitlesFor）ので、点数も「その順位が何と呼ばれるか」から
+// 決める。4人なら [3,1,0,-1] となり従来の固定配列と完全に一致する。
+const SCORE_BY_TITLE = {'大富豪':3, '富豪':1, '平民':0, '貧民':0, '大貧民':-1};
+function scoreForRankPos(pos, n){
+  const title = rankTitlesFor(n)[pos];
+  return SCORE_BY_TITLE[title] || 0;
+}
+// 席インデックス基準の配列を、長さMAX_SEATSへ正規化する（旧データは長さ4なので後ろを0で埋める）。
+function normalizeSeatArray(a){
+  const out = new Array(MAX_SEATS).fill(0);
+  if(Array.isArray(a)){
+    for(let i=0;i<Math.min(a.length, MAX_SEATS);i++) out[i] = Number.isFinite(a[i]) ? a[i] : 0;
+  }
+  return out;
+}
 const LS_SCORE_KEY = 'ddf_season_scores';
 const LS_GAMES_KEY = 'ddf_season_games';
-let seasonScores = [0,0,0,0];
+let seasonScores = new Array(MAX_SEATS).fill(0);
 let seasonGames = 0;
 function loadSeasonScores(){
   try{
     const raw = localStorage.getItem(LS_SCORE_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    if(Array.isArray(parsed) && parsed.length===4) seasonScores = parsed;
+    if(Array.isArray(parsed)) seasonScores = normalizeSeatArray(parsed);
     seasonGames = parseInt(localStorage.getItem(LS_GAMES_KEY), 10) || 0;
   }catch(e){/* localStorage不可でも無視 */}
 }
@@ -1720,12 +1769,13 @@ function saveSeasonScores(){
   }catch(e){/* 無視 */}
 }
 function addSeasonScore(finalRanking){
-  finalRanking.forEach((pIdx, i)=>{ seasonScores[pIdx] += SCORE_BY_RANK[i]; });
+  const n = finalRanking.length;
+  finalRanking.forEach((pIdx, i)=>{ seasonScores[pIdx] += scoreForRankPos(i, n); });
   seasonGames++;
   saveSeasonScores();
 }
 function resetSeasonScores(){
-  seasonScores = [0,0,0,0];
+  seasonScores = new Array(MAX_SEATS).fill(0);
   seasonGames = 0;
   saveSeasonScores();
   renderScoreBoard();
@@ -1734,8 +1784,12 @@ function renderScoreBoard(lastRanking){
   const board = document.getElementById('scoreBoard');
   if(!board) return;
   const deltaByIdx = {};
-  if(lastRanking) lastRanking.forEach((pIdx, i)=>{ deltaByIdx[pIdx] = SCORE_BY_RANK[i]; });
-  const rows = [0,1,2,3].map(i=>{
+  if(lastRanking) lastRanking.forEach((pIdx, i)=>{ deltaByIdx[pIdx] = scoreForRankPos(i, lastRanking.length); });
+  // 今回の対戦人数ぶんは必ず出し、それより多い席に過去のスコアが残っていればそこまで出す
+  // （人数を減らして遊んだときに、以前の席の成績が消えたように見えないようにする）。
+  const usedSeats = seasonScores.reduce((m,v,i)=> v!==0 ? i+1 : m, 0);
+  const rowCount = Math.min(MAX_SEATS, Math.max(seatCount, usedSeats));
+  const rows = Array.from({length: rowCount}, (_, i)=>{
     const val = seasonScores[i];
     const cls = val>0 ? 'score-plus' : (val<0 ? 'score-minus' : '');
     const delta = deltaByIdx[i]!==undefined
@@ -1800,7 +1854,10 @@ function cloudConfigured(){
     && GOOGLE_CLIENT_ID.indexOf('.apps.googleusercontent.com')>0;
 }
 
-function emptyCareer(){ return {games:0, score:0, rankCounts:[0,0,0,0]}; }
+// rankCountsは「何位で終わったか」を位置（0=1位）で数える。人数が可変になったため、
+// 「最下位＝大貧民」の回数は位置では表せない（4人の3位と8人の7位は意味が違う）ので、
+// lastPlaceGamesとして別に数える。
+function emptyCareer(){ return {games:0, score:0, rankCounts:new Array(MAX_SEATS).fill(0), lastPlaceGames:0}; }
 function newCloudDoc(){
   return {schema:1, version:0, updatedAt:0, career:emptyCareer(), rules:null};
 }
@@ -1827,11 +1884,15 @@ function normalizeCloudDoc(d){
   out.version = Number.isFinite(d.version) ? d.version : 0;
   out.updatedAt = Number.isFinite(d.updatedAt) ? d.updatedAt : 0;
   const c = d.career || {};
+  // 旧データ（対戦が常に4人だった頃）は rankCounts の長さが4で、lastPlaceGames を持たない。
+  // その頃は「位置3＝最下位＝大貧民」が常に成り立っていたので、そこから引き継ぐ。
+  const legacyLastPlace = (Array.isArray(c.rankCounts) && c.rankCounts.length===4 && Number.isFinite(c.rankCounts[3]))
+    ? c.rankCounts[3] : 0;
   out.career = {
     games: Number.isFinite(c.games) ? c.games : 0,
     score: Number.isFinite(c.score) ? c.score : 0,
-    rankCounts: (Array.isArray(c.rankCounts) && c.rankCounts.length===4)
-      ? c.rankCounts.map(n=>Number.isFinite(n)?n:0) : [0,0,0,0]
+    rankCounts: normalizeSeatArray(c.rankCounts),
+    lastPlaceGames: Number.isFinite(c.lastPlaceGames) ? c.lastPlaceGames : legacyLastPlace
   };
   out.rules = (d.rules && typeof d.rules==='object') ? d.rules : null;
   return out;
@@ -1851,9 +1912,11 @@ function markCloudDocChanged(){
 function recordCareerResult(finalRanking){
   const pos = finalRanking.indexOf(mySeat); // 自分（人間プレイヤー）の最終順位（0=大富豪）
   if(pos<0) return;
+  const n = finalRanking.length;
   cloudDoc.career.games += 1;
-  cloudDoc.career.score += SCORE_BY_RANK[pos];
-  cloudDoc.career.rankCounts[pos] += 1;
+  cloudDoc.career.score += scoreForRankPos(pos, n);
+  if(pos < cloudDoc.career.rankCounts.length) cloudDoc.career.rankCounts[pos] += 1;
+  if(pos === n-1) cloudDoc.career.lastPlaceGames = (cloudDoc.career.lastPlaceGames||0) + 1;
   markCloudDocChanged();
 }
 function resetCareerStats(){
@@ -1876,6 +1939,7 @@ function captureRulesToDoc(){
     jokerCount: jokerCount,
     jokerCountRandom: jokerCountRandom,
     doubtWindowSec: doubtWindowSec,
+    offlineSeatCount: offlineSeatCount,
     flags: flags
   };
 }
@@ -1903,6 +1967,11 @@ function applyRulesFromDoc(){
     const dwd = document.getElementById('doubtWindowSecDisplay');
     if(dwd) dwd.textContent = doubtWindowSec;
   }
+  if(typeof r.offlineSeatCount==='number'){
+    offlineSeatCount = Math.max(2, Math.min(MAX_SEATS, r.offlineSeatCount));
+    const osd = document.getElementById('offlineSeatCountDisplay');
+    if(osd) osd.textContent = offlineSeatCount;
+  }
   if(typeof r.doubtMode==='boolean'){
     document.getElementById('doubtModeToggle').checked = r.doubtMode;
     applyDoubtTheme(r.doubtMode);
@@ -1914,6 +1983,7 @@ function applyRulesFromDoc(){
   syncSubRuleStates();
   syncJokerStepperState();
   syncOpenDoubtStepperState();
+  syncOfflineSeatStepperState();
 }
 // ルール設定が変わった時（チェックボックス等）に呼ぶ共通ハンドラ。
 function onRulesChanged(){
@@ -2235,17 +2305,23 @@ function renderStatsBody(){
   if(!el) return;
   const c = cloudDoc.career;
   const games = c.games||0;
+  // 1位は人数に関わらず必ず大富豪、最下位は必ず大貧民なので、この2つの率は人数が
+  // 変わっても意味が一貫する（間の順位は人数で呼び名が変わるため、率には使わない）。
   const daifugoRate = games>0 ? Math.round((c.rankCounts[0]/games)*100) : 0;
+  const daihinminRate = games>0 ? Math.round(((c.lastPlaceGames||0)/games)*100) : 0;
   const scoreStr = (c.score>0?'+':'')+c.score;
   const tiles = [
     {num: games, label:'総プレイ数'},
     {num: scoreStr, label:'総合点'},
     {num: daifugoRate+'%', label:'大富豪率'},
-    {num: (games>0?Math.round((c.rankCounts[3]/games)*100):0)+'%', label:'大貧民率'}
+    {num: daihinminRate+'%', label:'大貧民率'}
   ];
   const tilesHtml = tiles.map(t=>'<div class="stat-tile"><div class="stat-num">'+t.num+'</div><div class="stat-label">'+t.label+'</div></div>').join('');
-  const ranksHtml = RANK_TITLES.map((title,i)=>
-    '<div class="stats-rank-row"><span class="stats-rank-name">'+title+'</span><span>'+(c.rankCounts[i]||0)+' 回</span></div>'
+  // 順位別の内訳は「N位」で表示する（人数が可変なので称号では表せない）。5位以降は
+  // 実際にその順位で終えたことがある場合だけ行を増やす。
+  const deepest = c.rankCounts.reduce((m,v,i)=> v>0 ? i+1 : m, 0);
+  const ranksHtml = Array.from({length: Math.min(MAX_SEATS, Math.max(4, deepest))}, (_,i)=>
+    '<div class="stats-rank-row"><span class="stats-rank-name">'+(i+1)+'位</span><span>'+(c.rankCounts[i]||0)+' 回</span></div>'
   ).join('');
   const st = CloudSync.getStatus();
   let note;
@@ -4963,9 +5039,13 @@ function render(){
   // ので影響しない（＝widescreenの従来レイアウトは不変）。
   const slotClassFor = (idx, total)=>{
     // total=相手人数。row1=上段（奥）、row2=下段（自分の左右）。中央列=col2。
-    if(total>=3) return ['oc-1-2','oc-2-1','oc-3-2'][idx] || '';   // 左・上・右
-    if(total===2) return ['oc-1-1','oc-3-1'][idx] || '';           // 左・右（上段に並べる）
-    return 'oc-2-1';                                                // 1人：上段中央
+    // 相手3人までは「卓を囲む」ダイヤ型に固定配置する。4人以上（＝5人戦以上）はダイヤに
+    // 収まらないので位置指定を外し、グリッドの自動配置で左上から順に並べる
+    // （並び自体は oppSeatDisplayOrder のままなので、左回りの順序は保たれる）。
+    if(total>=4) return '';
+    if(total===3) return ['oc-1-2','oc-2-1','oc-3-2'][idx] || '';   // 左・上・右
+    if(total===2) return ['oc-1-1','oc-3-1'][idx] || '';            // 左・右（上段に並べる）
+    return 'oc-2-1';                                                 // 1人：上段中央
   };
   const oppHtml = oppSeats.map((i,idx)=>{
     const slotClass = slotClassFor(idx, oppSeats.length);
@@ -4991,7 +5071,10 @@ function render(){
       + '<div class="count">残り '+hands[i].length+'枚</div>'
       + outPipsHtml(i)+'</div>';
   }).join('');
-  document.getElementById('opponents').innerHTML = oppHtml;
+  const oppRowEl = document.getElementById('opponents');
+  oppRowEl.innerHTML = oppHtml;
+  // 大人数戦では相手カードを詰めて表示する（デスクトップで折り返さずに収めるため）。
+  oppRowEl.classList.toggle('many', oppSeats.length>=5);
 
   // プレイ順が一目でわかるように：現在の手番から実際に回る順で全員を並べ、向きは
   // アイコン（⟲左回り／⟳右回り＝9リバース中）で示す。並び自体が向きを表すので、
@@ -5439,6 +5522,20 @@ function adjustDoubtWindowSec(delta){
   if(disp) disp.textContent = doubtWindowSec;
   if(doubtWindowSec!==before && typeof onRulesChanged==='function') onRulesChanged();
 }
+function syncOfflineSeatStepperState(){
+  const disp = document.getElementById('offlineSeatCountDisplay');
+  if(disp) disp.textContent = offlineSeatCount;
+  const minus = document.getElementById('offlineSeatMinusBtn');
+  const plus = document.getElementById('offlineSeatPlusBtn');
+  if(minus) minus.disabled = offlineSeatCount<=2;
+  if(plus) plus.disabled = offlineSeatCount>=MAX_SEATS;
+}
+function adjustOfflineSeatCount(delta){
+  const before = offlineSeatCount;
+  offlineSeatCount = Math.max(2, Math.min(MAX_SEATS, offlineSeatCount + delta));
+  syncOfflineSeatStepperState();
+  if(offlineSeatCount!==before && typeof onRulesChanged==='function') onRulesChanged();
+}
 function syncOpenDoubtStepperState(){
   const cb = document.getElementById('rule_openDoubt');
   const enabled = cb && cb.checked;
@@ -5504,6 +5601,7 @@ function renderRuleSetup(){
   syncSubRuleStates();
   syncJokerStepperState();
   syncOpenDoubtStepperState();
+  syncOfflineSeatStepperState();
 }
 
 document.getElementById('playBtn').addEventListener('click', humanPlay);
@@ -5576,11 +5674,12 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
   cpuLevelSetting = levelInput ? levelInput.value : 'normal';
   cpuLevel = resolveCpuLevel(cpuLevelSetting);
-  // オフライン対戦は常に「あなた＋CPU3人」の4人・自席0・既定の名前。オンライン対戦を
-  // 遊んだ後でも、ここで確実に4人構成へ戻してからゲームを開始する。
-  seatCount = 4;
+  // オフライン対戦は「あなた＋CPU」で、人数は対戦人数ステッパーの値（2〜MAX_SEATS）。
+  // 自席は常に0。オンライン対戦を遊んだ後でも、ここで確実にオフライン構成へ戻してから
+  // ゲームを開始する。
+  seatCount = Math.max(2, Math.min(MAX_SEATS, offlineSeatCount));
   mySeat = 0;
-  seatNames = NAMES.slice();
+  seatNames = NAMES.slice(0, seatCount);
   onlineRole = 'offline';
   seatControllers = [];
   Feedback.unlock();
@@ -5775,6 +5874,8 @@ function applySetupMode(mode){
   show('modeBackBtn',     mode==='offline');
   show('hostConfigBar',   mode==='createRoom');
   show('cloudBar',        mode==='offline');
+  // 対戦人数の指定はオフライン専用（オンラインは待機室の参加者数＋CPU補充で決まる）。
+  show('offlineSeatBlock', mode==='offline');
 }
 
 // 現在のルール設定UI（チェックボックス・ダウトトグル・CPUレベル・ジョーカー数）を
@@ -5894,10 +5995,10 @@ const Online = (function(){
     list.innerHTML=rows.map(r=>{
       const n=r.members?Object.keys(r.members).length:0;
       const lock=r.meta.hasPassword?'<span class="lock-badge">🔒</span> ':'';
-      const full=n>=4;
+      const full=n>=MAX_SEATS;
       const doubt=(r.rules && r.rules.doubtMode)?'ダウト':'通常';
       return '<div class="room-row"><div class="room-info"><div class="room-name">'+lock+escapeHtml(r.meta.name||'名称未設定')+'</div>'
-        +'<div class="room-meta">'+n+'/4人 ・ '+doubt+'モード</div></div>'
+        +'<div class="room-meta">'+n+'/'+MAX_SEATS+'人 ・ '+doubt+'モード</div></div>'
         +'<button class="ghost" '+(full?'disabled':'')+' onclick="Online.join(\''+r.id+'\')">'+(full?'満席':'参加')+'</button></div>';
     }).join('');
   }
@@ -5927,7 +6028,7 @@ const Online = (function(){
     try{
       const roomRef=S.db.ref('rooms').push();
       const roomId=roomRef.key;
-      const meta={ name, hostUid:S.uid, createdAt:Date.now(), hasPassword, code, status:'waiting', cpuFill:true, seatCount:4 };
+      const meta={ name, hostUid:S.uid, createdAt:Date.now(), hasPassword, code, status:'waiting', cpuFill:true, fillTarget:4 };
       await roomRef.set({
         meta, rules: rr,
         members: { [S.uid]: { name:S.nickname, seat:0, isHost:true, ready:false, connected:true, controller:'human' } }
@@ -5961,13 +6062,13 @@ const Online = (function(){
         members=members||{};
         if(members[S.uid]) return members; // 再入室（座席はそのまま）
         const taken=new Set(Object.keys(members).map(k=>members[k].seat));
-        let seat=null; for(let i=0;i<4;i++){ if(!taken.has(i)){ seat=i; break; } }
+        let seat=null; for(let i=0;i<MAX_SEATS;i++){ if(!taken.has(i)){ seat=i; break; } }
         if(seat===null){ full=true; return; } // 満席 → abort
         members[S.uid]={ name:S.nickname, seat, isHost:false, ready:false, connected:true, controller:'human' };
         return members;
       });
     }catch(e){ setLobbyStatus('参加処理に失敗しました', true); return; }
-    if(full || (res && res.committed===false)){ setLobbyStatus('このルームは満席です（最大4人）', true); return; }
+    if(full || (res && res.committed===false)){ setLobbyStatus('このルームは満席です（最大'+MAX_SEATS+'人）', true); return; }
     await enterRoom(roomId, false);
   }
 
@@ -6031,9 +6132,12 @@ const Online = (function(){
       return '<div class="member-row"><div class="member-seat">'+(h.seat+1)+'</div>'
         +'<div class="member-name">'+escapeHtml(h.name||'プレイヤー')+meMark+'</div>'+tags.join('')+'</div>';
     });
+    const totalPlayers=roomTotalPlayers(meta, humanCount);
     if(cpuFill){
-      for(let s=0;s<4;s++){ if(!takenSeats.has(s)){
-        rows.push('<div class="member-row"><div class="member-seat cpu">'+(s+1)+'</div><div class="member-name">CPU</div><span class="member-tag">CPU</span></div>');
+      let cpuNo=0;
+      for(let s=0;s<totalPlayers;s++){ if(!takenSeats.has(s)){
+        cpuNo++;
+        rows.push('<div class="member-row"><div class="member-seat cpu">'+(s+1)+'</div><div class="member-name">CPU'+cpuNo+'</div><span class="member-tag">CPU</span></div>');
       } }
     }
     document.getElementById('memberList').innerHTML=rows.join('');
@@ -6041,7 +6145,14 @@ const Online = (function(){
 
     const hostBox=document.getElementById('hostControlsBox');
     hostBox.style.display=S.isHost?'block':'none';
-    if(S.isHost){ const r=document.querySelector('input[name="cpuFillChoice"][value="'+(cpuFill?'fill':'none')+'"]'); if(r) r.checked=true; }
+    if(S.isHost){
+      const r=document.querySelector('input[name="cpuFillChoice"][value="'+(cpuFill?'fill':'none')+'"]'); if(r) r.checked=true;
+      const target=(Number.isFinite(meta.fillTarget)?meta.fillTarget:4);
+      const disp=document.getElementById('fillTargetDisplay'); if(disp) disp.textContent=target;
+      const stepper=document.getElementById('fillTargetStepper'); if(stepper) stepper.style.display=cpuFill?'':'none';
+      const minus=document.getElementById('fillTargetMinusBtn'); if(minus) minus.disabled=target<=2;
+      const plus=document.getElementById('fillTargetPlusBtn'); if(plus) plus.disabled=target>=MAX_SEATS;
+    }
 
     const me=members[S.uid];
     const readyBtn=document.getElementById('readyToggleBtn');
@@ -6049,7 +6160,6 @@ const Online = (function(){
     else readyBtn.style.display='none';
 
     const startBtn=document.getElementById('startRoomBtn');
-    const totalPlayers=cpuFill?4:humanCount;
     const allReady=humanCount>0 && humans.filter(h=>h.connected!==false).every(h=>h.ready);
     const canStart=S.isHost && allReady && totalPlayers>=2;
     startBtn.style.display=S.isHost?'':'none';
@@ -6062,9 +6172,23 @@ const Online = (function(){
     const me=S.members[S.uid]; if(!me || !S.roomId) return;
     S.db.ref('rooms/'+S.roomId+'/members/'+S.uid+'/ready').set(!me.ready);
   }
+  // 実際に対戦する人数。CPU補充ONなら「目標人数」までCPUで埋めるが、人間がそれより
+  // 多ければ人間の数を優先する（後から入った人の席を奪わない）。上限はMAX_SEATS。
+  function roomTotalPlayers(meta, humanCount){
+    const target = (meta && Number.isFinite(meta.fillTarget)) ? meta.fillTarget : 4;
+    const total = (meta && meta.cpuFill) ? Math.max(humanCount, target) : humanCount;
+    return Math.min(MAX_SEATS, total);
+  }
   function setCpuFill(v){
     if(!S.isHost || !S.roomId) return;
     S.db.ref('rooms/'+S.roomId+'/meta/cpuFill').set(v==='fill');
+  }
+  function adjustFillTarget(delta){
+    if(!S.isHost || !S.roomId) return;
+    const cur = (S.meta && Number.isFinite(S.meta.fillTarget)) ? S.meta.fillTarget : 4;
+    const next = Math.max(2, Math.min(MAX_SEATS, cur + delta));
+    if(next===cur) return;
+    S.db.ref('rooms/'+S.roomId+'/meta/fillTarget').set(next);
   }
   function editRules(){
     applyRoomRulesToUI(S.rules);
@@ -6111,9 +6235,8 @@ const Online = (function(){
   function hostStartGame(){
     const members = S.members || {};
     const humans = Object.keys(members).map(u=>Object.assign({uid:u}, members[u])).sort((a,b)=>a.seat-b.seat);
-    const cpuFill = !!(S.meta && S.meta.cpuFill);
     const humanCount = humans.length;
-    const sc = cpuFill ? 4 : humanCount;
+    const sc = roomTotalPlayers(S.meta, humanCount);
     seatCount = sc; mySeat = 0; onlineRole = 'host';
     seatControllers = new Array(sc); seatNames = new Array(sc);
     S.seatToUid = {}; S.uidToSeat = {};
@@ -6338,7 +6461,7 @@ const Online = (function(){
 
   return {
     enterLobby, teardownLobby, refreshRooms, openCreate, createRoomFromSetup,
-    join, toggleReady, setCpuFill, editRules, saveRules, startRoom, leave,
+    join, toggleReady, setCpuFill, adjustFillTarget, editRules, saveRules, startRoom, leave,
     hostConfigBack, setNickname,
     broadcast, sendIntent,   // エンジン（render/human*）から呼ばれる同期フック
     _state:S,                // デバッグ／テスト用
@@ -6348,6 +6471,8 @@ const Online = (function(){
 
 function initOnlineUI(){
   applySetupMode('offline');
+  // 人数上限を表示している箇所はMAX_SEATSから埋める（定数を変えたら文言も追随するように）。
+  ['memberCountMax','maxSeatsNote'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=MAX_SEATS; });
   const on=(id,ev,fn)=>{ const el=document.getElementById(id); if(el) el.addEventListener(ev, fn); };
   on('modeOfflineBtn','click', ()=>{ applySetupMode('offline'); showTopScreen('setupScreen'); Feedback.setTrack('menu'); });
   on('modeOnlineBtn','click', ()=>{ Online.enterLobby(); });

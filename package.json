@@ -1,7 +1,7 @@
 {
   "name": "doubt-daifugo-app",
   "version": "1.0.0",
-  "description": "ブラウザだけで遊べる大富豪（大貧民）Webアプリ。CPU対戦（1人 vs CPU3人）と、友人と最大4人のオンライン対戦の両方に対応。Capacitorでラップし、Android版としても配信している。",
+  "description": "ブラウザだけで遊べる大富豪（大貧民）Webアプリ。CPU対戦と、友人と最大8人のオンライン対戦の両方に対応（2〜8人、不足分はCPUが補充）。Capacitorでラップし、Android版としても配信している。",
   "scripts": {
     "sync:web": "node scripts/sync-web.js",
     "android:sync": "npm run sync:web && npx cap sync android",
