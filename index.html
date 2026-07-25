@@ -1156,15 +1156,15 @@
     </div>
     <div class="rules-box" id="rulesBox">
       <div class="rules-box-summary" id="activeRulesLine"></div>
-      ・4人（あなた + CPU3人）で配ります。<br>
+      ・2〜4人（オフラインはあなた+CPU、オンラインは友人とも対戦できます）で配ります。<br>
       ・場に出ているカードより<b>同じ枚数・強いランク</b>のカードを出します（ペア・トリプルもOK）。<br>
       ・強さは弱い順に <b>3,4,5,6,7,8,9,10,J,Q,K,A,2</b>。<br>
       ・<b>8切り</b>・<b>革命</b>を含め、拡張ルールはすべて「ルール設定に戻る」から個別にON/OFFできます。<br>
-      ・全員がパスすると場が流れます。手札が0枚になった順に<b>大富豪・富豪・貧民・大貧民</b>が決まります。
+      ・全員がパスすると場が流れます。手札が0枚になった順に<b>大富豪・富豪・（人数に応じて中間の順位）・大貧民</b>が決まります。
       <div id="doubtRulesBox" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed rgba(231,205,123,0.4);">
         <b>ダウト大富豪モード</b><br>
         ・カードは<b>出すカードを宣言したうえで、すべて裏向き</b>に出します。宣言はウソでもかまいません。<br>
-        ・自分の番の選択肢は<b>出す・パス・ダウト</b>の3つ。ダウトは<b>場の一番上の伏せ札</b>にだけ宣言できます。<br>
+        ・自分の番の選択肢は<b>出す・パス・ダウト</b>の3つ。ダウトは<b>場の一番上の伏せ札</b>にだけ宣言できます（「手番外ダウト」ルールが有効な場合は、CPUが重ねる直前の短い猶予中に限り、自分の番でなくてもダウトできます）。<br>
         ・ダウトが外れたら<b>アウト1つ</b>と、そのトリック＋次のトリックが<b>休み</b>になります。<br>
         ・ウソを見抜かれたら、出した札は<b>全部手札に戻り</b>、<b>アウト1つ</b>と1トリック休み。見抜いた人が親になります。<br>
         ・<b>アウトが3つたまると、その時点で強制敗北</b>（最下位候補）です。<br>
@@ -1601,7 +1601,7 @@ const RULE_DEFS = [
   {key:'fwStrongest', label:'最強カード上がり', desc:'最強ランク（通常2とジョーカー、11バック/革命中は3とジョーカー）で上がると反則。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
   {key:'fwJokerWild', label:'ジョーカーワイルド上がり', desc:'ジョーカーを他ランクのワイルドカードとして使った手で上がると反則です（純粋なジョーカー単騎/複数での上がりは対象外）。', sub:true, compact:true, dependsOn:'forbiddenWin', category:'lock'},
   {key:'miyakoOchi', label:'都落ち', desc:'前回の大富豪が今回1位になれなかった場合、その時点で最下位候補になります（カード交換ありの連戦時のみ意味を持ちます）。', category:'lock'},
-  {key:'openDoubt', label:'手番外ダウト', desc:'ダウト大富豪モード専用。CPUが場に重ねて出す直前、あなたがダウトできる局面だけ短い猶予（秒数は右で調整可）が入り、自分の番でなくてもダウトできます。見送れば通常どおりCPUがそのまま出します（現在はオフライン対戦のみ対応）。', category:'lock'}
+  {key:'openDoubt', label:'手番外ダウト', desc:'ダウト大富豪モード専用。CPU（人数不足の補充や切断で引き継いだ席）が場に重ねて出す直前、あなたがダウトできる局面だけ短い猶予（秒数は右で調整可）が入り、自分の番でなくてもダウトできます。見送れば通常どおりCPUがそのまま出します。オンライン対戦でも使えます（人間同士が重ねる場面は対象外です）。', category:'lock'}
 ];
 
 let rules = {};
@@ -5744,9 +5744,11 @@ function showUpdateToast(){
 }
 
 /* ===================================================================
-   オンライン対戦：モード選択・ロビー・待機室（フェーズ1）
-   ホスト権威モデルの土台。実対戦の同期はフェーズ3以降で追加する。
-   Firebase SDKはオンライン選択時のみ遅延ロードし、オフラインは無依存を維持する。
+   オンライン対戦：モード選択・ロビー・待機室・対局同期（ホスト権威モデル）
+   ホストのブラウザがゲームエンジンをそのまま動かし、ゲストへは「自分視点に
+   伏せた（redacted）スナップショット」を配信する。操作はゲストからのintentで
+   受け取る。Firebase SDKはオンライン選択時のみ遅延ロードし、オフラインは
+   無依存を維持する。
    =================================================================== */
 
 function escapeHtml(s){
@@ -5830,7 +5832,7 @@ const Online = (function(){
     auth:null, db:null, uid:null, nickname:'プレイヤー',
     roomId:null, isHost:false, meta:null, members:{}, rules:null,
     roomUnsub:null, roomsUnsub:null, notifiedStart:false,
-    // 対局中の同期用（フェーズ3）
+    // 対局中の同期用
     inGame:false, seatToUid:{}, uidToSeat:{},
     viewUnsub:null, intentUnsub:null,
     mySeq:0, processedSeq:{}, lastViewHash:{}

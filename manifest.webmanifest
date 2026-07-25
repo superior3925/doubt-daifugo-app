@@ -1,7 +1,7 @@
 {
   "name": "ダウト大富豪",
   "short_name": "ダウト大富豪",
-  "description": "宣言し、伏せ、見抜く。CPU3人と対戦する大富豪アプリ（ダウト大富豪モード搭載）",
+  "description": "宣言し、伏せ、見抜く。CPU戦もオンライン対戦もできる大富豪アプリ（ダウト大富豪モード搭載）",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
