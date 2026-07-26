@@ -5258,11 +5258,12 @@ function render(){
   doubtBtn.disabled = !canDoubt;
   doubtBtn.classList.toggle('available', canDoubt);
 
-  // 様子見ボタンはホスト自身（オフライン／オンラインhost-ui）だけに出す。1人のゲストの
-  // 都合で、まだ考え中かもしれない他の参加者の猶予を早期終了させてしまうのを避けるため
-  // （ゲストは「ダウトする」か「何もせず待つ」のどちらかになる）。
+  // 様子見ボタンはオフラインだけに出す。オンラインでは全員が「ダウトする」か「何もせず待つ」
+  // のどちらかに統一する。誰か1人（ホストも含む）の都合で、まだ考え中かもしれない他の参加者
+  // の猶予を早期終了させてしまうのを避けるため（全員に出す案もあるが、ゲストの操作をホストへ
+  // 新しいintent往復で伝える実装が要るのに対し、こちらはボタンを隠すだけで済み実装が単純）。
   const skipDoubtBtn = document.getElementById('skipDoubtBtn');
-  if(skipDoubtBtn) skipDoubtBtn.style.display = (doubtWindowOpen && onlineRole!=='guest') ? 'inline-block' : 'none';
+  if(skipDoubtBtn) skipDoubtBtn.style.display = (doubtWindowOpen && onlineRole==='offline') ? 'inline-block' : 'none';
 
   document.getElementById('playBtn').disabled = !isYourTurn || forcedPassOnly;
   const honestBtn = document.getElementById('honestBtn');
