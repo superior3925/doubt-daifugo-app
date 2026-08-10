@@ -340,6 +340,36 @@
   .decl-history-chip.latest{ opacity:1; }
   .decl-history-chip.fading{ opacity:0.55; }
 
+  /* --- カオスモードの特殊カード --- */
+  .chaos-toggle-block.disabled-rule{ opacity:0.45; }
+  .chaos-toggle-block.disabled-rule .switch .slider{ cursor:not-allowed; }
+  .chaos-wip-note{ margin-top:4px; color:var(--gold-soft); opacity:0.8; }
+  .chaos-discard-pile{ top:10px; right:auto; left:14px; }
+  .chaos-row{
+    margin-top:8px; padding-top:8px; border-top:1px dashed rgba(231,205,123,0.35);
+    display:flex; flex-direction:column; gap:6px; align-items:center;
+  }
+  .chaos-row-label{ font-size:11px; color:var(--gold-soft); letter-spacing:0.08em; }
+  .chaos-cards{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  .chaos-card{
+    max-width:190px; padding:5px 10px; border-radius:10px; font-size:11px; line-height:1.35;
+    border:1px solid var(--gold); background:rgba(0,0,0,0.3); color:var(--cream);
+    text-align:left; font-family:inherit;
+  }
+  .chaos-card .chaos-card-name{ font-weight:700; color:var(--gold-soft); }
+  .chaos-card.empty{ border-style:dashed; opacity:0.55; }
+  /* モーダル（.result-card）は cream 地なので、盤面用の淡色文字のままだと読めない。
+     ライト地に合わせて反転させる（--cream/--ink はテーマで入れ替わるので両テーマで成立する）。 */
+  .result-card .chaos-card{
+    background:rgba(0,0,0,0.05); border-color:rgba(0,0,0,0.28); color:var(--ink);
+  }
+  .result-card .chaos-card .chaos-card-name{ color:var(--red-hanko); }
+  .chaos-count-badge{
+    display:inline-block; margin-top:2px; padding:1px 7px; border-radius:999px;
+    border:1px solid var(--gold); background:rgba(0,0,0,0.3);
+    color:var(--gold-soft); font-size:9px; font-weight:700;
+  }
+
   .you-row{ text-align:center; border-radius:16px; padding:8px; transition:box-shadow .2s; }
   .you-label-row{ display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
   .you-label{ font-size:13px; font-weight:700; color:var(--gold-soft); }
@@ -1055,6 +1085,14 @@
         <div class="rule-desc">全員が出すカードを宣言したうえで、すべて裏向きに出します。宣言はウソでもかまいません。怪しいと思ったら自分の番に「ダウト」でめくれます。外すとアウト、見抜けば相手にアウト。アウト3つで強制敗北です。</div>
       </div>
     </div>
+    <div class="mode-toggle-block chaos-toggle-block" id="chaosModeBlock">
+      <label class="switch"><input type="checkbox" id="chaosModeToggle"><span class="slider"></span></label>
+      <div>
+        <div class="mode-toggle-title">カオスモード（開発中）</div>
+        <div class="rule-desc">ダウト大富豪モード専用。トランプとは別に「特殊カード」が配られ、発動すると場や手札が大きく動きます。開始時に2枚、親になるたびに1枚（手札は最大3枚まで）。特殊カードは常に表向きで処理されるためウソはつけず、発動内容は全員が確認できます。何枚持っていても勝敗には関係なく、トランプがなくなった時点で上がりです。バランス確保のため、都落ちは適用されません。</div>
+        <div class="rule-desc chaos-wip-note" id="chaosWipNote">現在は特殊カードの配布・表示までを実装しています（効果の発動は今後追加）。</div>
+      </div>
+    </div>
     <div class="setup-actions-top">
       <button class="rules-toggle" id="selectAllBtn" type="button">すべて選択</button>
       <button class="rules-toggle" id="selectNoneBtn" type="button">すべて解除</button>
@@ -1210,6 +1248,7 @@
       <div class="game-main">
         <div class="table">
           <button class="discard-pile" id="discardPileBtn" type="button" title="捨て札を見る">🂠 <span id="discardCount">0</span></button>
+          <button class="discard-pile chaos-discard-pile" id="chaosDiscardBtn" type="button" title="使用済みの特殊カードを見る" style="display:none;">✨ <span id="chaosDiscardCount">0</span></button>
           <div class="turn-order-strip" id="turnOrderStrip"></div>
           <div class="opponents-row" id="opponents"></div>
           <div class="field-area">
@@ -1228,6 +1267,10 @@
             </div>
             <div class="hand" id="hand"></div>
             <div class="hint-line" id="handHint" style="display:none;"></div>
+            <div class="chaos-row" id="chaosHandRow" style="display:none;">
+              <div class="chaos-row-label" id="chaosHandLabel">特殊カード</div>
+              <div class="chaos-cards" id="chaosHand"></div>
+            </div>
           </div>
         </div>
 
@@ -1730,6 +1773,114 @@ let fastForward = false;
 let resultsRecorded = false;
 function turboMs(ms){ return fastForward ? 20 : ms; }
 
+// ---- カオスモード（ダウト大富豪モード専用の拡張） ----
+// トランプの手札とは完全に別に「特殊カード」の手札を持ち、発動すると場や手札に干渉する。
+// 特殊カードは勝敗に一切関与しない（何枚残っていても、トランプが尽きた時点で上がり）。
+// 常に表向きで処理する＝特殊カードでウソはつけず、発動内容は必ず全員が確認できる。
+// 山札は無く、必要なときにカタログからランダムに生成する（＝枯渇しない）。
+let chaosHands = [];            // 席 -> [{id, type}]（各席の特殊カード手札。秘匿情報）
+let chaosDiscard = [];          // 使用済みの特殊カード [{id, type, seat}]（公開情報）
+let chaosUidSeq = 0;
+// このゲームで何回目のトリックか。0 = ゲーム開始時の最初の親（この親には配らない）。
+let trickIndex = 0;
+// 特殊カードを配布済みのトリック番号。同じトリックで二重に配らないための番人。
+let chaosGrantedForTrick = -1;
+const CHAOS_MAX_HAND = 3;       // 手札上限（超える分は配られない）
+const CHAOS_INITIAL_HAND = 2;   // ゲーム開始時の配布枚数
+
+// 特殊カードのカタログ。timing は発動タイミングで、効果の実装（フェーズ2以降）で使う。
+//   preplay      … 自分のターンでトランプを出す前に発動できる
+//   doubt-alt    … ダウト宣言の代わりに発動できる
+//   auto-out3    … アウトが3つたまったときに強制発動する
+//   auto-doubted … ダウトされて正直だったときに強制発動する
+const CHAOS_CARDS = [
+  {type:'nantoka', timing:'preplay', name:'なんとかなれーッ!!',
+   desc:'このターンはウソをつけない代わりに、出した札で必ず場が流れて自分の番になります（4止め・スペ3返しでも返されません）。出せる札が無ければ空打ちとなり効果は消えます。'},
+  {type:'hachiware', timing:'preplay', name:'なんとかしろーッ!!ハチワレーッ!!',
+   desc:'場のカードをランダムな札に変えます（枚数は変わりません）。変化した札の特殊効果は発動せず、スートしばり・数しばりはすべて解除されます。'},
+  {type:'shinimasen', timing:'auto-out3', name:'僕は死にましぇん',
+   desc:'アウトが3つたまったとき手札にあると強制発動。その敗北を拒否し、アウトが1つに戻ります（禁止上がりなどの反則負けには効果がありません）。'},
+  {type:'osoreta', timing:'preplay', name:'恐れたやつが負けなのさ',
+   desc:'アウトが0のプレイヤー全員にアウトを2つ与え、捨て札からランダムに2枚ずつ渡します。すでにアウトが1つ以上ある相手には効果がありません。'},
+  {type:'kinoko', timing:'preplay', name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
+   desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードを1枚捨てさせます。'},
+  {type:'katerukayo', timing:'doubt-alt', name:'お前が俺に!!勝てるわけねェだろうが!!!!',
+   desc:'ダウト宣言の代わりに発動。通常のダウトと同じく相手の札をめくります。成功なら手札を2枚まで相手に渡せ、失敗してもアウト・休みのペナルティを受けません。'},
+  {type:'orenoTurn', timing:'preplay', name:'ずっと俺のターン!!ドローっ!!',
+   desc:'ウソをつけない代わりに、ターンを2回続けて行います（7渡し・8切りなどの特殊効果は通常どおり発動）。終了後、特殊カードを1枚引きます。'},
+  {type:'mienai', timing:'preplay', name:'見えないものを見ようとして',
+   desc:'このトリックの間だけ、全員の手札が自分にだけ見えるようになります。'},
+  {type:'irekawari', timing:'preplay', name:'わたしたち、入れ替わってる！？',
+   desc:'誰かが上がったあとにだけ発動可能。全員の残り手札を集めてシャッフルし、元と同じ枚数ずつ配り直します。'},
+  {type:'yoroshiku', timing:'preplay', name:'よろしくお願いしまああああす！',
+   desc:'自分が札を出したあと、ほかのプレイヤー全員にカードを1枚ずつ渡します。'},
+  {type:'tsukareten', timing:'auto-doubted', name:'お前さぁ…疲れてんだよ',
+   desc:'ダウトされて正直だったときに強制発動。場は必ず流れて次の番になり、ダウトした相手から特殊カード1枚と最も強い札1枚をもらいます。'},
+  {type:'ikiru', timing:'preplay', name:'生きるのは最高だ',
+   desc:'自分の手札がすべて1つずつ強くなります（2はジョーカーに、ジョーカーは変化なし。革命中は逆に弱くなります）。'},
+  {type:'shutou', timing:'preplay', name:'恐ろしく速い手刀',
+   desc:'各プレイヤーから、最も強い札を1枚ずつランダムにもらいます。'},
+  {type:'genkai', timing:'preplay', name:'つーかこれが限界',
+   desc:'自分の手札を4枚選び、全スートの4に変えます。'},
+  {type:'tsuree', timing:'preplay', name:'やっぱつれぇわ',
+   desc:'自分のアウトが2つ以上のときだけ発動可能。特殊カードをランダムに2枚もらい、手札を2枚選んで表向きに捨てます。'}
+];
+const CHAOS_BY_TYPE = CHAOS_CARDS.reduce((m,c)=>{ m[c.type]=c; return m; }, {});
+function chaosDef(type){ return CHAOS_BY_TYPE[type] || {name:'不明な特殊カード', desc:'', timing:'preplay'}; }
+// カオスモードはダウト大富豪モードの上でしか成立しない（伏せ札・アウトの仕組みに乗るため）。
+// 設定UI側でも連動させているが、ここでも両方を条件にして単一の真実源にする。
+function isChaosMode(){ return !!(rules.chaosMode && isDoubtMode()); }
+function mintChaosId(){ return 'x'+(++chaosUidSeq); }
+function drawChaosCard(){
+  const def = CHAOS_CARDS[Math.floor(Math.random()*CHAOS_CARDS.length)];
+  return {id: mintChaosId(), type: def.type};
+}
+function chaosHandOf(seat){
+  if(!chaosHands[seat]) chaosHands[seat] = [];
+  return chaosHands[seat];
+}
+// 1枚配る。上限に達している席・すでに順位が確定した席には配らない。配れたら true。
+function grantChaosCard(seat, reason){
+  if(!isChaosMode()) return false;
+  if(seat==null || seat<0 || seat>=seatCount) return false;
+  if(finishedOrder.includes(seat)) return false;
+  const hand = chaosHandOf(seat);
+  if(hand.length >= CHAOS_MAX_HAND){
+    log(playerName(seat)+'は特殊カードが上限（'+CHAOS_MAX_HAND+'枚）のため配られませんでした（'+reason+'）');
+    return false;
+  }
+  const card = drawChaosCard();
+  hand.push(card);
+  log(playerName(seat)+'に特殊カード「'+chaosDef(card.type).name+'」が配られました（'+reason+'）');
+  return true;
+}
+function resetChaosState(){
+  chaosHands = Array.from({length: seatCount}, ()=>[]);
+  chaosDiscard = [];
+  trickIndex = 0;
+  chaosGrantedForTrick = -1;
+  if(isChaosMode()){
+    for(let s=0;s<seatCount;s++){
+      for(let k=0;k<CHAOS_INITIAL_HAND;k++) chaosHandOf(s).push(drawChaosCard());
+    }
+  }
+}
+// 新しいトリックの親になった席へ1枚配る。ゲーム開始時の親（trickIndex===0）は対象外。
+// 手番が確定したあと（＝engineが落ち着いた時点）に呼ぶので、親は配られたカードを
+// そのターンからすぐ使える。同じトリックで二重に配らないよう chaosGrantedForTrick で守る。
+function grantChaosCardToTrickLeader(){
+  if(!isChaosMode()) return false;
+  if(gameOver || field!==null) return false;
+  // 手番がまだ確定していない局面（めくり演出中・追加アクション待ち・カード交換中）では
+  // 配らない。これらが片付くと finalizeTurn などから再び scheduleNextIfCpu が呼ばれるので、
+  // 配布は取りこぼされずその時点まで先送りされるだけ。
+  if(revealPending || exchangeInProgress || pendingAction || pendingRemoteAction) return false;
+  if(trickIndex<=0) return false;
+  if(chaosGrantedForTrick===trickIndex) return false;
+  chaosGrantedForTrick = trickIndex;
+  return grantChaosCard(currentPlayerIndex, '親になった');
+}
+
 // ---- 手番外ダウト（openDoubtルール）：CPUが場に重ねる直前に、自分がダウト可能な
 // 局面だけ短い猶予を挟み、その間だけ手番でなくてもダウトできるようにする。----
 // pendingCpuPlay: 猶予中のまま保留されているCPUの手。オフライン／オンラインhostでは
@@ -1945,6 +2096,7 @@ function captureRulesToDoc(){
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
   cloudDoc.rules = {
     doubtMode: document.getElementById('doubtModeToggle').checked,
+    chaosMode: document.getElementById('chaosModeToggle').checked,
     cpuLevel: levelInput ? levelInput.value : 'normal',
     jokerCount: jokerCount,
     jokerCountRandom: jokerCountRandom,
@@ -1986,6 +2138,10 @@ function applyRulesFromDoc(){
     document.getElementById('doubtModeToggle').checked = r.doubtMode;
     applyDoubtTheme(r.doubtMode);
   }
+  if(typeof r.chaosMode==='boolean'){
+    const ccb = document.getElementById('chaosModeToggle');
+    if(ccb) ccb.checked = r.chaosMode;
+  }
   if(r.cpuLevel){
     const radio = document.querySelector('input[name="cpuLevelChoice"][value="'+r.cpuLevel+'"]');
     if(radio) radio.checked = true;
@@ -1994,6 +2150,7 @@ function applyRulesFromDoc(){
   syncJokerStepperState();
   syncOpenDoubtStepperState();
   syncOfflineSeatStepperState();
+  syncChaosToggleState();
 }
 // ルール設定が変わった時（チェックボックス等）に呼ぶ共通ハンドラ。
 function onRulesChanged(){
@@ -2594,7 +2751,7 @@ function turnOrderSeats(){
 function activeRulesSummary(){
   const active = RULE_DEFS.filter(r=>rules[r.key]).map(r=> r.key==='jokers' ? 'ジョーカー'+(rules.jokerCount||2)+'枚' : r.label);
   const rulesPart = active.length ? '有効ルール: '+active.join('、') : '追加ルールなし（基本ルールのみ）';
-  const modePart = isDoubtMode() ? 'ダウト大富豪モード ／ ' : '';
+  const modePart = isDoubtMode() ? (isChaosMode() ? 'ダウト大富豪モード＋カオスモード ／ ' : 'ダウト大富豪モード ／ ') : '';
   return modePart+'CPU強さ: '+CPU_LEVEL_LABELS[cpuLevel]+' ／ '+rulesPart;
 }
 
@@ -2694,6 +2851,9 @@ function clearField(discardLabel){
     }
     currentTrickCards = [];
     currentTrickHiddenIds = new Set();
+    // 実際にトリックが1つ終わった時だけ数える（field が無い状態での呼び出しでは数えない）。
+    // カオスモードで「親になるたび1枚」を配る基準になる。
+    trickIndex++;
     if(flowOutTimer) clearTimeout(flowOutTimer);
     flowOutTimer = setTimeout(()=>{ flowingOutCards = null; flowOutTimer = null; render(); }, 600);
   }
@@ -2768,6 +2928,8 @@ function dealFreshHands(){
   spectating = false;
   exchangeInProgress = false;
   clearField();
+  // clearField() が trickIndex を進めうるので、カオスの初期化は必ずその後に行う。
+  resetChaosState();
   document.getElementById('overlay').classList.remove('show');
   document.getElementById('actionOverlay').classList.remove('show');
   document.getElementById('historyOverlay').classList.remove('show');
@@ -3541,6 +3703,9 @@ function scheduleNextIfCpu(){
   if(gameOver) return;
   // ゲストはエンジンを進めない（ホストが配信するスナップショットを描画するだけ）。
   if(onlineRole==='guest') return;
+  // 手番が確定したこの時点が「誰が親になったか」の唯一の判定点。カオスモードで
+  // 親になった席に特殊カードを配り、配れたら描画を更新してから手番の処理へ進む。
+  if(grantChaosCardToTrickLeader()) render();
   // 席ごとの controller で分岐：local-cpu は自動、host-ui（自席）とremote-human は
   // それぞれ手元UI／リモートのintentを待つので、ここでは何もしない。
   if(seatController(currentPlayerIndex)==='local-cpu'){
@@ -4562,6 +4727,47 @@ function showHistoryModal(html){
 function closeHistoryModal(){
   document.getElementById('historyOverlay').classList.remove('show');
 }
+// 自席の特殊カード欄と、使用済み特殊カードのボタンを更新する。中身を見せるのは自席だけで、
+// 相手席には枚数バッジしか出さない（特殊カードの手札は秘匿情報）。使用済みの特殊カードは
+// 「常に表向きで処理される」仕様どおり、全員に公開する。
+function renderChaosArea(){
+  const row = document.getElementById('chaosHandRow');
+  const btn = document.getElementById('chaosDiscardBtn');
+  const on = isChaosMode();
+  if(row) row.style.display = on ? 'flex' : 'none';
+  if(btn) btn.style.display = on ? 'flex' : 'none';
+  if(!on) return;
+  const mine = (mySeat>=0 && mySeat<seatCount) ? chaosHandOf(mySeat) : [];
+  const label = document.getElementById('chaosHandLabel');
+  if(label) label.textContent = '特殊カード（'+mine.length+'/'+CHAOS_MAX_HAND+'枚）';
+  const host = document.getElementById('chaosHand');
+  if(host){
+    host.innerHTML = mine.length===0
+      ? '<div class="chaos-card empty">手持ちの特殊カードはありません</div>'
+      : mine.map(c=>{
+          const d = chaosDef(c.type);
+          return '<div class="chaos-card" title="'+escapeHtml(d.desc)+'">'
+            + '<div class="chaos-card-name">'+escapeHtml(d.name)+'</div></div>';
+        }).join('');
+  }
+  const cnt = document.getElementById('chaosDiscardCount');
+  if(cnt) cnt.textContent = chaosDiscard.length;
+}
+function openChaosDiscardModal(){
+  const html = chaosDiscard.length===0
+    ? '<h2>使用済みの特殊カード</h2><p>まだ使われた特殊カードはありません。</p>'
+    : '<h2>使用済みの特殊カード</h2><div style="max-height:55vh;overflow-y:auto;text-align:left;">'
+      + chaosDiscard.slice().reverse().map(c=>{
+          const d = chaosDef(c.type);
+          return '<div class="chaos-card" style="max-width:none;margin-bottom:8px;">'
+            + '<div class="chaos-card-name">'+escapeHtml(d.name)+'</div>'
+            + '<div>'+escapeHtml(playerName(c.seat))+' が使用</div>'
+            + '<div style="opacity:0.75;margin-top:3px;">'+escapeHtml(d.desc)+'</div>'
+            + '</div>';
+        }).join('')
+      + '</div>';
+  showHistoryModal(html);
+}
 function openDiscardHistoryModal(){
   const html = discardHistory.length===0
     ? '<h2>捨て札</h2><p>まだ捨て札はありません。</p>'
@@ -5153,10 +5359,13 @@ function render(){
     const activeClass = (currentPlayerIndex===i && !gameOver && !pendingAction && !exchangeInProgress) ? 'active' : '';
     const sitOut = (isDoubtMode() && sitOutTricks[i]>0 && !finishedOrder.includes(i))
       ? '<div class="sitout-badge">休み</div>' : '';
+    // 特殊カードは秘匿情報なので、相手席には枚数だけを出す（中身は出さない）。
+    const chaosBadge = isChaosMode()
+      ? '<div class="chaos-count-badge">特殊 '+chaosHandOf(i).length+'枚</div>' : '';
     return '<div class="opp '+activeClass+(spectate?' spectate':'')+' '+slotClass+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
       + cardsCell
       + '<div class="count">残り '+hands[i].length+'枚</div>'
-      + outPipsHtml(i)+'</div>';
+      + outPipsHtml(i)+chaosBadge+'</div>';
   }).join('');
   const oppRowEl = document.getElementById('opponents');
   oppRowEl.innerHTML = oppHtml;
@@ -5265,6 +5474,8 @@ function render(){
     : 'あなたの手札') + outPipsHtml(mySeat);
 
   document.getElementById('youRow').classList.toggle('active-turn', isYourTurn);
+
+  renderChaosArea();
 
   const handHint = document.getElementById('handHint');
   if(isDoubtMode()){
@@ -5417,6 +5628,12 @@ function buildRedactedView(viewerSeat){
     // 実カードだけ」に分けて送り、ゲスト側で枚数から他席の伏せプレースホルダを再構成する。
     handCounts: hands.map(h=>h.length),
     myHand: (hands[viewerSeat]||[]).map(c=>({rank:c.rank, suit:c.suit, id:c.id})),
+    // カオスモードの特殊カードも手札と同じ扱い：他席には枚数だけ、自席には中身を送る。
+    // 手札と同様、RTDBが空配列を保存しない問題を避けるため「全席の枚数（数値配列）」と
+    // 「自席の実カード」に分ける。使用済みの特殊カードは公開情報なので全員へそのまま送る。
+    chaosHandCounts: Array.from({length: seatCount}, (_,i)=> (chaosHands[i]||[]).length),
+    myChaosHand: (chaosHands[viewerSeat]||[]).map(c=>({id:c.id, type:c.type})),
+    chaosDiscard: chaosDiscard.map(c=>({id:c.id, type:c.type, seat:c.seat})),
     // 観戦モード：確定済みの席にだけ全席の実カードを渡す。席番号キーのオブジェクトにして、
     // 空席は自然に欠落させる（Firebaseは空配列を保存しないため、配列だと壊れる）。
     observer,
@@ -5494,6 +5711,13 @@ function applyView(v){
     if(_obs && _obs[i]) return _obs[i].map(c=>c);
     return Array.from({length:n},()=>({hidden:true}));
   });
+  // 特殊カードも手札と同じ再構成：自席は中身つき、他席は枚数ぶんの伏せプレースホルダ。
+  // 観戦者にも他席の特殊カードの中身は渡していないので、ここでは常に枚数だけを復元する。
+  const _chaosCounts = v.chaosHandCounts || [];
+  const _myChaos = (v.myChaosHand||[]).map(c=>c);
+  chaosHands = Array.from({length: seatCount}, (_,i)=>
+    i===mySeat ? _myChaos : Array.from({length:_chaosCounts[i]||0},()=>({hidden:true})));
+  chaosDiscard = v.chaosDiscard || [];
   field = reviveField(v.field);
   discardHistory = (v.discardHistory||[]).map(d=>({reason:d.reason, cards:d.cards, hiddenIds:new Set(d.hiddenIds||[])}));
   currentTrickCards = []; currentTrickHiddenIds = new Set();
@@ -5570,6 +5794,27 @@ function syncSubRuleStates(){
     subCb.disabled = !parentCb.checked;
     if(!parentCb.checked) subCb.checked = false;
   });
+}
+// カオスモードはダウト大富豪モードの上でしか成立しないので、ダウトがオフなら選べない。
+// また、カオスモードでは都落ちを適用しないので、こちらもチェックを外して無効化する
+// （オンにしたまま無視するより、選べないことが見えている方が誤解が少ない）。
+function syncChaosToggleState(){
+  const doubtCb = document.getElementById('doubtModeToggle');
+  const chaosCb = document.getElementById('chaosModeToggle');
+  const block = document.getElementById('chaosModeBlock');
+  if(!doubtCb || !chaosCb) return;
+  const doubtOn = doubtCb.checked;
+  if(!doubtOn) chaosCb.checked = false;
+  chaosCb.disabled = !doubtOn;
+  if(block) block.classList.toggle('disabled-rule', !doubtOn);
+  // 都落ちの項目は .rule-item:has(input:disabled) で自動的に淡色表示になるので、
+  // ここではチェックを外して disabled にするだけでよい（syncSubRuleStates と同じ流儀）。
+  const miyako = document.getElementById('rule_miyakoOchi');
+  if(miyako){
+    const blocked = chaosCb.checked;
+    if(blocked) miyako.checked = false;
+    miyako.disabled = blocked;
+  }
 }
 
 function adjustJokerCount(delta){
@@ -5742,16 +5987,23 @@ document.getElementById('selectAllBtn').addEventListener('click', ()=>{
   RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = true);
   syncSubRuleStates();
   syncJokerStepperState();
+  syncChaosToggleState();   // 一括選択で都落ちが入っても、カオスモード中なら外し直す
   onRulesChanged();
 });
 document.getElementById('selectNoneBtn').addEventListener('click', ()=>{
   RULE_DEFS.forEach(r=> document.getElementById('rule_'+r.key).checked = false);
   syncSubRuleStates();
   syncJokerStepperState();
+  syncChaosToggleState();
   onRulesChanged();
 });
 document.getElementById('doubtModeToggle').addEventListener('change', (e)=>{
   applyDoubtTheme(e.target.checked);
+  syncChaosToggleState();
+  onRulesChanged();
+});
+document.getElementById('chaosModeToggle').addEventListener('change', ()=>{
+  syncChaosToggleState();
   onRulesChanged();
 });
 // CPUの強さ（ラジオ）の変更もクラウド同期対象。
@@ -5777,6 +6029,10 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
   rules.jokerCountRandom = jokerCountRandom;
   rules.doubtWindowSec = doubtWindowSec;
   rules.doubtMode = document.getElementById('doubtModeToggle').checked;
+  rules.chaosMode = document.getElementById('chaosModeToggle').checked && rules.doubtMode;
+  // カオスモードではゲームバランス確保のため都落ちを適用しない。設定UIでもチェックを
+  // 外して無効化しているが、ここでも落として rules を単一の真実源にする。
+  if(rules.chaosMode) rules.miyakoOchi = false;
   applyDoubtTheme(rules.doubtMode);
   const levelInput = document.querySelector('input[name="cpuLevelChoice"]:checked');
   cpuLevelSetting = levelInput ? levelInput.value : 'normal';
@@ -5799,6 +6055,7 @@ document.getElementById('startGameBtn').addEventListener('click', ()=>{
 });
 document.getElementById('restoreTab').addEventListener('click', restoreActionModal);
 document.getElementById('discardPileBtn').addEventListener('click', openDiscardHistoryModal);
+document.getElementById('chaosDiscardBtn').addEventListener('click', openChaosDiscardModal);
 document.getElementById('sortToggleBtn').addEventListener('click', ()=>{
   handSortDescending = !handSortDescending;
   document.getElementById('sortToggleBtn').textContent = '並び順: ' + (handSortDescending ? '強い→左' : '強い→右');
@@ -5991,7 +6248,10 @@ function readRoomRulesFromUI(){
   const flags={};
   RULE_DEFS.forEach(r=>{ const cb=document.getElementById('rule_'+r.key); if(cb) flags[r.key]=cb.checked; });
   const lvl=document.querySelector('input[name="cpuLevelChoice"]:checked');
-  return { flags, doubtMode: document.getElementById('doubtModeToggle').checked, jokerCount: jokerCount, jokerCountRandom: jokerCountRandom, doubtWindowSec: doubtWindowSec, cpuLevel: lvl?lvl.value:'normal' };
+  const doubtOn = document.getElementById('doubtModeToggle').checked;
+  const chaosOn = document.getElementById('chaosModeToggle').checked && doubtOn;
+  if(chaosOn) flags.miyakoOchi = false;   // カオスモードでは都落ちを適用しない
+  return { flags, doubtMode: doubtOn, chaosMode: chaosOn, jokerCount: jokerCount, jokerCountRandom: jokerCountRandom, doubtWindowSec: doubtWindowSec, cpuLevel: lvl?lvl.value:'normal' };
 }
 function applyRoomRulesToUI(rr){
   if(!rr) return;
@@ -6001,14 +6261,15 @@ function applyRoomRulesToUI(rr){
   const randomCb=document.getElementById('jokerCountRandomCb'); if(randomCb) randomCb.checked=jokerCountRandom;
   if(typeof rr.doubtWindowSec==='number'){ doubtWindowSec=Math.max(1,Math.min(10,rr.doubtWindowSec)); const dwd=document.getElementById('doubtWindowSecDisplay'); if(dwd) dwd.textContent=doubtWindowSec; }
   if(typeof rr.doubtMode==='boolean'){ document.getElementById('doubtModeToggle').checked=rr.doubtMode; applyDoubtTheme(rr.doubtMode); }
+  if(typeof rr.chaosMode==='boolean'){ const ccb=document.getElementById('chaosModeToggle'); if(ccb) ccb.checked=rr.chaosMode; }
   if(rr.cpuLevel){ const radio=document.querySelector('input[name="cpuLevelChoice"][value="'+rr.cpuLevel+'"]'); if(radio) radio.checked=true; }
-  syncSubRuleStates(); syncJokerStepperState(); syncOpenDoubtStepperState();
+  syncSubRuleStates(); syncJokerStepperState(); syncOpenDoubtStepperState(); syncChaosToggleState();
 }
 function roomRulesSummaryText(rr){
   if(!rr) return '—';
   const active=RULE_DEFS.filter(r=>rr.flags && rr.flags[r.key]).map(r=> r.key==='jokers' ? (rr.jokerCountRandom ? 'ジョーカー1〜8枚（毎ゲームランダム）' : 'ジョーカー'+(rr.jokerCount||2)+'枚') : r.label);
   const rulesPart=active.length ? active.join('、') : '追加ルールなし（基本ルールのみ）';
-  const modePart=rr.doubtMode ? 'ダウト大富豪モード ／ ' : '';
+  const modePart=rr.doubtMode ? (rr.chaosMode ? 'ダウト大富豪モード＋カオスモード ／ ' : 'ダウト大富豪モード ／ ') : '';
   return modePart+'CPU強さ: '+(CPU_LEVEL_LABELS[rr.cpuLevel]||rr.cpuLevel||'ノーマル')+' ／ '+rulesPart;
 }
 
@@ -6330,6 +6591,8 @@ const Online = (function(){
     rules.jokerCountRandom = !!rr.jokerCountRandom;
     rules.doubtWindowSec = (typeof rr.doubtWindowSec==='number') ? rr.doubtWindowSec : 3;
     rules.doubtMode = !!rr.doubtMode;
+    rules.chaosMode = !!rr.chaosMode && rules.doubtMode;
+    if(rules.chaosMode) rules.miyakoOchi = false;   // カオスモードでは都落ちを適用しない
     jokerCount = rules.jokerCount;
     jokerCountRandom = rules.jokerCountRandom;
     doubtWindowSec = rules.doubtWindowSec;
@@ -6548,6 +6811,7 @@ const Online = (function(){
     onlineRole='offline'; seatControllers=[]; pendingRemoteAction=null;
     clearDoubtWindowTimers(); pendingCpuPlay=null;
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
+    chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
   }
 
   async function leave(){
@@ -6616,6 +6880,7 @@ function initOnlineUI(){
 }
 
 renderRuleSetup();
+syncChaosToggleState();
 loadSeasonScores();
 loadCloudDoc();
 // 前回この端末で使ったルール設定があれば復元（オフラインでも効く。Driveログイン時は
