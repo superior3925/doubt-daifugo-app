@@ -1797,6 +1797,14 @@ let chaosPeekGuest = false;
 // （＝伏せずに公開で出す＝ダウトの対象にならない）代わりに、必ず場が流れて自分の番になる。
 // 出さずにパスした場合は空打ちとして効果が消える。
 let chaosNantokaSeat = null;
+// 「ずっと俺のターン!!ドローっ!!」の発動中の状態。{seat, left} で left は残りの手番回数。
+// なんとかなれーと同じくウソはつけない（公開で出す＝ダウトされない）が、場を強制的に
+// 流すことはせず、特殊効果は通常どおり発動する。2回終わったら特殊カードを1枚引く。
+let chaosOrenoTurn = null;
+// その席がいま「ウソをつけない」状態か（＝伏せずに公開で出す）。
+function chaosHonestForced(seat){
+  return chaosNantokaSeat===seat || !!(chaosOrenoTurn && chaosOrenoTurn.seat===seat);
+}
 // 特殊カードの「選択待ち」。通常の追加アクション（pendingAction）とは別に持つ。最大の違いは
 // 解決しても手番を進めないこと——発動者はこのあと通常どおりトランプを出すため。
 // ホストは要求した席の分を保持し、リモートのゲストにはビュー経由で伝える。
@@ -1831,7 +1839,7 @@ const CHAOS_CARDS = [
    desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードをランダムに1枚捨てさせます。'},
   {type:'katerukayo', timing:'doubt-alt', name:'お前が俺に!!勝てるわけねェだろうが!!!!',
    desc:'ダウト宣言の代わりに発動。通常のダウトと同じく相手の札をめくります。成功なら手札を2枚まで相手に渡せ、失敗してもアウト・休みのペナルティを受けません。'},
-  {type:'orenoTurn', timing:'preplay', name:'ずっと俺のターン!!ドローっ!!',
+  {type:'orenoTurn', timing:'preplay', impl:true, name:'ずっと俺のターン!!ドローっ!!',
    desc:'ウソをつけない代わりに、ターンを2回続けて行います（7渡し・8切りなどの特殊効果は通常どおり発動）。終了後、特殊カードを1枚引きます。'},
   {type:'mienai', timing:'preplay', impl:true, name:'見えないものを見ようとして',
    desc:'このトリックの間だけ、全員の手札が自分にだけ見えるようになります。'},
@@ -1886,6 +1894,7 @@ function resetChaosState(){
   chaosPeekGuest = false;
   chaosPending = null;
   chaosNantokaSeat = null;
+  chaosOrenoTurn = null;
   clearChaosResend();
   inChaosEffect = 0;
   trickIndex = 0;
@@ -2199,6 +2208,7 @@ function applyChaosEffect(seat, card){
       case 'irekawari': chaosIrekawari(seat); break;
       case 'mienai':    chaosMienai(seat); break;
       case 'nantoka':   chaosNantoka(seat); break;
+      case 'orenoTurn': chaosOrenoTurnStart(seat); break;
     }
   } finally { inChaosEffect--; }
 }
@@ -2304,6 +2314,18 @@ function chaosIrekawari(seat){
 function chaosNantoka(seat){
   chaosNantokaSeat = seat;
   log(playerName(seat)+'の次の1手は、ウソをつけない代わりに必ず場が流れる');
+}
+// 連続手番を開始する。left は「これから行う手番の回数」。
+function chaosOrenoTurnStart(seat){
+  chaosOrenoTurn = {seat: seat, left: 2};
+  log(playerName(seat)+'はウソをつけない代わりに、ターンを2回続けて行う');
+}
+// 連続手番を終了して特殊カードを1枚引く。パス・上がり・2回消化のいずれからも呼ばれる。
+function chaosOrenoTurnFinish(){
+  if(!chaosOrenoTurn) return;
+  const seat = chaosOrenoTurn.seat;
+  chaosOrenoTurn = null;
+  if(!finishedOrder.includes(seat)) grantChaosCard(seat, 'ずっと俺のターン');
 }
 // このトリックの間だけ、発動した席にだけ全員の手札を見せる。
 function chaosMienai(seat){
@@ -3979,8 +4001,9 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   // 「なんとかなれーッ!!」の発動中は、ウソをつけない＝伏せずに公開で出す。公開なので
   // 他のプレイヤーはダウトを宣言できない（doubtAvailableFor が faceDown を要求する）。
   const nantoka = (chaosNantokaSeat===playerIdx);
+  const honestForced = chaosHonestForced(playerIdx);   // なんとかなれー／ずっと俺のターン
   if(nantoka) chaosNantokaSeat = null;
-  const faceDown = isDoubtMode() && !nantoka;
+  const faceDown = isDoubtMode() && !honestForced;
   // journal はこのプレイ自身の効果だけを巻き戻すための記録。ダウトで嘘が暴かれたときに
   // undoPlay がこれを読んで、7渡し・10捨て・12ボンバーで動いたカードや、このプレイが
   // 直接引き起こした上がり（連鎖する都落ち等も含む）、革命・9リバースのトグルを、
@@ -4115,6 +4138,22 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
 function finalizeTurn(info, extraSkips){
   extraSkips = extraSkips || 0;
   if(gameOver){ render(); showResults(); return; }
+  // 「ずっと俺のターン」：この席の連続手番が残っていれば手番を進めずに本人へ戻す。
+  // 8切り等で場が流れていても同じ（どちらにせよ次に打つのは本人）。上がってしまった
+  // 場合はそこで打ち切り、通常の進行に戻す。
+  if(chaosOrenoTurn && chaosOrenoTurn.seat===info.playerIdx){
+    chaosOrenoTurn.left--;
+    if(chaosOrenoTurn.left>0 && !info.finished){
+      currentPlayerIndex = info.playerIdx;
+      skipQuota = 0;
+      log(playerName(info.playerIdx)+'は続けてもう一度出せます');
+      render();
+      scheduleNextIfCpu();
+      return;
+    }
+    chaosOrenoTurnFinish();
+    if(gameOver){ render(); showResults(); return; }
+  }
   if(!(info.fieldCleared && !info.finished)){
     // Cap skips at how many players still need to respond to this field (see passClearThreshold):
     // skipping further than that would wrap back around and skip the player who led (or
@@ -4239,6 +4278,11 @@ function passAction(playerIdx){
   if(chaosNantokaSeat===playerIdx){
     chaosNantokaSeat = null;
     log(playerName(playerIdx)+'は出せる札がなく、「なんとかなれーッ!!」は空打ちに終わった');
+  }
+  // 連続手番の途中でパスしたら、そこで打ち切って特殊カードを1枚引く。
+  if(chaosOrenoTurn && chaosOrenoTurn.seat===playerIdx){
+    log(playerName(playerIdx)+'はパスしたため、連続手番はここで終わり');
+    chaosOrenoTurnFinish();
   }
   passStreak++;
   Feedback.sfx('pass');
@@ -5079,7 +5123,7 @@ function cpuTurn(idx){
   // 「なんとかなれーッ!!」の発動中は、宣言（＝ウソをつく経路）を使わず、非ダウトモードと
   // 同じ「選んだ札をそのまま出す」経路へ落とす。cpuCommitPlay に actual を渡さないことで
   // 宣言＝実カードになり、必ず正直な手になる。
-  if(isDoubtMode() && chaosNantokaSeat!==idx){
+  if(isDoubtMode() && !chaosHonestForced(idx)){
     if(doubtAvailableFor(idx) && cpuChooseDoubt(idx)){ doubtAction(idx); return; }
     if(forcedPassOnly){ log(playerName(idx)+'：5スキップの対象のため出せない'); passAction(idx); return; }
     if(cpuTrySpecialCounter(idx, hand)) return;
@@ -5749,7 +5793,7 @@ function humanPlay(){
   if(cards.length===0){ flashMsg('カードを選んでください'); return; }
   // 「なんとかなれーッ!!」の発動中はウソをつけないので、宣言モーダルを出さずに
   // そのまま正直に出す（＝「正直に出す」と同じ経路）。
-  if(isDoubtMode() && chaosNantokaSeat===mySeat){
+  if(isDoubtMode() && chaosHonestForced(mySeat)){
     if(forcedPassOnly){ flashMsg('5スキップの対象です。ダウトかパスしかできません'); return; }
     tryPlayCardsAsIs(cards);
     return;
@@ -5835,6 +5879,11 @@ function humanDoubt(){
 }
 
 function showResults(){
+  // 決着すると「次の1手に掛かっていた効果」は意味を失う。ゲーム終了の経路は
+  // finalizeTurn 以外（ダウトの解決・カオス効果での決着など）にもあるので、
+  // すべてが必ず通るここで片付ける。
+  chaosOrenoTurn = null;
+  chaosNantokaSeat = null;
   const finalRanking = computeFinalRanking();
   previousFinishedOrder = finalRanking.slice();
   // スコア加算は1ゲームにつき厳密に1回。showResultsはゲーム終了検出の複数経路
@@ -6085,7 +6134,9 @@ function render(){
       ? '5スキップの対象です。カードは出せませんが、ダウトは宣言できます'
       : (chaosNantokaSeat===mySeat
           ? '「なんとかなれーッ!!」発動中：ウソはつけません（選んだ札をそのまま公開で出し、必ず場が流れます）'
-          : '緑枠＝正直に出せる札。ウソをつくならどの札を選んでもかまいません');
+          : ((chaosOrenoTurn && chaosOrenoTurn.seat===mySeat)
+              ? '「ずっと俺のターン!!」発動中：ウソはつけません（公開で出します。残り'+chaosOrenoTurn.left+'回）'
+              : '緑枠＝正直に出せる札。ウソをつくならどの札を選んでもかまいません'));
   } else {
     handHint.style.display = 'none';
   }
@@ -6244,6 +6295,8 @@ function buildRedactedView(viewerSeat){
     // 「なんとかなれーッ!!」の発動中の席（公開情報：使用済み特殊カードは全員に見えている）。
     // ゲスト側は自席がこれに一致するとき、宣言モーダルを出さず正直に出す経路へ切り替える。
     chaosNantokaSeat: (chaosNantokaSeat===null ? -1 : chaosNantokaSeat),
+    // 連続手番の状態も公開情報として配る（ゲスト側の「ウソをつけない」分岐に使う）。
+    chaosOrenoTurn: chaosOrenoTurn ? {seat:chaosOrenoTurn.seat, left:chaosOrenoTurn.left} : null,
     // 観戦モード：確定済みの席にだけ全席の実カードを渡す。席番号キーのオブジェクトにして、
     // 空席は自然に欠落させる（Firebaseは空配列を保存しないため、配列だと壊れる）。
     observer,
@@ -6333,6 +6386,7 @@ function applyView(v){
     i===mySeat ? _myChaos : Array.from({length:_chaosCounts[i]||0},()=>({hidden:true})));
   chaosDiscard = v.chaosDiscard || [];
   chaosNantokaSeat = (typeof v.chaosNantokaSeat==='number' && v.chaosNantokaSeat>=0) ? v.chaosNantokaSeat : null;
+  chaosOrenoTurn = v.chaosOrenoTurn || null;
   // 特殊カードの選択要求。ホストのビューに要求がある間だけモーダルを開いておき、
   // 要求が消えた＝ホストが受理したと確定してから閉じる（応答が落ちても取りこぼさない）。
   if(v.pendingChaos){
@@ -7467,7 +7521,7 @@ const Online = (function(){
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
-    chaosNantokaSeat=null;
+    chaosNantokaSeat=null; chaosOrenoTurn=null;
   }
 
   async function leave(){
