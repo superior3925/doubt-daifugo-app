@@ -2468,17 +2468,17 @@ function declarationRiskyIdentity(declCards, actualCards){
   const actualRemaining = actualCards.slice();
   const known = new Set();
   discardHistory.forEach(h=> h.cards.forEach(c=>{
-    if(!(h.hiddenIds && h.hiddenIds.has(c.id))) known.add(c.suit+'_'+c.rank);
+    if(!(h.hiddenIds && h.hiddenIds.has(c.id))) known.add(cardFaceKey(c));
   }));
   if(field){
     const revealedCards = field.faceDown ? (field.revealed ? field.actual : null) : (field.actual || field.cards);
-    if(revealedCards) revealedCards.forEach(c=>known.add(c.suit+'_'+c.rank));
+    if(revealedCards) revealedCards.forEach(c=>known.add(cardFaceKey(c)));
   }
   for(const d of declCards){
     if(d.rank==='JOKER') continue;
     const i = actualRemaining.findIndex(a=>a.rank===d.rank && a.suit===d.suit);
     if(i>=0){ actualRemaining.splice(i,1); continue; }
-    if(known.has(d.suit+'_'+d.rank)) return true;
+    if(known.has(cardFaceKey(d))) return true;
   }
   return false;
 }
@@ -2490,12 +2490,27 @@ function doubtAvailableFor(p){
     && field.owner !== p && !finishedOrder.includes(p) && sitOutTricks[p]===0);
 }
 
+// カードの「個体識別子」。配布・生成のたびに一意な値を振り、面（rank/suit）からは絶対に
+// 導出しない。idは個体、rank/suitは可変な面、という分離を保つことが重要で、これを崩すと
+// 「面が同じカードは同一のカード」という暗黙の前提が復活する。手札からの除去・カード選択UI・
+// オンラインのintent・伏せ札の秘匿はすべてidをキーにしているため、同じidの札が2枚できると
+// 「1枚選んだつもりが2枚とも消える」といった形で一斉に壊れる。
+let cardUidSeq = 0;
+function mintCardId(){ return 'k'+(++cardUidSeq); }
+// 「その面の札を見たか」を数えるためのキー。ジョーカー同士は区別せず、枚数で数える
+// （どのジョーカーかを言い当てることに意味はないため）。
+function cardFaceKey(card){ return card.rank==='JOKER' ? 'JOKER' : (card.suit+'_'+card.rank); }
+// 山札に存在するその面の総枚数。ジョーカー以外は各1枚。
+function faceTotalInDeck(faceKey){
+  if(faceKey!=='JOKER') return 1;
+  return rules.jokers ? (rules.jokerCount||2) : 0;
+}
 function buildDeck(){
   const deck=[];
-  for(const s of SUITS) for(const r of RANKS) deck.push({rank:r, suit:s, id:s+'_'+r});
+  for(const s of SUITS) for(const r of RANKS) deck.push({rank:r, suit:s, id:mintCardId()});
   if(rules.jokers){
     const n = rules.jokerCount || 2;
-    for(let i=1;i<=n;i++) deck.push({rank:'JOKER', suit:null, id:'JOKER_'+i});
+    for(let i=1;i<=n;i++) deck.push({rank:'JOKER', suit:null, id:mintCardId()});
   }
   for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
   return deck;
@@ -3580,12 +3595,14 @@ function scoreWithTrapGuard(hand, rank, playCount, baseScore){
 // 他プレイヤーの実際の手札（hands[i]）は絶対に参照しない。自分の手札・捨て札履歴・
 // 場に出ているカードという「見えている情報」だけから未確認カード集合を割り出し、
 // 各相手の残り枚数（公開情報）に比例させた粗い確率推定を行う。
+// 「山札にはこの面の札が何枚あるか」を表すだけの参照用リスト。実在のカードではないので
+// 個体識別子は持たせない（実カードのidと突き合わせると、面とidを結び付ける前提が復活する）。
 function fullDeckReference(){
   const deck=[];
-  for(const s of SUITS) for(const r of RANKS) deck.push({rank:r, suit:s, id:s+'_'+r});
+  for(const s of SUITS) for(const r of RANKS) deck.push({rank:r, suit:s});
   if(rules.jokers){
     const n = rules.jokerCount || 2;
-    for(let i=1;i<=n;i++) deck.push({rank:'JOKER', suit:null, id:'JOKER_'+i});
+    for(let i=1;i<=n;i++) deck.push({rank:'JOKER', suit:null});
   }
   return deck;
 }
@@ -3593,21 +3610,30 @@ function fullDeckReference(){
 // （場・捨て札の両方）を絶対にここへ入れてはいけない。入れるとCPUは「宣言されたランクが
 // 未確認プールに残っているか」を数えるだけでウソを100%見抜けてしまい、完全なカンニングになる。
 // 場の宣言カード(field.cards)は実在の札ではない合成オブジェクトなので、これも入れない。
-function seenCardIds(idx){
-  const seen = new Set();
-  hands[idx].forEach(c=>seen.add(c.id));
+// 面ごとの「見えた枚数」を数えて返す（Map<faceKey, count>）。idではなく面で数えるのは、
+// 知りたいのが「あの札は誰かの手元にまだ有り得るか」であって個体の追跡ではないため。
+function seenFaceCounts(idx){
+  const counts = new Map();
+  const add = c=>{ const k = cardFaceKey(c); counts.set(k, (counts.get(k)||0)+1); };
+  hands[idx].forEach(add);
   discardHistory.forEach(h=> h.cards.forEach(c=>{
-    if(!(h.hiddenIds && h.hiddenIds.has(c.id))) seen.add(c.id);
+    if(!(h.hiddenIds && h.hiddenIds.has(c.id))) add(c);
   }));
   if(field){
     const known = field.faceDown ? (field.revealed ? field.actual : null) : (field.actual || field.cards);
-    if(known) known.forEach(c=>seen.add(c.id));
+    if(known) known.forEach(add);
   }
-  return seen;
+  return counts;
 }
+// まだ所在の分からない札。見えた枚数を面ごとに消費しながら参照山札から差し引く。
 function unseenCardPool(idx){
-  const seenIds = seenCardIds(idx);
-  return fullDeckReference().filter(c=>!seenIds.has(c.id));
+  const remaining = new Map(seenFaceCounts(idx));
+  return fullDeckReference().filter(c=>{
+    const k = cardFaceKey(c);
+    const n = remaining.get(k)||0;
+    if(n>0){ remaining.set(k, n-1); return false; }
+    return true;
+  });
 }
 function estimateOpponentHasRank(idx, opp, rank){
   const pool = unseenCardPool(idx);
@@ -3667,29 +3693,29 @@ function addOut(idx, reason){
 // （isDeclarationTruthfulの代用ルールと同じ考え方）。実際に必要な代役ジョーカー数が、
 // まだ所在の分からないジョーカーの残数を超えて初めて「不可能」と断定できる。
 function declarationImpossible(idx, declCards){
-  const seen = seenCardIds(idx);
+  const seen = seenFaceCounts(idx);
   const declaredJokers = declCards.filter(d=>d.rank==='JOKER').length;
-  const substitutesNeeded = declCards.filter(d=> d.rank!=='JOKER' && seen.has(d.suit+'_'+d.rank)).length;
+  const substitutesNeeded = declCards.filter(d=> d.rank!=='JOKER' && (seen.get(cardFaceKey(d))||0)>0).length;
   const jokersNeeded = declaredJokers + substitutesNeeded;
   if(jokersNeeded===0) return false;
-  const totalJokers = rules.jokers ? (rules.jokerCount||2) : 0;
-  let seenJokers = 0;
-  seen.forEach(id=>{ if(id.indexOf('JOKER_')===0) seenJokers++; });
+  const totalJokers = faceTotalInDeck('JOKER');
+  const seenJokers = seen.get('JOKER')||0;
   return jokersNeeded > (totalJokers - seenJokers);
 }
 
-// 宣言用カード(declPaletteの要素)が表している「実カードの識別子」。ジョーカーはdecl_接頭辞を
-// 剥がすだけ、それ以外はスート_ランクの形に組み直す（実カードのid形式に合わせるため）。
-function declaredItemGoneId(item){
-  return item.rank==='JOKER' ? item.id.replace(/^decl_/, '') : (item.suit+'_'+item.rank);
-}
-
-// 自分から見て「もう存在しない（自分の手札か、公開済みの捨て札・場にある）」と分かる識別子を
+// 自分から見て「もう存在しない（自分の手札か、公開済みの捨て札・場にある）」と分かる面を
 // 避けつつ、宣言用のサンプルを組む。スートしばり中は縛られたスートを優先する（sampleDeclと
 // 同じ考え方）。組めなければ null（そのランクでは安全に宣言できない）。
 function safeDeclSample(idx, rank, count){
-  const seen = seenCardIds(idx);
-  let palette = declPalette(rank).filter(item=>!seen.has(declaredItemGoneId(item)));
+  // 見えた枚数を面ごとに消費しながら候補から外す。ジョーカーは互いに区別しないので、
+  // パレットに並ぶn枚のうち「見えた枚数」だけが候補から落ちる。
+  const remaining = new Map(seenFaceCounts(idx));
+  let palette = declPalette(rank).filter(item=>{
+    const k = cardFaceKey(item);
+    const n = remaining.get(k)||0;
+    if(n>0){ remaining.set(k, n-1); return false; }
+    return true;
+  });
   if(palette.length < count) return null;
   if(rules.suitLock && suitLock && rank!=='JOKER'){
     const locked = palette.filter(c=>suitLock.includes(c.suit));
@@ -3723,14 +3749,16 @@ function pickPlayCards(hand, count, opts){
 // 確率を粗く見積もる（公開情報のみ使用。他家の実際の手札は一切参照しない）。
 function estimateDeclarationTruthProbability(doubterIdx, declCards){
   const owner = field.owner;
-  const seen = seenCardIds(doubterIdx);
+  const seen = seenFaceCounts(doubterIdx);
   const poolSize = unseenCardPool(doubterIdx).length;
   if(poolSize===0) return 1;
   const ownerHandSize = hands[owner].length;
   let logProbTrue = 0;
   for(const d of declCards){
-    const key = declaredItemGoneId(d);
-    if(seen.has(key)){
+    const key = cardFaceKey(d);
+    // 「その面の札が山札に何枚あって、そのうち何枚を自分が見たか」で判定する。ジョーカーが
+    // 2枚あって1枚しか見えていなければ、出し手がもう1枚を持っている可能性は残る。
+    if(faceTotalInDeck(key) - (seen.get(key)||0) <= 0){
       // 出し手の手元には無いと分かっている＝ジョーカー代用でのみ真になり得る。
       // 簡略化のため、代用が効いている確率相当の低い一定値として見積もる。
       logProbTrue += Math.log(0.15);
