@@ -1807,6 +1807,11 @@ let chaosYoroshikuSeat = null;
 // カードを配り終えるまで保留しておく手番送り。7渡し等が finalizeTurn(info, extraSkips) を
 // 選択後に呼ぶのと同じ仕組みで、選択が確定したらそのまま続きを実行する。
 let chaosDeferredTurn = null;
+// 「お前が俺に!!勝てるわけねェだろうが!!!!」でダウトを宣言した席と、成功時に札を
+// 押し付ける相手（＝ウソをついた出し手）。選択が終わったら手番の再開だけ行う。
+let chaosKaterukayoSeat = null;
+let chaosKaterukayoTarget = null;
+let chaosResumeSchedule = false;
 // その席がいま「ウソをつけない」状態か（＝伏せずに公開で出す）。
 function chaosHonestForced(seat){
   return chaosNantokaSeat===seat || !!(chaosOrenoTurn && chaosOrenoTurn.seat===seat);
@@ -1843,7 +1848,7 @@ const CHAOS_CARDS = [
    desc:'アウトが0のプレイヤー全員にアウトを2つ与え、捨て札からランダムに2枚ずつ渡します。すでにアウトが1つ以上ある相手には効果がありません。'},
   {type:'kinoko', timing:'preplay', impl:true, select:true, name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
    desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードをランダムに1枚捨てさせます。'},
-  {type:'katerukayo', timing:'doubt-alt', name:'お前が俺に!!勝てるわけねェだろうが!!!!',
+  {type:'katerukayo', timing:'doubt-alt', impl:true, name:'お前が俺に!!勝てるわけねェだろうが!!!!',
    desc:'ダウト宣言の代わりに発動。通常のダウトと同じく相手の札をめくります。成功なら手札を2枚まで相手に渡せ、失敗してもアウト・休みのペナルティを受けません。'},
   {type:'orenoTurn', timing:'preplay', impl:true, name:'ずっと俺のターン!!ドローっ!!',
    desc:'ウソをつけない代わりに、ターンを2回続けて行います（7渡し・8切りなどの特殊効果は通常どおり発動）。終了後、特殊カードを1枚引きます。'},
@@ -1903,6 +1908,9 @@ function resetChaosState(){
   chaosOrenoTurn = null;
   chaosYoroshikuSeat = null;
   chaosDeferredTurn = null;
+  chaosKaterukayoSeat = null;
+  chaosKaterukayoTarget = null;
+  chaosResumeSchedule = false;
   clearChaosResend();
   inChaosEffect = 0;
   trickIndex = 0;
@@ -2008,12 +2016,16 @@ function chaosCardUsable(seat, card){
   if(!isChaosMode() || !card) return false;
   const def = chaosDef(card.type);
   if(!def.impl) return false;                 // 効果が未実装のカードは発動できない
-  if(def.timing!=='preplay') return false;    // 自動発動・ダウト代替はここでは扱わない
   if(gameOver || exchangeInProgress || revealPending) return false;
   if(pendingAction || pendingRemoteAction || chaosPending) return false;
-  if(currentPlayerIndex!==seat) return false; // 「自分のターンのトランプを出す前」
+  if(currentPlayerIndex!==seat) return false; // 自分の手番でだけ使える
   if(finishedOrder.includes(seat)) return false;
   if(sitOutTricks[seat]>0) return false;      // ダウトの罰で休み中は行動できない
+  // ダウト宣言の代わりに使うカードは、通常のダウトが宣言できる局面でだけ使える
+  // （＝伏せられたままの場があり、自分が出した札ではない）。誰かが既にダウトして
+  // めくれた後は doubtAvailableFor が偽になるので、仕様どおり使えなくなる。
+  if(def.timing==='doubt-alt') return doubtAvailableFor(seat);
+  if(def.timing!=='preplay') return false;    // 自動発動はここでは扱わない
   switch(card.type){
     case 'irekawari': return finishedOrder.length>0;  // 大富豪が確定してから
     case 'hachiware': return field!==null;            // 場が無いと変えようがない
@@ -2038,6 +2050,13 @@ function chaosSelectionSpec(cardType, seat){
     return {needCards:need, needTarget:false, title:'よろしくお願いしまああああす！',
       hint:'ほかのプレイヤーへ配るカードを'+need+'枚選んでください（手番の順に1枚ずつ渡されます）'};
   }
+  if(cardType==='katerukayo'){
+    const s = (typeof seat==='number') ? seat : currentPlayerIndex;
+    // 「2枚まで」なので atMost。押し付けたあとも必ず1枚は手元に残す。
+    const need = Math.max(0, Math.min(2, (hands[s]||[]).length-1));
+    return {needCards:need, needTarget:false, atMost:true, title:'お前が俺に!!勝てるわけねェだろうが!!!!',
+      hint:'ウソをついた'+playerName(chaosKaterukayoTarget)+'へ押し付ける札を'+need+'枚まで選べます（0枚でも構いません）'};
+  }
   switch(cardType){
     case 'genkai': return {needCards:4, needTarget:false, title:'つーかこれが限界',
       hint:'4に変える手札をちょうど4枚選んでください（全スートの4になります）'};
@@ -2058,7 +2077,8 @@ function chaosBeginSelection(seat, cardType){
     return;
   }
   chaosPending = {seat:seat, cardType:cardType, needCards:spec.needCards,
-    needTarget:spec.needTarget, chosen:new Set(), target:null, remote:false, sent:false};
+    needTarget:spec.needTarget, atMost:!!spec.atMost,
+    chosen:new Set(), target:null, remote:false, sent:false};
   if(seatController(seat)==='host-ui'){ render(); renderChaosSelectModal(); }
   else { log(playerName(seat)+' の特殊カードの選択を待っています…'); render(); }
 }
@@ -2075,6 +2095,7 @@ function chaosResolveSelection(seat, cardType, sel){
     else if(cardType==='kinoko') chaosKinoko(seat, sel.target, ids[0]);
     else if(cardType==='tsuree') chaosTsuree(seat, ids);
     else if(cardType==='yoroshiku') chaosYoroshiku(seat, ids);
+    else if(cardType==='katerukayo') chaosKaterukayoGive(seat, ids);
   } finally { inChaosEffect--; }
   render();
   if(gameOver){ chaosDeferredTurn = null; showResults(); return; }
@@ -2084,7 +2105,28 @@ function chaosResolveSelection(seat, cardType, sel){
     const d = chaosDeferredTurn;
     chaosDeferredTurn = null;
     finalizeTurn(d.info, d.extraSkips);
+    return;
   }
+  // ダウト解決の途中で選ばせた場合（お前が俺に!!）は、手番はすでに正しい席にあるので
+  // 進行の再開だけ行う。選択待ちの間は scheduleNextIfCpu が空振りしているため必要。
+  if(chaosResumeSchedule){
+    chaosResumeSchedule = false;
+    scheduleNextIfCpu();
+  }
+}
+// ダウトに成功した側が、ウソをついた相手へ札を押し付ける（2枚まで・0枚でも可）。
+function chaosKaterukayoGive(seat, cardIds){
+  const target = chaosKaterukayoTarget;
+  chaosKaterukayoTarget = null;
+  if(target===null || target===seat || !activePlayers().includes(target)) return;
+  const ids = new Set(cardIds);
+  const give = hands[seat].filter(c=>ids.has(c.id)).slice(0, 2);
+  if(!give.length){ log(playerName(seat)+'は札を押し付けなかった'); return; }
+  const gset = new Set(give.map(c=>c.id));
+  hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
+  hands[target] = hands[target].concat(give);
+  log(playerName(seat)+'が'+playerName(target)+'に'+give.length+'枚押し付けた');
+  checkGameEndAfterSideEffect('chaos');
 }
 // 選んだ札を、自分以外の生存プレイヤーへ手番の順に1枚ずつ配る。
 function chaosYoroshiku(seat, cardIds){
@@ -2144,6 +2186,7 @@ function cpuChaosSelection(seat, cardType, spec){
   if(cardType==='genkai') return {cardIds: weakFirst.slice(0, 4).map(c=>c.id)};
   if(cardType==='tsuree') return {cardIds: weakFirst.slice(0, 2).map(c=>c.id)};
   if(cardType==='yoroshiku') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
+  if(cardType==='katerukayo') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
   if(cardType==='kinoko'){
     const others = activePlayers().filter(p=>p!==seat).sort((a,b)=>hands[a].length-hands[b].length);
     return {target: others[0], cardIds: weakFirst.length ? [weakFirst[0].id] : []};
@@ -2166,7 +2209,9 @@ function renderChaosSelectModal(){
           + escapeHtml(playerName(p))+'</button>').join('')
       + '</div>';
   }
-  const ready = cp.chosen.size===cp.needCards && (!cp.needTarget || cp.target!==null);
+  // atMost のカードは「上限まで」なので、0枚でも確定できる。
+  const ready = (cp.atMost ? cp.chosen.size<=cp.needCards : cp.chosen.size===cp.needCards)
+    && (!cp.needTarget || cp.target!==null);
   const btn = cp.sent
     ? '<button class="action play" disabled>送信中…</button>'
     : '<button class="action play"'+(ready?'':' disabled')+' onclick="confirmChaosSelect()">決定</button>';
@@ -2192,7 +2237,7 @@ function chaosPickTarget(p){
 function confirmChaosSelect(){
   const cp = chaosPending;
   if(!cp || cp.sent) return;
-  if(cp.chosen.size!==cp.needCards) return;
+  if(cp.atMost ? cp.chosen.size>cp.needCards : cp.chosen.size!==cp.needCards) return;
   if(cp.needTarget && cp.target===null) return;
   if(cp.remote){
     // ゲストは応答が届いたと確定するまでモーダルを閉じない（カード交換と同じ方針）。
@@ -2254,6 +2299,8 @@ function applyChaosEffect(seat, card){
       // 効果が出るのは「札を出したあと」なので、ここでは席を覚えるだけ。
       case 'yoroshiku': chaosYoroshikuSeat = seat;
                         log(playerName(seat)+'は札を出したあと、全員にカードを1枚ずつ配る'); break;
+      // ダウト宣言の代わり。通常のダウトと同じ解決に乗せ、成否で扱いを変える。
+      case 'katerukayo': chaosKaterukayoSeat = seat; doubtAction(seat); break;
     }
   } finally { inChaosEffect--; }
 }
@@ -4629,17 +4676,24 @@ function finishDoubt(doubterIdx, truthful){
 function doubtFailed(doubterIdx){
   // 完全に公開されたダウトの結果として、出し手が「立証された正直さ」の統計を積む
   // （レジェンドCPUの学習材料。誰の手札も覗かない）。
+  // 「お前が俺に!!」で挑んだ場合は、失敗してもアウト・休みのペナルティを受けない。
+  const katerukayo = (chaosKaterukayoSeat===doubterIdx);
+  chaosKaterukayoSeat = null;
   if(field) provenHonestCount[field.owner]++;
   showCutIn('宣言どおり！ ダウト失敗', 'doubtLose');
-  log(playerName(doubterIdx)+'のダウトは失敗。このトリックと次のトリックは休みです');
+  log(katerukayo
+    ? playerName(doubterIdx)+'のダウトは失敗。ただし「お前が俺に!!」の効果でペナルティは受けません'
+    : playerName(doubterIdx)+'のダウトは失敗。このトリックと次のトリックは休みです');
   if(field && field.pendingClear) log(playerName(field.owner)+'の'+pendingClearLabel(field.pendingClear)+'の宣言は本物でした');
   // 宣言が真実だと確定したので、その宣言（自身の上がり等）にひも付いて保留していた
   // ゲーム終了判定をここで再評価する。
   checkGameEnd();
   if(gameOver){ render(); showResults(); return; }
-  addOut(doubterIdx, 'ダウト失敗');
-  if(gameOver){ render(); showResults(); return; }
-  sitOutTricks[doubterIdx] = 2; // 宣言したトリック＋次のトリック
+  if(!katerukayo){
+    addOut(doubterIdx, 'ダウト失敗');
+    if(gameOver){ render(); showResults(); return; }
+    sitOutTricks[doubterIdx] = 2; // 宣言したトリック＋次のトリック
+  }
   // カオスモード：正直だった出し手が「お前さぁ…疲れてんだよ」を持っていれば強制発動する。
   // 場は必ず流れ、他の誰も出せないまま出し手が次のトリックの親になる。
   const honestOwner = field ? field.owner : null;
@@ -4667,6 +4721,8 @@ function doubtFailed(doubterIdx){
 function doubtSucceeded(doubterIdx){
   const f = field;
   const liar = f.owner;
+  const katerukayo = (chaosKaterukayoSeat===doubterIdx);
+  chaosKaterukayoSeat = null;
   liarCaughtCount[liar]++;
   showCutIn('ウソつき！！', 'doubtWin');
   log(playerName(liar)+'のウソが暴かれた！ 出した'+f.actual.length+'枚は手札に戻ります');
@@ -4678,6 +4734,16 @@ function doubtSucceeded(doubterIdx){
   currentPlayerIndex = doubterIdx;
   passStreak = 0;
   log(playerName(doubterIdx)+'が親として次のトリックを始めます');
+  // 「お前が俺に!!」で成功した場合、ウソをついた相手へ札を2枚まで押し付けられる。
+  // 手番はすでに doubterIdx に移っているので、選択が終わったら進行を再開するだけでよい。
+  if(katerukayo && !finishedOrder.includes(doubterIdx) && !finishedOrder.includes(liar)
+     && hands[doubterIdx].length>1){
+    chaosKaterukayoTarget = liar;
+    chaosResumeSchedule = true;
+    render();
+    chaosBeginSelection(doubterIdx, 'katerukayo');
+    return;
+  }
   render();
   scheduleNextIfCpu();
 }
@@ -5173,6 +5239,10 @@ function cpuTurn(idx){
   // hand を掴むのは必ずこの後。効果で決着したらここで打ち切る。
   cpuMaybeUseChaos(idx);
   if(gameOver){ render(); showResults(); return; }
+  // ダウト代替（お前が俺に!!）を使った場合は、その時点で手番を消費してめくり処理へ移る。
+  // 選択待ちが立った場合も同じ。ここで打ち切らないと、同じ手番で続けてカードを出してしまい、
+  // あとから走るめくり処理が「既に上書きされた場」を読んで壊れる。
+  if(revealPending || chaosPending) return;
   // ここで「上がっている席なら手番を送る」という保険を足してはいけない。残り1人になると
   // advanceTurn は意図的に手番を動かさない（index.html の advanceTurn 参照）ので、送ろうと
   // すると同じ席を延々と呼び直す無限ループになる。上がった席が0枚のままパスして場を流す、
@@ -5945,6 +6015,8 @@ function showResults(){
   chaosNantokaSeat = null;
   chaosYoroshikuSeat = null;
   chaosDeferredTurn = null;
+  chaosKaterukayoSeat = null;
+  chaosResumeSchedule = false;
   const finalRanking = computeFinalRanking();
   previousFinishedOrder = finalRanking.slice();
   // スコア加算は1ゲームにつき厳密に1回。showResultsはゲーム終了検出の複数経路
@@ -7583,6 +7655,7 @@ const Online = (function(){
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
     chaosNantokaSeat=null; chaosOrenoTurn=null; chaosYoroshikuSeat=null; chaosDeferredTurn=null;
+    chaosKaterukayoSeat=null; chaosKaterukayoTarget=null; chaosResumeSchedule=false;
   }
 
   async function leave(){
