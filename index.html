@@ -1793,6 +1793,13 @@ let chaosUidSeq = 0;
 // その席にだけ全員の手札を見せる。ゲストはホストの判定結果（view の chaosPeeking）に従う。
 let chaosPeek = null;
 let chaosPeekGuest = false;
+// 特殊カードの「選択待ち」。通常の追加アクション（pendingAction）とは別に持つ。最大の違いは
+// 解決しても手番を進めないこと——発動者はこのあと通常どおりトランプを出すため。
+// ホストは要求した席の分を保持し、リモートのゲストにはビュー経由で伝える。
+let chaosPending = null;
+let chaosResendTimer = null;
+// カオスの効果を適用している最中か（捨て札エントリの持ち主を見分けるために使う）。
+let inChaosEffect = 0;
 // このゲームで何回目のトリックか。0 = ゲーム開始時の最初の親（この親には配らない）。
 let trickIndex = 0;
 // 特殊カードを配布済みのトリック番号。同じトリックで二重に配らないための番人。
@@ -1816,8 +1823,8 @@ const CHAOS_CARDS = [
    desc:'アウトが3つたまったとき手札にあると強制発動。その敗北を拒否し、アウトが1つに戻ります（禁止上がりなどの反則負けには効果がありません）。'},
   {type:'osoreta', timing:'preplay', impl:true, name:'恐れたやつが負けなのさ',
    desc:'アウトが0のプレイヤー全員にアウトを2つ与え、捨て札からランダムに2枚ずつ渡します。すでにアウトが1つ以上ある相手には効果がありません。'},
-  {type:'kinoko', timing:'preplay', name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
-   desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードを1枚捨てさせます。'},
+  {type:'kinoko', timing:'preplay', impl:true, select:true, name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
+   desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードをランダムに1枚捨てさせます。'},
   {type:'katerukayo', timing:'doubt-alt', name:'お前が俺に!!勝てるわけねェだろうが!!!!',
    desc:'ダウト宣言の代わりに発動。通常のダウトと同じく相手の札をめくります。成功なら手札を2枚まで相手に渡せ、失敗してもアウト・休みのペナルティを受けません。'},
   {type:'orenoTurn', timing:'preplay', name:'ずっと俺のターン!!ドローっ!!',
@@ -1834,7 +1841,7 @@ const CHAOS_CARDS = [
    desc:'自分の手札がすべて1つずつ強くなります（2はジョーカーに、ジョーカーは変化なし。革命中は逆に弱くなります）。'},
   {type:'shutou', timing:'preplay', impl:true, name:'恐ろしく速い手刀',
    desc:'各プレイヤーから、最も強い札を1枚ずつランダムにもらいます。'},
-  {type:'genkai', timing:'preplay', name:'つーかこれが限界',
+  {type:'genkai', timing:'preplay', impl:true, select:true, name:'つーかこれが限界',
    desc:'自分の手札を4枚選び、全スートの4に変えます。'},
   {type:'tsuree', timing:'preplay', name:'やっぱつれぇわ',
    desc:'自分のアウトが2つ以上のときだけ発動可能。特殊カードをランダムに2枚もらい、手札を2枚選んで表向きに捨てます。'}
@@ -1873,6 +1880,9 @@ function resetChaosState(){
   chaosDiscard = [];
   chaosPeek = null;
   chaosPeekGuest = false;
+  chaosPending = null;
+  clearChaosResend();
+  inChaosEffect = 0;
   trickIndex = 0;
   chaosGrantedForTrick = -1;
   if(isChaosMode()){
@@ -1890,7 +1900,7 @@ function grantChaosCardToTrickLeader(){
   // 手番がまだ確定していない局面（めくり演出中・追加アクション待ち・カード交換中）では
   // 配らない。これらが片付くと finalizeTurn などから再び scheduleNextIfCpu が呼ばれるので、
   // 配布は取りこぼされずその時点まで先送りされるだけ。
-  if(revealPending || exchangeInProgress || pendingAction || pendingRemoteAction) return false;
+  if(revealPending || exchangeInProgress || pendingAction || pendingRemoteAction || chaosPending) return false;
   if(trickIndex<=0) return false;
   if(chaosGrantedForTrick===trickIndex) return false;
   chaosGrantedForTrick = trickIndex;
@@ -1978,15 +1988,166 @@ function chaosCardUsable(seat, card){
   if(!def.impl) return false;                 // 効果が未実装のカードは発動できない
   if(def.timing!=='preplay') return false;    // 自動発動・ダウト代替はここでは扱わない
   if(gameOver || exchangeInProgress || revealPending) return false;
-  if(pendingAction || pendingRemoteAction) return false;
+  if(pendingAction || pendingRemoteAction || chaosPending) return false;
   if(currentPlayerIndex!==seat) return false; // 「自分のターンのトランプを出す前」
   if(finishedOrder.includes(seat)) return false;
   if(sitOutTricks[seat]>0) return false;      // ダウトの罰で休み中は行動できない
   switch(card.type){
     case 'irekawari': return finishedOrder.length>0;  // 大富豪が確定してから
     case 'hachiware': return field!==null;            // 場が無いと変えようがない
+    case 'genkai':    return hands[seat].length>=4;   // 4枚選ぶので4枚以上必要
+    // 渡すと自分の手札が0枚になる（＝特殊カードの効果で自分が上がってしまう）状況は
+    // 作らない。手番の途中で順位が確定すると、そのあと出す手が無くなって進行が詰まる。
+    case 'kinoko':    return hands[seat].length>=2 && activePlayers().some(p=>p!==seat);
     default: return true;
   }
+}
+// 選択を要するカードの仕様。needCards=選ぶ手札の枚数、needTarget=相手を選ぶか。
+function chaosSelectionSpec(cardType){
+  switch(cardType){
+    case 'genkai': return {needCards:4, needTarget:false, title:'つーかこれが限界',
+      hint:'4に変える手札をちょうど4枚選んでください（全スートの4になります）'};
+    case 'kinoko': return {needCards:1, needTarget:true, title:'猛毒キノコのスープ',
+      hint:'押し付ける相手と、渡すカードを1枚選んでください'};
+    default: return null;
+  }
+}
+// 選択が要るカードの発動。CPU席は即座に決め、自席はモーダル、リモートのゲストには
+// ビュー配信で要求を伝えて応答（サブintent）を待つ。
+function chaosBeginSelection(seat, cardType){
+  const spec = chaosSelectionSpec(cardType);
+  if(!spec) return;
+  if(seatController(seat)==='local-cpu'){
+    chaosResolveSelection(seat, cardType, cpuChaosSelection(seat, cardType, spec));
+    return;
+  }
+  chaosPending = {seat:seat, cardType:cardType, needCards:spec.needCards,
+    needTarget:spec.needTarget, chosen:new Set(), target:null, remote:false, sent:false};
+  if(seatController(seat)==='host-ui'){ render(); renderChaosSelectModal(); }
+  else { log(playerName(seat)+' の特殊カードの選択を待っています…'); render(); }
+}
+// 選択結果を適用する。手番は進めない（発動者はこのあと通常どおりトランプを出す）。
+function chaosResolveSelection(seat, cardType, sel){
+  chaosPending = null;
+  clearChaosResend();
+  hideActionModal();
+  sel = sel || {};
+  const ids = sel.cardIds || [];
+  inChaosEffect++;
+  try{
+    if(cardType==='genkai') chaosGenkai(seat, ids);
+    else if(cardType==='kinoko') chaosKinoko(seat, sel.target, ids[0]);
+  } finally { inChaosEffect--; }
+  render();
+  if(gameOver) showResults();
+}
+// 選んだ4枚を全スートの4に変える（個体idは保つので枚数も所在も変わらない）。
+function chaosGenkai(seat, cardIds){
+  const ids = new Set(cardIds);
+  const picked = hands[seat].filter(c=>ids.has(c.id)).slice(0, 4);
+  picked.forEach((c,i)=>{ c.rank = '4'; c.suit = SUITS[i % SUITS.length]; });
+  log(playerName(seat)+'の手札'+picked.length+'枚が4に変わった');
+}
+// 相手を1人選んでカードを1枚押し付け、その相手の特殊カードをランダムに1枚捨てさせる。
+function chaosKinoko(seat, target, cardId){
+  if(target==null || target===seat || !activePlayers().includes(target)) return;
+  const card = hands[seat].find(c=>c.id===cardId);
+  if(!card) return;
+  hands[seat] = hands[seat].filter(c=>c.id!==card.id);
+  hands[target].push(card);
+  log(playerName(seat)+'が'+playerName(target)+'にカードを1枚押し付けた');
+  const th = chaosHandOf(target);
+  if(th.length){
+    const gone = th.splice(Math.floor(Math.random()*th.length), 1)[0];
+    chaosDiscard.push({id:gone.id, type:gone.type, seat:target});
+    log(playerName(target)+'は特殊カード「'+chaosDef(gone.type).name+'」を失った');
+  } else {
+    log(playerName(target)+'は特殊カードを持っていなかった');
+  }
+}
+// CPUの選択（暫定）。genkaiは弱い札から4枚、kinokoは上がりに近い相手へ最弱の札を送る。
+function cpuChaosSelection(seat, cardType, spec){
+  const weakFirst = sortByStrength(hands[seat]);
+  if(cardType==='genkai') return {cardIds: weakFirst.slice(0, 4).map(c=>c.id)};
+  if(cardType==='kinoko'){
+    const others = activePlayers().filter(p=>p!==seat).sort((a,b)=>hands[a].length-hands[b].length);
+    return {target: others[0], cardIds: weakFirst.length ? [weakFirst[0].id] : []};
+  }
+  return {cardIds: []};
+}
+// ---- 選択モーダル（自席＝オフライン／ホスト自身／ゲスト自身） ----
+function renderChaosSelectModal(){
+  const cp = chaosPending;
+  if(!cp) return;
+  const spec = chaosSelectionSpec(cp.cardType);
+  const hand = sortByStrength(hands[mySeat]||[]);
+  const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,cp.chosen.has(c.id),'chaosToggleCard')).join('');
+  let targetHtml = '';
+  if(cp.needTarget){
+    targetHtml = '<div style="margin:10px 0 4px;font-size:12px;">押し付ける相手</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">'
+      + activePlayers().filter(p=>p!==mySeat).map(p=>
+          '<button type="button" class="rank-btn'+(cp.target===p?' active':'')+'" onclick="chaosPickTarget('+p+')">'
+          + escapeHtml(playerName(p))+'</button>').join('')
+      + '</div>';
+  }
+  const ready = cp.chosen.size===cp.needCards && (!cp.needTarget || cp.target!==null);
+  const btn = cp.sent
+    ? '<button class="action play" disabled>送信中…</button>'
+    : '<button class="action play"'+(ready?'':' disabled')+' onclick="confirmChaosSelect()">決定</button>';
+  showActionModal('<h2>'+escapeHtml(spec.title)+'</h2>'
+    + '<p>'+escapeHtml(spec.hint)+'（'+cp.chosen.size+'/'+cp.needCards+'）</p>'
+    + targetHtml
+    + '<div class="hand" style="justify-content:center;margin-top:10px;">'+cardsHtml+'</div>'
+    + btn);
+}
+function chaosToggleCard(id){
+  const cp = chaosPending;
+  if(!cp || cp.sent) return;
+  if(cp.chosen.has(id)) cp.chosen.delete(id);
+  else if(cp.chosen.size < cp.needCards) cp.chosen.add(id);
+  renderChaosSelectModal();
+}
+function chaosPickTarget(p){
+  const cp = chaosPending;
+  if(!cp || cp.sent) return;
+  cp.target = p;
+  renderChaosSelectModal();
+}
+function confirmChaosSelect(){
+  const cp = chaosPending;
+  if(!cp || cp.sent) return;
+  if(cp.chosen.size!==cp.needCards) return;
+  if(cp.needTarget && cp.target===null) return;
+  if(cp.remote){
+    // ゲストは応答が届いたと確定するまでモーダルを閉じない（カード交換と同じ方針）。
+    // ホストのビューから要求が消えたときに初めて閉じ、それまでは定期的に送り直す。
+    cp.sent = true;
+    renderChaosSelectModal();
+    const payload = {type:'chaosSelect', cardIds:[...cp.chosen], target:cp.target};
+    Online.sendIntent(payload);
+    scheduleChaosResend(payload);
+    return;
+  }
+  chaosResolveSelection(cp.seat, cp.cardType, {cardIds:[...cp.chosen], target:cp.target});
+}
+function scheduleChaosResend(payload){
+  clearChaosResend();
+  chaosResendTimer = setTimeout(function again(){
+    if(!chaosPending || !chaosPending.remote){ chaosResendTimer=null; return; }
+    Online.sendIntent(payload);
+    chaosResendTimer = setTimeout(again, 3000);
+  }, 3000);
+}
+function clearChaosResend(){
+  if(chaosResendTimer){ clearTimeout(chaosResendTimer); chaosResendTimer=null; }
+}
+// 切断でCPU化した席の選択待ちを、CPUの判断で解決する。
+function resolveChaosPendingWithCpu(){
+  const cp = chaosPending;
+  if(!cp) return;
+  const spec = chaosSelectionSpec(cp.cardType);
+  chaosResolveSelection(cp.seat, cp.cardType, cpuChaosSelection(cp.seat, cp.cardType, spec));
 }
 // 発動の実行（ホスト側の唯一の入口）。カードを捨て札へ移してから効果を適用する。
 function chaosUseCard(seat, card){
@@ -2002,14 +2163,19 @@ function chaosUseCard(seat, card){
   return true;
 }
 function applyChaosEffect(seat, card){
-  switch(card.type){
-    case 'hachiware': chaosHachiware(seat); break;
-    case 'ikiru':     chaosIkiru(seat); break;
-    case 'shutou':    chaosShutou(seat); break;
-    case 'osoreta':   chaosOsoreta(seat); break;
-    case 'irekawari': chaosIrekawari(seat); break;
-    case 'mienai':    chaosMienai(seat); break;
-  }
+  // 選択が要るカードは、ここでは要求を出すだけ。実際の効果は選択が確定してから適用する。
+  if(chaosDef(card.type).select){ chaosBeginSelection(seat, card.type); return; }
+  inChaosEffect++;
+  try{
+    switch(card.type){
+      case 'hachiware': chaosHachiware(seat); break;
+      case 'ikiru':     chaosIkiru(seat); break;
+      case 'shutou':    chaosShutou(seat); break;
+      case 'osoreta':   chaosOsoreta(seat); break;
+      case 'irekawari': chaosIrekawari(seat); break;
+      case 'mienai':    chaosMienai(seat); break;
+    }
+  } finally { inChaosEffect--; }
 }
 
 // 場の札の「面」だけをランダムに差し替える。個体idは保つので、枚数も所在も変わらない。
@@ -3989,7 +4155,7 @@ function scheduleNextIfCpu(){
     const myTurnPlayer = currentPlayerIndex;
     setTimeout(()=>{
       if(myGen!==gameGen) return;
-      if(gameOver || pendingAction || exchangeInProgress || revealPending) return;
+      if(gameOver || pendingAction || exchangeInProgress || revealPending || chaosPending) return;
       if(currentPlayerIndex!==myTurnPlayer) return;
       // タイマー予約後に席の操作者が変わっている（例：切断→CPU化した人が再接続して
       // 操作権が本人に戻った）場合は、CPUが本人の代わりに指してしまわないよう中止する。
@@ -5746,7 +5912,8 @@ function render(){
     document.getElementById('fieldCards').innerHTML = (field.cards||[]).map(c=>cardHtml(c,'mini'+(isNewField?' deal-in':''),false,false)).join('');
   }
 
-  const isYourTurn = (currentPlayerIndex===mySeat && !gameOver && !pendingAction && !exchangeInProgress);
+  // 特殊カードの選択待ち中は、出す・パスなどの通常操作を止める（選択が終われば再開）。
+  const isYourTurn = (currentPlayerIndex===mySeat && !gameOver && !pendingAction && !exchangeInProgress && !chaosPending);
   const playableIds = computePlayableCardIds();
   const sortedHand = (hands[mySeat]||[]).slice().sort((a,b)=> handSortDescending
     ? effStrength(b.rank)-effStrength(a.rank)
@@ -5933,6 +6100,10 @@ function buildRedactedView(viewerSeat){
     chaosHandCounts: Array.from({length: seatCount}, (_,i)=> (chaosHands[i]||[]).length),
     myChaosHand: (chaosHands[viewerSeat]||[]).map(c=>({id:c.id, type:c.type})),
     chaosDiscard: chaosDiscard.map(c=>({id:c.id, type:c.type, seat:c.seat})),
+    // 特殊カードの選択をこのゲストに要求しているときだけ載せる。選ぶ対象は自分の手札と
+    // 相手の席番号だけなので、追加で秘匿情報を送る必要はない（myHandで既に持っている）。
+    pendingChaos: (chaosPending && chaosPending.seat===viewerSeat)
+      ? {cardType: chaosPending.cardType} : null,
     // 観戦モード：確定済みの席にだけ全席の実カードを渡す。席番号キーのオブジェクトにして、
     // 空席は自然に欠落させる（Firebaseは空配列を保存しないため、配列だと壊れる）。
     observer,
@@ -6021,6 +6192,22 @@ function applyView(v){
   chaosHands = Array.from({length: seatCount}, (_,i)=>
     i===mySeat ? _myChaos : Array.from({length:_chaosCounts[i]||0},()=>({hidden:true})));
   chaosDiscard = v.chaosDiscard || [];
+  // 特殊カードの選択要求。ホストのビューに要求がある間だけモーダルを開いておき、
+  // 要求が消えた＝ホストが受理したと確定してから閉じる（応答が落ちても取りこぼさない）。
+  if(v.pendingChaos){
+    if(!chaosPending){
+      const spec = chaosSelectionSpec(v.pendingChaos.cardType);
+      if(spec){
+        chaosPending = {seat:mySeat, cardType:v.pendingChaos.cardType, needCards:spec.needCards,
+          needTarget:spec.needTarget, chosen:new Set(), target:null, remote:true, sent:false};
+        renderChaosSelectModal();
+      }
+    }
+  } else if(chaosPending && chaosPending.remote){
+    chaosPending = null;
+    clearChaosResend();
+    hideActionModal();
+  }
   field = reviveField(v.field);
   discardHistory = (v.discardHistory||[]).map(d=>({reason:d.reason, cards:d.cards, hiddenIds:new Set(d.hiddenIds||[])}));
   currentTrickCards = []; currentTrickHiddenIds = new Set();
@@ -7033,10 +7220,21 @@ const Online = (function(){
       }
       return true;
     }
+    // 特殊カードの選択への応答。まだこの席へ要求を出せていない（ビューより先に届いた等）
+    // ときは未処理のまま残して再試行させる——ここで消費すると、その席の選択が永久に
+    // 成立せず進行が止まってしまう（カード交換で踏んだのと同じ落とし穴）。
+    if(intent.type==='chaosSelect'){
+      if(chaosPending && chaosPending.seat===seat){
+        chaosResolveSelection(seat, chaosPending.cardType,
+          {cardIds: intent.cardIds||[], target: (intent.target===undefined?null:intent.target)});
+        return true;
+      }
+      return !chaosPending;
+    }
     // 以降のplay/pass/doubtは、条件を満たさなければ「不正な操作」として捨てる（true）。
     // 後で条件が揃ってから遅れて適用されると、意図しない手を勝手に打つことになるため、
     // 交換のような再試行はしない。
-    const busy = gameOver || pendingAction || pendingRemoteAction || exchangeInProgress || revealPending;
+    const busy = gameOver || pendingAction || pendingRemoteAction || exchangeInProgress || revealPending || chaosPending;
     if(intent.type==='pass'){
       if(busy || currentPlayerIndex!==seat || field===null) return true;
       passAction(seat);
@@ -7096,6 +7294,7 @@ const Online = (function(){
         changed=true;
         if(pendingRemoteAction && pendingRemoteAction.seat===seat){ resolvePendingRemoteWithCpu(); }
         if(pendingExchangeBySeat[seat]){ resolveExchangeSeatWithCpu(seat); }
+        if(chaosPending && chaosPending.seat===seat){ resolveChaosPendingWithCpu(); }
       } else if(seatControllers[seat]==='local-cpu' && !disconnected && m){
         // 自席（S.seatToUidに載る＝元は人間の席）が復帰した：操作権を本人に戻す。
         // CPU補充席はS.seatToUidに載らないので、ここには来ない（＝CPUのまま）。
@@ -7112,7 +7311,7 @@ const Online = (function(){
       // 切断席が手番のまま止まっていたらCPUを動かす（カード交換中は再戦の交換キュー側が
       // 自律的に進むので、ここでは何もしない＝currentPlayerIndexがまだ前回対局の値のまま
       // 誤って手番進行を試みるのを避ける）。
-      if(!gameOver && !pendingAction && !pendingRemoteAction && !exchangeInProgress && !revealPending && seatController(currentPlayerIndex)==='local-cpu'){
+      if(!gameOver && !pendingAction && !pendingRemoteAction && !exchangeInProgress && !revealPending && !chaosPending && seatController(currentPlayerIndex)==='local-cpu'){
         scheduleNextIfCpu();
       }
     }
@@ -7126,7 +7325,7 @@ const Online = (function(){
     clearDoubtWindowTimers(); pendingCpuPlay=null;
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
-    chaosPeek=null; chaosPeekGuest=false;
+    chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
   }
 
   async function leave(){
