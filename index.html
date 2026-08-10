@@ -3049,9 +3049,21 @@ function declLabel(cards){
 }
 
 // 宣言に使える識別子の一覧。ジョーカーは他ランクのワイルドとして宣言に混ぜられる。
-function declPalette(rank){
+// 宣言に使えるカードの一覧。通常は「4スート＋ジョーカーの枚数」で足りるが、カオスモードの
+// 「つーかこれが限界」で同じランクの札が5枚以上存在しうるようになったため、必要枚数(count)を
+// 受け取ってスロットを巡回で増やす。増やさないと、8枚の4を宣言しようとしてもスロットが
+// 足りず「どのランクも選べない＝そのカードを出せない」状態になる。
+// count 未指定時は従来どおり4スロット（既存の呼び出しと完全に同じ結果）。
+function declPalette(rank, count){
   const out = [];
-  if(rank!=='JOKER'){ for(const s of SUITS) out.push({rank, suit:s, id:'decl_'+s+'_'+rank}); }
+  if(rank!=='JOKER'){
+    const need = Math.max(SUITS.length, count||0);
+    for(let i=0;i<need;i++){
+      const s = SUITS[i % SUITS.length];
+      // 2周目以降のスロットは id を分けて、選択状態を1枚ずつ区別できるようにする。
+      out.push({rank, suit:s, id:'decl_'+s+'_'+rank+(i>=SUITS.length ? '_'+i : '')});
+    }
+  }
   if(rules.jokers){
     const n = rules.jokerCount || 2;
     for(let i=1;i<=n;i++) out.push({rank:'JOKER', suit:null, id:'decl_JOKER_'+i});
@@ -3063,7 +3075,7 @@ function declPalette(rank){
 // スートしばり中はしばられているスートを必ず含む形にして、「含められるのに含めない例」で
 // 誤って不可と判定しないようにする。
 function sampleDecl(rank, count){
-  const palette = declPalette(rank);
+  const palette = declPalette(rank, count);
   if(count > palette.length) return null;
   if(rank==='JOKER') return palette.slice(0, count);
   let ordered = palette;
@@ -4388,7 +4400,7 @@ function safeDeclSample(idx, rank, count){
   // 見えた枚数を面ごとに消費しながら候補から外す。ジョーカーは互いに区別しないので、
   // パレットに並ぶn枚のうち「見えた枚数」だけが候補から落ちる。
   const remaining = new Map(seenFaceCounts(idx));
-  let palette = declPalette(rank).filter(item=>{
+  let palette = declPalette(rank, count).filter(item=>{
     const k = cardFaceKey(item);
     const n = remaining.get(k)||0;
     if(n>0){ remaining.set(k, n-1); return false; }
@@ -5510,7 +5522,7 @@ function renderDeclareModal(){
     return;
   }
 
-  const palette = declPalette(pa.rank);
+  const palette = declPalette(pa.rank, count);
   const chosenCards = palette.filter(c=>pa.chosen.includes(c.id));
   const cardsHtml = palette.map(c=>cardHtml(c, 'mini', true, pa.chosen.includes(c.id), 'declToggleCard')).join('');
   const enough = chosenCards.length===count;
@@ -5542,7 +5554,7 @@ function declChooseRank(r){
   pa.rank = r;
   pa.chosen = [];
   // 選択肢が1通りしかない（ジョーカー宣言など）ときは、そのまま埋めて手数を減らす。
-  const palette = declPalette(r);
+  const palette = declPalette(r, pa.actual.length);
   if(palette.length===pa.actual.length) pa.chosen = palette.map(c=>c.id);
   renderDeclareModal();
 }
@@ -5565,7 +5577,7 @@ function cancelDeclare(){
 }
 function confirmDeclare(){
   const pa = pendingAction;
-  const declCards = declPalette(pa.rank).filter(c=>pa.chosen.includes(c.id));
+  const declCards = declPalette(pa.rank, pa.actual.length).filter(c=>pa.chosen.includes(c.id));
   const actual = pa.actual;
   hideActionModal();
   pendingAction = null;
