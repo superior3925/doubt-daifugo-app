@@ -1793,6 +1793,10 @@ let chaosUidSeq = 0;
 // その席にだけ全員の手札を見せる。ゲストはホストの判定結果（view の chaosPeeking）に従う。
 let chaosPeek = null;
 let chaosPeekGuest = false;
+// 「なんとかなれーッ!!」を発動した席。次にその席がトランプを出すとき、ウソをつけない
+// （＝伏せずに公開で出す＝ダウトの対象にならない）代わりに、必ず場が流れて自分の番になる。
+// 出さずにパスした場合は空打ちとして効果が消える。
+let chaosNantokaSeat = null;
 // 特殊カードの「選択待ち」。通常の追加アクション（pendingAction）とは別に持つ。最大の違いは
 // 解決しても手番を進めないこと——発動者はこのあと通常どおりトランプを出すため。
 // ホストは要求した席の分を保持し、リモートのゲストにはビュー経由で伝える。
@@ -1815,7 +1819,7 @@ const CHAOS_INITIAL_HAND = 2;   // ゲーム開始時の配布枚数
 // impl:true が効果を実装済みのカード。未実装のものも手札には配られ内容も見えるが、
 // 発動はできない（UI上も「準備中」と表示する）。
 const CHAOS_CARDS = [
-  {type:'nantoka', timing:'preplay', name:'なんとかなれーッ!!',
+  {type:'nantoka', timing:'preplay', impl:true, name:'なんとかなれーッ!!',
    desc:'このターンはウソをつけない代わりに、出した札で必ず場が流れて自分の番になります（4止め・スペ3返しでも返されません）。出せる札が無ければ空打ちとなり効果は消えます。'},
   {type:'hachiware', timing:'preplay', impl:true, name:'なんとかしろーッ!!ハチワレーッ!!',
    desc:'場のカードをランダムな札に変えます（枚数は変わりません）。変化した札の特殊効果は発動せず、スートしばり・数しばりはすべて解除されます。'},
@@ -1881,6 +1885,7 @@ function resetChaosState(){
   chaosPeek = null;
   chaosPeekGuest = false;
   chaosPending = null;
+  chaosNantokaSeat = null;
   clearChaosResend();
   inChaosEffect = 0;
   trickIndex = 0;
@@ -2193,6 +2198,7 @@ function applyChaosEffect(seat, card){
       case 'osoreta':   chaosOsoreta(seat); break;
       case 'irekawari': chaosIrekawari(seat); break;
       case 'mienai':    chaosMienai(seat); break;
+      case 'nantoka':   chaosNantoka(seat); break;
     }
   } finally { inChaosEffect--; }
 }
@@ -2294,6 +2300,11 @@ function chaosIrekawari(seat){
   log('全員の手札をシャッフルして配り直した（枚数は変わらず）');
 }
 
+// 次に出す1手を「公開・ウソ不可・必ず場が流れる」にする。実際の適用は resolvePlayCore 側。
+function chaosNantoka(seat){
+  chaosNantokaSeat = seat;
+  log(playerName(seat)+'の次の1手は、ウソをつけない代わりに必ず場が流れる');
+}
 // このトリックの間だけ、発動した席にだけ全員の手札を見せる。
 function chaosMienai(seat){
   chaosPeek = {seat: seat, trick: trickIndex};
@@ -3965,7 +3976,11 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   const rank = wildcardAwareRank(cardsPlayed);
   const count = cardsPlayed.length;
 
-  const faceDown = isDoubtMode();
+  // 「なんとかなれーッ!!」の発動中は、ウソをつけない＝伏せずに公開で出す。公開なので
+  // 他のプレイヤーはダウトを宣言できない（doubtAvailableFor が faceDown を要求する）。
+  const nantoka = (chaosNantokaSeat===playerIdx);
+  if(nantoka) chaosNantokaSeat = null;
+  const faceDown = isDoubtMode() && !nantoka;
   // journal はこのプレイ自身の効果だけを巻き戻すための記録。ダウトで嘘が暴かれたときに
   // undoPlay がこれを読んで、7渡し・10捨て・12ボンバーで動いたカードや、このプレイが
   // 直接引き起こした上がり（連鎖する都落ち等も含む）、革命・9リバースのトグルを、
@@ -4052,7 +4067,14 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   // doubtSucceeded）に回す。fieldCleared を false のままにしておくことで、
   // finalizeTurn は「場は生きている」ものとして通常どおり次のプレイヤーへ手番を渡す。
   let fieldCleared=false;
-  if(rank==='8' && rules.eightGiri && !rules.fourStop){
+  // 「なんとかなれーッ!!」は他のどの効果よりも優先して即座に場を流す。公開で出しているので
+  // ダウトを待つ必要がなく、4止め・スペ3返しで返される余地も残さない（仕様どおり）。
+  if(nantoka){
+    clearField('「なんとかなれーッ!!」で流れた札');
+    fieldCleared=true;
+    log('「なんとかなれーッ!!」で場が流れた！ 続けて'+playerName(playerIdx)+'の番です');
+    showCutIn('なんとかなれーッ!!');
+  } else if(rank==='8' && rules.eightGiri && !rules.fourStop){
     if(faceDown){
       field.pendingClear = 'eightGiri';
       log('宣言どおりなら8切りが成立します（他のプレイヤーがダウトしなければ場が流れます）');
@@ -4213,6 +4235,11 @@ function resolvePendingRemoteWithCpu(){
 }
 
 function passAction(playerIdx){
+  // 出せる札が無くてパスした場合、「なんとかなれーッ!!」は空打ちとして効果が消える。
+  if(chaosNantokaSeat===playerIdx){
+    chaosNantokaSeat = null;
+    log(playerName(playerIdx)+'は出せる札がなく、「なんとかなれーッ!!」は空打ちに終わった');
+  }
   passStreak++;
   Feedback.sfx('pass');
   log(playerName(playerIdx)+'： パス');
@@ -5049,7 +5076,10 @@ function cpuTurn(idx){
   // という既存の流れがこの局面を正しく解消する。
   const hand = hands[idx];
 
-  if(isDoubtMode()){
+  // 「なんとかなれーッ!!」の発動中は、宣言（＝ウソをつく経路）を使わず、非ダウトモードと
+  // 同じ「選んだ札をそのまま出す」経路へ落とす。cpuCommitPlay に actual を渡さないことで
+  // 宣言＝実カードになり、必ず正直な手になる。
+  if(isDoubtMode() && chaosNantokaSeat!==idx){
     if(doubtAvailableFor(idx) && cpuChooseDoubt(idx)){ doubtAction(idx); return; }
     if(forcedPassOnly){ log(playerName(idx)+'：5スキップの対象のため出せない'); passAction(idx); return; }
     if(cpuTrySpecialCounter(idx, hand)) return;
@@ -5717,6 +5747,13 @@ function humanPlay(){
   if(!humanCanAct()) return;
   const cards = currentSelectionCards();
   if(cards.length===0){ flashMsg('カードを選んでください'); return; }
+  // 「なんとかなれーッ!!」の発動中はウソをつけないので、宣言モーダルを出さずに
+  // そのまま正直に出す（＝「正直に出す」と同じ経路）。
+  if(isDoubtMode() && chaosNantokaSeat===mySeat){
+    if(forcedPassOnly){ flashMsg('5スキップの対象です。ダウトかパスしかできません'); return; }
+    tryPlayCardsAsIs(cards);
+    return;
+  }
   if(isDoubtMode()){
     if(forcedPassOnly){ flashMsg('5スキップの対象です。ダウトかパスしかできません'); return; }
     // 必要枚数は legalDeclRanks（内部でcanBeatFieldを使う）に一任する。4止めは場の枚数の
@@ -6046,7 +6083,9 @@ function render(){
     handHint.style.display = 'block';
     handHint.textContent = forcedPassOnly
       ? '5スキップの対象です。カードは出せませんが、ダウトは宣言できます'
-      : '緑枠＝正直に出せる札。ウソをつくならどの札を選んでもかまいません';
+      : (chaosNantokaSeat===mySeat
+          ? '「なんとかなれーッ!!」発動中：ウソはつけません（選んだ札をそのまま公開で出し、必ず場が流れます）'
+          : '緑枠＝正直に出せる札。ウソをつくならどの札を選んでもかまいません');
   } else {
     handHint.style.display = 'none';
   }
@@ -6202,6 +6241,9 @@ function buildRedactedView(viewerSeat){
     // 相手の席番号だけなので、追加で秘匿情報を送る必要はない（myHandで既に持っている）。
     pendingChaos: (chaosPending && chaosPending.seat===viewerSeat)
       ? {cardType: chaosPending.cardType} : null,
+    // 「なんとかなれーッ!!」の発動中の席（公開情報：使用済み特殊カードは全員に見えている）。
+    // ゲスト側は自席がこれに一致するとき、宣言モーダルを出さず正直に出す経路へ切り替える。
+    chaosNantokaSeat: (chaosNantokaSeat===null ? -1 : chaosNantokaSeat),
     // 観戦モード：確定済みの席にだけ全席の実カードを渡す。席番号キーのオブジェクトにして、
     // 空席は自然に欠落させる（Firebaseは空配列を保存しないため、配列だと壊れる）。
     observer,
@@ -6290,6 +6332,7 @@ function applyView(v){
   chaosHands = Array.from({length: seatCount}, (_,i)=>
     i===mySeat ? _myChaos : Array.from({length:_chaosCounts[i]||0},()=>({hidden:true})));
   chaosDiscard = v.chaosDiscard || [];
+  chaosNantokaSeat = (typeof v.chaosNantokaSeat==='number' && v.chaosNantokaSeat>=0) ? v.chaosNantokaSeat : null;
   // 特殊カードの選択要求。ホストのビューに要求がある間だけモーダルを開いておき、
   // 要求が消えた＝ホストが受理したと確定してから閉じる（応答が落ちても取りこぼさない）。
   if(v.pendingChaos){
@@ -7424,6 +7467,7 @@ const Online = (function(){
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
+    chaosNantokaSeat=null;
   }
 
   async function leave(){
