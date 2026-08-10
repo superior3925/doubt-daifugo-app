@@ -349,7 +349,21 @@
     margin-top:8px; padding-top:8px; border-top:1px dashed rgba(231,205,123,0.35);
     display:flex; flex-direction:column; gap:6px; align-items:center;
   }
-  .chaos-row-label{ font-size:11px; color:var(--gold-soft); letter-spacing:0.08em; }
+  .chaos-row-label{
+    font-size:11px; color:var(--gold-soft); letter-spacing:0.08em;
+    display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap;
+  }
+  .chaos-catalog-link{
+    font-family:inherit; font-size:10.5px; padding:2px 9px; border-radius:999px;
+    border:1px solid rgba(231,205,123,0.5); background:rgba(0,0,0,0.25);
+    color:var(--gold-soft); cursor:pointer;
+  }
+  .chaos-catalog-btn{ margin-top:8px; }
+  .chaos-catalog-timing{
+    font-size:10.5px; opacity:0.85; margin-top:2px;
+    color:var(--red-hanko); font-weight:700;
+  }
+  .result-card .chaos-catalog-timing{ color:var(--red-hanko); }
   .chaos-cards{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
   .chaos-card{
     max-width:190px; padding:5px 10px; border-radius:10px; font-size:11px; line-height:1.35;
@@ -523,7 +537,45 @@
     box-shadow:0 12px 40px rgba(0,0,0,0.65);
     letter-spacing:0.06em;
     white-space:nowrap;
-    animation:cutInSlam 1.3s cubic-bezier(.2,.9,.25,1) forwards;
+    animation:cutInSlam 2.2s cubic-bezier(.2,.9,.25,1) forwards;
+  }
+  /* 特殊カードの発動は、トランプの効果演出よりはっきり格上に見せる。
+     名前が長いので折り返しを許可し、画面幅に収める。 */
+  @keyframes cutInChaos{
+    0%{   transform:translateX(-135%) skewX(-8deg) scale(0.75); opacity:0; }
+    9%{   transform:translateX(2%)    skewX(-8deg) scale(1.16); opacity:1; }
+    15%{  transform:translateX(0)     skewX(-8deg) scale(1);    opacity:1; }
+    45%{  transform:translateX(0)     skewX(-8deg) scale(1.05); opacity:1; }
+    60%{  transform:translateX(0)     skewX(-8deg) scale(1);    opacity:1; }
+    84%{  transform:translateX(0)     skewX(-8deg) scale(1);    opacity:1; }
+    100%{ transform:translateX(135%)  skewX(-8deg) scale(0.9);  opacity:0; }
+  }
+  @keyframes chaosGlow{
+    0%,100%{ box-shadow:0 0 34px rgba(224,138,30,0.55), 0 16px 50px rgba(0,0,0,0.75); }
+    50%{     box-shadow:0 0 78px rgba(255,196,90,0.95), 0 16px 50px rgba(0,0,0,0.75); }
+  }
+  .cut-in-text.chaos{
+    font-size:clamp(21px, 6.2vw, 54px);
+    padding:20px 44px;
+    max-width:92vw;
+    white-space:normal;
+    text-align:center;
+    line-height:1.25;
+    background:linear-gradient(100deg,#5b1d8f 0%, var(--red-hanko) 48%, #d8801a 100%);
+    border-top:4px solid #ffe9a8;
+    border-bottom:4px solid #ffe9a8;
+    text-shadow:0 0 16px rgba(255,224,150,0.9), 0 2px 4px rgba(0,0,0,0.7);
+    animation:cutInChaos 3.2s cubic-bezier(.2,.9,.25,1) forwards,
+              chaosGlow 0.9s ease-in-out 3 both;
+  }
+  /* 発動の瞬間に画面全体を一瞬だけ光らせる（特殊カード専用） */
+  @keyframes chaosFlash{
+    0%{ opacity:0; } 8%{ opacity:0.55; } 30%{ opacity:0; } 100%{ opacity:0; }
+  }
+  .chaos-flash{
+    position:fixed; inset:0; z-index:78; pointer-events:none;
+    background:radial-gradient(circle at 50% 42%, rgba(255,214,130,0.95), rgba(150,40,20,0.35) 45%, transparent 70%);
+    animation:chaosFlash 3.2s ease-out forwards;
   }
 
   .bomber-fly{
@@ -1098,7 +1150,7 @@
       <div>
         <div class="mode-toggle-title">カオスモード（開発中）</div>
         <div class="rule-desc">ダウト大富豪モード専用。トランプとは別に「特殊カード」が配られ、発動すると場や手札が大きく動きます。開始時に2枚、親になるたびに1枚（手札は最大3枚まで）。特殊カードは常に表向きで処理されるためウソはつけず、発動内容は全員が確認できます。何枚持っていても勝敗には関係なく、トランプがなくなった時点で上がりです。バランス確保のため、都落ちは適用されません。</div>
-        <div class="rule-desc chaos-wip-note" id="chaosWipNote">現在は特殊カードの配布・表示までを実装しています（効果の発動は今後追加）。</div>
+        <button type="button" class="rules-toggle chaos-catalog-btn" onclick="openChaosCatalogModal()">✨ 特殊カード一覧を見る</button>
       </div>
     </div>
     <div class="setup-actions-top">
@@ -1276,7 +1328,10 @@
             <div class="hand" id="hand"></div>
             <div class="hint-line" id="handHint" style="display:none;"></div>
             <div class="chaos-row" id="chaosHandRow" style="display:none;">
-              <div class="chaos-row-label" id="chaosHandLabel">特殊カード</div>
+              <div class="chaos-row-label">
+                <span id="chaosHandLabel">特殊カード</span>
+                <button type="button" class="chaos-catalog-link" onclick="openChaosCatalogModal()">一覧を見る</button>
+              </div>
               <div class="chaos-cards" id="chaosHand"></div>
             </div>
           </div>
@@ -2278,7 +2333,7 @@ function chaosUseCard(seat, card){
   chaosDiscard.push({id:card.id, type:card.type, seat:seat});
   const def = chaosDef(card.type);
   log(playerName(seat)+'が特殊カード「'+def.name+'」を発動！');
-  showCutIn(def.name);
+  showCutIn(def.name, undefined, {chaos:true});
   applyChaosEffect(seat, card);
   return true;
 }
@@ -2437,7 +2492,7 @@ function chaosTryTsukareten(ownerIdx, doubterIdx){
   const card = hand.splice(i, 1)[0];
   chaosDiscard.push({id:card.id, type:card.type, seat:ownerIdx});
   log(playerName(ownerIdx)+'の「お前さぁ…疲れてんだよ」が発動！');
-  showCutIn('お前さぁ…疲れてんだよ');
+  showCutIn('お前さぁ…疲れてんだよ', undefined, {chaos:true});
   inChaosEffect++;
   try{
     const theirs = chaosHandOf(doubterIdx);
@@ -2468,7 +2523,7 @@ function chaosTryShinimasen(idx){
   chaosDiscard.push({id:card.id, type:card.type, seat:idx});
   outs[idx] = 1;
   log(playerName(idx)+'は「僕は死にましぇん」で敗北を拒否！　アウトが1つに戻った');
-  showCutIn('僕は死にましぇん！！');
+  showCutIn('僕は死にましぇん！！', undefined, {chaos:true});
   return true;
 }
 
@@ -3179,18 +3234,32 @@ function declLabel(cards){
 // 受け取ってスロットを巡回で増やす。増やさないと、8枚の4を宣言しようとしてもスロットが
 // 足りず「どのランクも選べない＝そのカードを出せない」状態になる。
 // count 未指定時は従来どおり4スロット（既存の呼び出しと完全に同じ結果）。
-function declPalette(rank, count){
+function declPalette(rank, count, seat){
   const out = [];
+  const hand = (typeof seat==='number' && hands[seat]) ? hands[seat] : [];
   if(rank!=='JOKER'){
-    const need = Math.max(SUITS.length, count||0);
-    for(let i=0;i<need;i++){
-      const s = SUITS[i % SUITS.length];
-      // 2周目以降のスロットは id を分けて、選択状態を1枚ずつ区別できるようにする。
-      out.push({rank, suit:s, id:'decl_'+s+'_'+rank+(i>=SUITS.length ? '_'+i : '')});
+    for(const s of SUITS){
+      // 同じ面の札を実際に複数持っていることがある（カオスモードの「生きるのは最高だ」
+      // 「つーかこれが限界」など）。その場合はスートごとにスロットを増やし、持っている
+      // 分だけ正直に宣言できるようにする。持っていなければ従来どおり1つ。
+      const held = hand.filter(c=>c.rank===rank && c.suit===s).length;
+      const slots = Math.max(1, held);
+      for(let k=0;k<slots;k++){
+        out.push({rank, suit:s, id:'decl_'+s+'_'+rank+(k ? '_d'+k : '')});
+      }
+    }
+    // 大量枚数の宣言でスロットが足りない場合は、スートを巡回して補う。
+    let extra = 0;
+    while(out.length < (count||0)){
+      const s = SUITS[extra % SUITS.length];
+      out.push({rank, suit:s, id:'decl_'+s+'_'+rank+'_x'+extra});
+      extra++;
     }
   }
   if(rules.jokers){
-    const n = rules.jokerCount || 2;
+    // ジョーカーも「2がジョーカーに変わる」効果で規定枚数を超えることがある。
+    const heldJokers = hand.filter(c=>c.rank==='JOKER').length;
+    const n = Math.max(rules.jokerCount || 2, heldJokers);
     for(let i=1;i<=n;i++) out.push({rank:'JOKER', suit:null, id:'decl_JOKER_'+i});
   }
   return out;
@@ -4188,7 +4257,7 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
     clearField('「なんとかなれーッ!!」で流れた札');
     fieldCleared=true;
     log('「なんとかなれーッ!!」で場が流れた！ 続けて'+playerName(playerIdx)+'の番です');
-    showCutIn('なんとかなれーッ!!');
+    showCutIn('なんとかなれーッ!!', undefined, {chaos:true});
   } else if(rank==='8' && rules.eightGiri && !rules.fourStop){
     if(faceDown){
       field.pendingClear = 'eightGiri';
@@ -4577,7 +4646,7 @@ function safeDeclSample(idx, rank, count){
   // 見えた枚数を面ごとに消費しながら候補から外す。ジョーカーは互いに区別しないので、
   // パレットに並ぶn枚のうち「見えた枚数」だけが候補から落ちる。
   const remaining = new Map(seenFaceCounts(idx));
-  let palette = declPalette(rank, count).filter(item=>{
+  let palette = declPalette(rank, count, idx).filter(item=>{
     const k = cardFaceKey(item);
     const n = remaining.get(k)||0;
     if(n>0){ remaining.set(k, n-1); return false; }
@@ -4757,9 +4826,17 @@ function undoPlay(journal){
   if(journal.directionFlipped) turnDirection = journal.prevTurnDirection;
 
   journal.gives.forEach(g=>{
-    const ids = new Set(g.cards.map(c=>c.id));
-    hands[g.to] = hands[g.to].filter(c=>!ids.has(c.id));
-    hands[g.from] = hands[g.from].concat(g.cards);
+    g.cards.forEach(card=>{
+      // 渡した先を決め打ちで消してはいけない。カオスの「わたしたち、入れ替わってる！？」
+      // のように、このプレイのあとで札が別の席へ移っていることがあるためで、決め打ちだと
+      // 移動先に残ったまま元の持ち主にも足されて、同じ札が2か所に存在してしまう。
+      // いま実際にどの席にあるかを探してから、元の持ち主へ戻す。
+      for(let i=0;i<hands.length;i++){
+        const k = (hands[i]||[]).findIndex(c=>c.id===card.id);
+        if(k>=0){ hands[i].splice(k,1); break; }
+      }
+      hands[g.from].push(card);
+    });
   });
   journal.discards.forEach(d=>{ hands[d.idx] = hands[d.idx].concat(d.cards); });
   journal.bomberRemovals.forEach(b=>{ hands[b.idx] = hands[b.idx].concat(b.cards); });
@@ -5393,17 +5470,26 @@ function applyBomber(ranksChosen, onComplete){
 }
 
 let cutInTimer = null;
-function showCutIn(text, sound){
+// 効果演出。読み切れるように表示時間は長めに取る（従来1.3秒→通常2.2秒／特殊カード3.2秒）。
+// opts.chaos で特殊カード専用の派手な見た目（拡大・グラデーション・画面フラッシュ）にする。
+// あなたが上がった後の高速消化中（fastForward）は turboMs でごく短くなる。
+function showCutIn(text, sound, opts){
   Feedback.sfx(sound===undefined ? 'cutin' : sound);
   const host = document.getElementById('cutInHost');
   if(!host) return;
   if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
   host.innerHTML = '';
+  const chaos = !!(opts && opts.chaos);
+  if(chaos){
+    const flash = document.createElement('div');
+    flash.className = 'chaos-flash';
+    host.appendChild(flash);
+  }
   const el = document.createElement('div');
-  el.className = 'cut-in-text';
+  el.className = 'cut-in-text' + (chaos ? ' chaos' : '');
   el.textContent = text;
   host.appendChild(el);
-  cutInTimer = setTimeout(()=>{ host.innerHTML=''; cutInTimer=null; }, 1300);
+  cutInTimer = setTimeout(()=>{ host.innerHTML=''; cutInTimer=null; }, turboMs(chaos ? 3200 : 2200));
 }
 
 function showActionModal(html){
@@ -5514,6 +5600,27 @@ function renderChaosArea(){
   }
   const cnt = document.getElementById('chaosDiscardCount');
   if(cnt) cnt.textContent = chaosDiscard.length;
+}
+// 特殊カードの全種一覧。オリジナル要素なので、設定画面でも対戦中でもいつでも読めるようにする。
+const CHAOS_TIMING_LABEL = {
+  'preplay': '自分の番／札を出す前',
+  'doubt-alt': '自分の番／ダウトの代わりに',
+  'auto-out3': 'アウトが3つたまると自動発動',
+  'auto-doubted': 'ダウトされて正直だったとき自動発動'
+};
+function openChaosCatalogModal(){
+  const rows = CHAOS_CARDS.map(function(c){
+    return '<div class="chaos-card" style="max-width:none;margin-bottom:10px;">'
+      + '<div class="chaos-card-name">'+escapeHtml(c.name)+'</div>'
+      + '<div class="chaos-catalog-timing">'+escapeHtml(CHAOS_TIMING_LABEL[c.timing]||c.timing)+'</div>'
+      + '<div style="margin-top:4px;">'+escapeHtml(c.desc)+'</div>'
+      + '</div>';
+  }).join('');
+  showHistoryModal('<h2>特殊カード一覧</h2>'
+    + '<p style="text-align:left;">カオスモードで使える全'+CHAOS_CARDS.length+'種です。'
+    + '開始時に2枚、親になるたびに1枚（最大3枚まで）配られます。'
+    + '特殊カードは常に表向きで処理されるためウソはつけず、勝敗にも関与しません。</p>'
+    + '<div style="max-height:56vh;overflow-y:auto;text-align:left;">'+rows+'</div>');
 }
 function openChaosDiscardModal(){
   const html = chaosDiscard.length===0
@@ -5725,7 +5832,7 @@ function renderDeclareModal(){
     return;
   }
 
-  const palette = declPalette(pa.rank, count);
+  const palette = declPalette(pa.rank, count, mySeat);
   const chosenCards = palette.filter(c=>pa.chosen.includes(c.id));
   const cardsHtml = palette.map(c=>cardHtml(c, 'mini', true, pa.chosen.includes(c.id), 'declToggleCard')).join('');
   const enough = chosenCards.length===count;
@@ -5757,7 +5864,7 @@ function declChooseRank(r){
   pa.rank = r;
   pa.chosen = [];
   // 選択肢が1通りしかない（ジョーカー宣言など）ときは、そのまま埋めて手数を減らす。
-  const palette = declPalette(r, pa.actual.length);
+  const palette = declPalette(r, pa.actual.length, mySeat);
   if(palette.length===pa.actual.length) pa.chosen = palette.map(c=>c.id);
   renderDeclareModal();
 }
@@ -5780,7 +5887,7 @@ function cancelDeclare(){
 }
 function confirmDeclare(){
   const pa = pendingAction;
-  const declCards = declPalette(pa.rank, pa.actual.length).filter(c=>pa.chosen.includes(c.id));
+  const declCards = declPalette(pa.rank, pa.actual.length, mySeat).filter(c=>pa.chosen.includes(c.id));
   const actual = pa.actual;
   hideActionModal();
   pendingAction = null;
