@@ -1801,6 +1801,12 @@ let chaosNantokaSeat = null;
 // なんとかなれーと同じくウソはつけない（公開で出す＝ダウトされない）が、場を強制的に
 // 流すことはせず、特殊効果は通常どおり発動する。2回終わったら特殊カードを1枚引く。
 let chaosOrenoTurn = null;
+// 「よろしくお願いしまああああす！」を発動した席。札を出した"あと"に効果が出るので、
+// 発動時点では席を覚えるだけにして、finalizeTurn で配る枚数を選ばせる。
+let chaosYoroshikuSeat = null;
+// カードを配り終えるまで保留しておく手番送り。7渡し等が finalizeTurn(info, extraSkips) を
+// 選択後に呼ぶのと同じ仕組みで、選択が確定したらそのまま続きを実行する。
+let chaosDeferredTurn = null;
 // その席がいま「ウソをつけない」状態か（＝伏せずに公開で出す）。
 function chaosHonestForced(seat){
   return chaosNantokaSeat===seat || !!(chaosOrenoTurn && chaosOrenoTurn.seat===seat);
@@ -1845,7 +1851,7 @@ const CHAOS_CARDS = [
    desc:'このトリックの間だけ、全員の手札が自分にだけ見えるようになります。'},
   {type:'irekawari', timing:'preplay', impl:true, name:'わたしたち、入れ替わってる！？',
    desc:'誰かが上がったあとにだけ発動可能。全員の残り手札を集めてシャッフルし、元と同じ枚数ずつ配り直します。'},
-  {type:'yoroshiku', timing:'preplay', name:'よろしくお願いしまああああす！',
+  {type:'yoroshiku', timing:'preplay', impl:true, select:true, name:'よろしくお願いしまああああす！',
    desc:'自分が札を出したあと、ほかのプレイヤー全員にカードを1枚ずつ渡します。'},
   {type:'tsukareten', timing:'auto-doubted', impl:true, name:'お前さぁ…疲れてんだよ',
    desc:'ダウトされて正直だったときに強制発動。場は必ず流れて次の番になり、ダウトした相手から特殊カード1枚と最も強い札1枚をもらいます。'},
@@ -1895,6 +1901,8 @@ function resetChaosState(){
   chaosPending = null;
   chaosNantokaSeat = null;
   chaosOrenoTurn = null;
+  chaosYoroshikuSeat = null;
+  chaosDeferredTurn = null;
   clearChaosResend();
   inChaosEffect = 0;
   trickIndex = 0;
@@ -2014,11 +2022,22 @@ function chaosCardUsable(seat, card){
     // 作らない。手番の途中で順位が確定すると、そのあと出す手が無くなって進行が詰まる。
     case 'kinoko':    return hands[seat].length>=2 && activePlayers().some(p=>p!==seat);
     case 'tsuree':    return outs[seat]>=2 && hands[seat].length>=3;  // 2枚捨てても1枚残る
+    // 出す1枚＋人数分＋手元に残す1枚が要る。配ったあとに自分が0枚になる手順は作らない。
+    case 'yoroshiku': return hands[seat].length >= activePlayers().filter(p=>p!==seat).length + 2;
     default: return true;
   }
 }
 // 選択を要するカードの仕様。needCards=選ぶ手札の枚数、needTarget=相手を選ぶか。
-function chaosSelectionSpec(cardType){
+// yoroshiku だけは相手の人数と手札に応じて枚数が変わるので seat を見る。
+function chaosSelectionSpec(cardType, seat){
+  if(cardType==='yoroshiku'){
+    const s = (typeof seat==='number') ? seat : currentPlayerIndex;
+    const others = activePlayers().filter(p=>p!==s).length;
+    // 配ったあとも必ず1枚は手元に残す（自分が上がってしまう手順を作らない）。
+    const need = Math.max(0, Math.min(others, (hands[s]||[]).length-1));
+    return {needCards:need, needTarget:false, title:'よろしくお願いしまああああす！',
+      hint:'ほかのプレイヤーへ配るカードを'+need+'枚選んでください（手番の順に1枚ずつ渡されます）'};
+  }
   switch(cardType){
     case 'genkai': return {needCards:4, needTarget:false, title:'つーかこれが限界',
       hint:'4に変える手札をちょうど4枚選んでください（全スートの4になります）'};
@@ -2032,7 +2051,7 @@ function chaosSelectionSpec(cardType){
 // 選択が要るカードの発動。CPU席は即座に決め、自席はモーダル、リモートのゲストには
 // ビュー配信で要求を伝えて応答（サブintent）を待つ。
 function chaosBeginSelection(seat, cardType){
-  const spec = chaosSelectionSpec(cardType);
+  const spec = chaosSelectionSpec(cardType, seat);
   if(!spec) return;
   if(seatController(seat)==='local-cpu'){
     chaosResolveSelection(seat, cardType, cpuChaosSelection(seat, cardType, spec));
@@ -2055,9 +2074,31 @@ function chaosResolveSelection(seat, cardType, sel){
     if(cardType==='genkai') chaosGenkai(seat, ids);
     else if(cardType==='kinoko') chaosKinoko(seat, sel.target, ids[0]);
     else if(cardType==='tsuree') chaosTsuree(seat, ids);
+    else if(cardType==='yoroshiku') chaosYoroshiku(seat, ids);
   } finally { inChaosEffect--; }
   render();
-  if(gameOver) showResults();
+  if(gameOver){ chaosDeferredTurn = null; showResults(); return; }
+  // 「よろしくお願いしまああああす！」のように、手番送りを保留したまま選ばせた場合は
+  // ここで続きを実行する（7渡し等が選択後に finalizeTurn を呼ぶのと同じ形）。
+  if(chaosDeferredTurn){
+    const d = chaosDeferredTurn;
+    chaosDeferredTurn = null;
+    finalizeTurn(d.info, d.extraSkips);
+  }
+}
+// 選んだ札を、自分以外の生存プレイヤーへ手番の順に1枚ずつ配る。
+function chaosYoroshiku(seat, cardIds){
+  const ids = new Set(cardIds);
+  const give = hands[seat].filter(c=>ids.has(c.id));
+  const others = activePlayers().filter(p=>p!==seat);
+  const n = Math.min(give.length, others.length);
+  if(n<=0) return;
+  const handed = give.slice(0, n);
+  const hset = new Set(handed.map(c=>c.id));
+  hands[seat] = hands[seat].filter(c=>!hset.has(c.id));
+  handed.forEach((c,i)=>{ hands[others[i]].push(c); });
+  log(playerName(seat)+'が'+others.slice(0,n).map(playerName).join('・')+'にカードを1枚ずつ配った');
+  checkGameEndAfterSideEffect('chaos');
 }
 // 選んだ4枚を全スートの4に変える（個体idは保つので枚数も所在も変わらない）。
 function chaosGenkai(seat, cardIds){
@@ -2102,6 +2143,7 @@ function cpuChaosSelection(seat, cardType, spec){
   const weakFirst = sortByStrength(hands[seat]);
   if(cardType==='genkai') return {cardIds: weakFirst.slice(0, 4).map(c=>c.id)};
   if(cardType==='tsuree') return {cardIds: weakFirst.slice(0, 2).map(c=>c.id)};
+  if(cardType==='yoroshiku') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
   if(cardType==='kinoko'){
     const others = activePlayers().filter(p=>p!==seat).sort((a,b)=>hands[a].length-hands[b].length);
     return {target: others[0], cardIds: weakFirst.length ? [weakFirst[0].id] : []};
@@ -2112,7 +2154,7 @@ function cpuChaosSelection(seat, cardType, spec){
 function renderChaosSelectModal(){
   const cp = chaosPending;
   if(!cp) return;
-  const spec = chaosSelectionSpec(cp.cardType);
+  const spec = chaosSelectionSpec(cp.cardType, cp.seat);
   const hand = sortByStrength(hands[mySeat]||[]);
   const cardsHtml = hand.map(c=>cardHtml(c,'mini',true,cp.chosen.has(c.id),'chaosToggleCard')).join('');
   let targetHtml = '';
@@ -2179,7 +2221,7 @@ function clearChaosResend(){
 function resolveChaosPendingWithCpu(){
   const cp = chaosPending;
   if(!cp) return;
-  const spec = chaosSelectionSpec(cp.cardType);
+  const spec = chaosSelectionSpec(cp.cardType, cp.seat);
   chaosResolveSelection(cp.seat, cp.cardType, cpuChaosSelection(cp.seat, cp.cardType, spec));
 }
 // 発動の実行（ホスト側の唯一の入口）。カードを捨て札へ移してから効果を適用する。
@@ -2209,6 +2251,9 @@ function applyChaosEffect(seat, card){
       case 'mienai':    chaosMienai(seat); break;
       case 'nantoka':   chaosNantoka(seat); break;
       case 'orenoTurn': chaosOrenoTurnStart(seat); break;
+      // 効果が出るのは「札を出したあと」なので、ここでは席を覚えるだけ。
+      case 'yoroshiku': chaosYoroshikuSeat = seat;
+                        log(playerName(seat)+'は札を出したあと、全員にカードを1枚ずつ配る'); break;
     }
   } finally { inChaosEffect--; }
 }
@@ -4141,7 +4186,7 @@ function finalizeTurn(info, extraSkips){
   // 「ずっと俺のターン」：この席の連続手番が残っていれば手番を進めずに本人へ戻す。
   // 8切り等で場が流れていても同じ（どちらにせよ次に打つのは本人）。上がってしまった
   // 場合はそこで打ち切り、通常の進行に戻す。
-  if(chaosOrenoTurn && chaosOrenoTurn.seat===info.playerIdx){
+  if(chaosOrenoTurn && chaosOrenoTurn.seat===info.playerIdx && !info.__chaosResumed){
     chaosOrenoTurn.left--;
     if(chaosOrenoTurn.left>0 && !info.finished){
       currentPlayerIndex = info.playerIdx;
@@ -4153,6 +4198,20 @@ function finalizeTurn(info, extraSkips){
     }
     chaosOrenoTurnFinish();
     if(gameOver){ render(); showResults(); return; }
+  }
+  // 「よろしくお願いしまああああす！」：札を出したあとに配るカードを選ばせる。
+  // 選び終わるまで手番送りを保留し、確定したらこの続き（下の通常処理）を実行する。
+  if(chaosYoroshikuSeat===info.playerIdx && !info.__chaosResumed){
+    const seat = chaosYoroshikuSeat;
+    chaosYoroshikuSeat = null;
+    const spec = chaosSelectionSpec('yoroshiku', seat);
+    if(spec && spec.needCards>0 && !finishedOrder.includes(seat)){
+      info.__chaosResumed = true;
+      chaosDeferredTurn = {info: info, extraSkips: extraSkips};
+      chaosBeginSelection(seat, 'yoroshiku');
+      return;
+    }
+    log(playerName(seat)+'は配れるカードが無く、「よろしくお願いしまああああす！」は不発に終わった');
   }
   if(!(info.fieldCleared && !info.finished)){
     // Cap skips at how many players still need to respond to this field (see passClearThreshold):
@@ -5884,6 +5943,8 @@ function showResults(){
   // すべてが必ず通るここで片付ける。
   chaosOrenoTurn = null;
   chaosNantokaSeat = null;
+  chaosYoroshikuSeat = null;
+  chaosDeferredTurn = null;
   const finalRanking = computeFinalRanking();
   previousFinishedOrder = finalRanking.slice();
   // スコア加算は1ゲームにつき厳密に1回。showResultsはゲーム終了検出の複数経路
@@ -7521,7 +7582,7 @@ const Online = (function(){
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
-    chaosNantokaSeat=null; chaosOrenoTurn=null;
+    chaosNantokaSeat=null; chaosOrenoTurn=null; chaosYoroshikuSeat=null; chaosDeferredTurn=null;
   }
 
   async function leave(){
