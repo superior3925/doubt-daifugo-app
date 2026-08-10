@@ -358,6 +358,14 @@
   }
   .chaos-card .chaos-card-name{ font-weight:700; color:var(--gold-soft); }
   .chaos-card.empty{ border-style:dashed; opacity:0.55; }
+  .chaos-card-note{ margin-top:3px; font-size:10px; opacity:0.7; }
+  button.chaos-card{ cursor:default; }
+  button.chaos-card:disabled{ opacity:0.5; }
+  button.chaos-card.usable{
+    cursor:pointer; border-color:var(--playable);
+    box-shadow:0 0 10px rgba(94,217,189,0.35);
+  }
+  button.chaos-card.usable:hover{ background:rgba(94,217,189,0.14); }
   /* モーダル（.result-card）は cream 地なので、盤面用の淡色文字のままだと読めない。
      ライト地に合わせて反転させる（--cream/--ink はテーマで入れ替わるので両テーマで成立する）。 */
   .result-card .chaos-card{
@@ -1781,6 +1789,10 @@ function turboMs(ms){ return fastForward ? 20 : ms; }
 let chaosHands = [];            // 席 -> [{id, type}]（各席の特殊カード手札。秘匿情報）
 let chaosDiscard = [];          // 使用済みの特殊カード [{id, type, seat}]（公開情報）
 let chaosUidSeq = 0;
+// 「見えないものを見ようとして」の効果。{seat, trick} で、そのトリックの間だけ
+// その席にだけ全員の手札を見せる。ゲストはホストの判定結果（view の chaosPeeking）に従う。
+let chaosPeek = null;
+let chaosPeekGuest = false;
 // このゲームで何回目のトリックか。0 = ゲーム開始時の最初の親（この親には配らない）。
 let trickIndex = 0;
 // 特殊カードを配布済みのトリック番号。同じトリックで二重に配らないための番人。
@@ -1793,14 +1805,16 @@ const CHAOS_INITIAL_HAND = 2;   // ゲーム開始時の配布枚数
 //   doubt-alt    … ダウト宣言の代わりに発動できる
 //   auto-out3    … アウトが3つたまったときに強制発動する
 //   auto-doubted … ダウトされて正直だったときに強制発動する
+// impl:true が効果を実装済みのカード。未実装のものも手札には配られ内容も見えるが、
+// 発動はできない（UI上も「準備中」と表示する）。
 const CHAOS_CARDS = [
   {type:'nantoka', timing:'preplay', name:'なんとかなれーッ!!',
    desc:'このターンはウソをつけない代わりに、出した札で必ず場が流れて自分の番になります（4止め・スペ3返しでも返されません）。出せる札が無ければ空打ちとなり効果は消えます。'},
-  {type:'hachiware', timing:'preplay', name:'なんとかしろーッ!!ハチワレーッ!!',
+  {type:'hachiware', timing:'preplay', impl:true, name:'なんとかしろーッ!!ハチワレーッ!!',
    desc:'場のカードをランダムな札に変えます（枚数は変わりません）。変化した札の特殊効果は発動せず、スートしばり・数しばりはすべて解除されます。'},
-  {type:'shinimasen', timing:'auto-out3', name:'僕は死にましぇん',
+  {type:'shinimasen', timing:'auto-out3', impl:true, name:'僕は死にましぇん',
    desc:'アウトが3つたまったとき手札にあると強制発動。その敗北を拒否し、アウトが1つに戻ります（禁止上がりなどの反則負けには効果がありません）。'},
-  {type:'osoreta', timing:'preplay', name:'恐れたやつが負けなのさ',
+  {type:'osoreta', timing:'preplay', impl:true, name:'恐れたやつが負けなのさ',
    desc:'アウトが0のプレイヤー全員にアウトを2つ与え、捨て札からランダムに2枚ずつ渡します。すでにアウトが1つ以上ある相手には効果がありません。'},
   {type:'kinoko', timing:'preplay', name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
    desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードを1枚捨てさせます。'},
@@ -1808,17 +1822,17 @@ const CHAOS_CARDS = [
    desc:'ダウト宣言の代わりに発動。通常のダウトと同じく相手の札をめくります。成功なら手札を2枚まで相手に渡せ、失敗してもアウト・休みのペナルティを受けません。'},
   {type:'orenoTurn', timing:'preplay', name:'ずっと俺のターン!!ドローっ!!',
    desc:'ウソをつけない代わりに、ターンを2回続けて行います（7渡し・8切りなどの特殊効果は通常どおり発動）。終了後、特殊カードを1枚引きます。'},
-  {type:'mienai', timing:'preplay', name:'見えないものを見ようとして',
+  {type:'mienai', timing:'preplay', impl:true, name:'見えないものを見ようとして',
    desc:'このトリックの間だけ、全員の手札が自分にだけ見えるようになります。'},
-  {type:'irekawari', timing:'preplay', name:'わたしたち、入れ替わってる！？',
+  {type:'irekawari', timing:'preplay', impl:true, name:'わたしたち、入れ替わってる！？',
    desc:'誰かが上がったあとにだけ発動可能。全員の残り手札を集めてシャッフルし、元と同じ枚数ずつ配り直します。'},
   {type:'yoroshiku', timing:'preplay', name:'よろしくお願いしまああああす！',
    desc:'自分が札を出したあと、ほかのプレイヤー全員にカードを1枚ずつ渡します。'},
   {type:'tsukareten', timing:'auto-doubted', name:'お前さぁ…疲れてんだよ',
    desc:'ダウトされて正直だったときに強制発動。場は必ず流れて次の番になり、ダウトした相手から特殊カード1枚と最も強い札1枚をもらいます。'},
-  {type:'ikiru', timing:'preplay', name:'生きるのは最高だ',
+  {type:'ikiru', timing:'preplay', impl:true, name:'生きるのは最高だ',
    desc:'自分の手札がすべて1つずつ強くなります（2はジョーカーに、ジョーカーは変化なし。革命中は逆に弱くなります）。'},
-  {type:'shutou', timing:'preplay', name:'恐ろしく速い手刀',
+  {type:'shutou', timing:'preplay', impl:true, name:'恐ろしく速い手刀',
    desc:'各プレイヤーから、最も強い札を1枚ずつランダムにもらいます。'},
   {type:'genkai', timing:'preplay', name:'つーかこれが限界',
    desc:'自分の手札を4枚選び、全スートの4に変えます。'},
@@ -1857,6 +1871,8 @@ function grantChaosCard(seat, reason){
 function resetChaosState(){
   chaosHands = Array.from({length: seatCount}, ()=>[]);
   chaosDiscard = [];
+  chaosPeek = null;
+  chaosPeekGuest = false;
   trickIndex = 0;
   chaosGrantedForTrick = -1;
   if(isChaosMode()){
@@ -1879,6 +1895,266 @@ function grantChaosCardToTrickLeader(){
   if(chaosGrantedForTrick===trickIndex) return false;
   chaosGrantedForTrick = trickIndex;
   return grantChaosCard(currentPlayerIndex, '親になった');
+}
+
+// ---- カオスモード：特殊カードの発動 ----
+// カオスの強弱判定は「革命だけ」を見る（11バック中でも通常どおり扱う、という仕様）。
+// 場の強さ比較に使う effStrength（革命 XOR 11バック）とは意図的に別物にしてある。
+function chaosStrength(rank){
+  if(rank==='JOKER') return 999;
+  const i = strengthIndex(rank);
+  if(i<0) return -1;
+  return revolution ? (12-i) : i;
+}
+// 手札の中で最も強い札を1枚。同じ強さが複数あればランダムに1枚選ぶ。
+function chaosPickStrongest(hand){
+  if(!hand || !hand.length) return null;
+  let best = -2, pool = [];
+  hand.forEach(c=>{
+    const s = chaosStrength(c.rank);
+    if(s>best){ best = s; pool = [c]; }
+    else if(s===best) pool.push(c);
+  });
+  return pool.length ? pool[Math.floor(Math.random()*pool.length)] : null;
+}
+// ランダムな「面」。ハチワレの変化先に使う（山札の在庫は考えず、全種類から等確率で選ぶ
+// ＝同じ面の札がゲーム内に複数存在しうる。フェーズ0でidと面を分離したのはこのため）。
+function chaosRandomFace(){
+  const pool = rules.jokers ? RANKS.length+1 : RANKS.length;
+  const k = Math.floor(Math.random()*pool);
+  if(k===RANKS.length) return {rank:'JOKER', suit:null};
+  return {rank: RANKS[k], suit: SUITS[Math.floor(Math.random()*SUITS.length)]};
+}
+// いま場に出ている伏せ札のプレイが「ダウトで暴かれたら元の持ち主へ返す」と約束している
+// カードのid。10捨て・12ボンバー・7渡しで動いた札がこれにあたる。undoPlay はこの記録を見て
+// 持ち主の手札へ戻すので、その前に別の場所（＝誰かの手札）へ移してしまうと、同じカードが
+// 2か所に存在してしまう。捨て札から拾う効果は、この約束のあるカードには触れてはいけない。
+function chaosJournalProtectedIds(){
+  const ids = new Set();
+  const j = field && field.journal;
+  if(!j) return ids;
+  [j.discards, j.bomberRemovals, j.gives].forEach(list=>{
+    (list||[]).forEach(rec=> (rec.cards||[]).forEach(c=> ids.add(c.id)));
+  });
+  return ids;
+}
+// 捨て札から実カードをn枚ランダムに抜き出す。discardHistory の「エントリ数」は変えずに
+// 各エントリの cards から抜く点が重要：undoPlay が discardHistory.length を使って巻き戻す
+// ため、エントリごと削除すると穴が空いて壊れる。
+function chaosTakeFromDiscard(n){
+  const protectedIds = chaosJournalProtectedIds();
+  const collectSpots = ()=>{
+    const spots = [];
+    discardHistory.forEach((h,hi)=> (h.cards||[]).forEach((c,ci)=>{
+      if(!protectedIds.has(c.id)) spots.push({hi, ci});
+    }));
+    return spots;
+  };
+  let spots = collectSpots();
+  const taken = [];
+  for(let k=0; k<n && spots.length; k++){
+    const pick = spots.splice(Math.floor(Math.random()*spots.length), 1)[0];
+    const entry = discardHistory[pick.hi];
+    const card = entry.cards[pick.ci];
+    if(!card) continue;
+    entry.cards.splice(pick.ci, 1);
+    if(entry.hiddenIds) entry.hiddenIds.delete(card.id);
+    taken.push(card);
+    // 1枚抜くと同じエントリの後続indexがずれるので、残りの候補を作り直す。
+    spots = collectSpots();
+  }
+  updateDiscardPileButton();
+  return taken;
+}
+function chaosPeekActiveFor(seat){
+  if(onlineRole==='guest') return !!chaosPeekGuest;   // ホストの判定結果に従う
+  return !!(chaosPeek && chaosPeek.seat===seat && chaosPeek.trick===trickIndex);
+}
+
+// その席がいまその特殊カードを発動できるか。共通条件＋カード固有の条件。
+function chaosCardUsable(seat, card){
+  if(!isChaosMode() || !card) return false;
+  const def = chaosDef(card.type);
+  if(!def.impl) return false;                 // 効果が未実装のカードは発動できない
+  if(def.timing!=='preplay') return false;    // 自動発動・ダウト代替はここでは扱わない
+  if(gameOver || exchangeInProgress || revealPending) return false;
+  if(pendingAction || pendingRemoteAction) return false;
+  if(currentPlayerIndex!==seat) return false; // 「自分のターンのトランプを出す前」
+  if(finishedOrder.includes(seat)) return false;
+  if(sitOutTricks[seat]>0) return false;      // ダウトの罰で休み中は行動できない
+  switch(card.type){
+    case 'irekawari': return finishedOrder.length>0;  // 大富豪が確定してから
+    case 'hachiware': return field!==null;            // 場が無いと変えようがない
+    default: return true;
+  }
+}
+// 発動の実行（ホスト側の唯一の入口）。カードを捨て札へ移してから効果を適用する。
+function chaosUseCard(seat, card){
+  const hand = chaosHandOf(seat);
+  const i = hand.findIndex(c=>c.id===card.id);
+  if(i<0) return false;
+  hand.splice(i, 1);
+  chaosDiscard.push({id:card.id, type:card.type, seat:seat});
+  const def = chaosDef(card.type);
+  log(playerName(seat)+'が特殊カード「'+def.name+'」を発動！');
+  showCutIn(def.name);
+  applyChaosEffect(seat, card);
+  return true;
+}
+function applyChaosEffect(seat, card){
+  switch(card.type){
+    case 'hachiware': chaosHachiware(seat); break;
+    case 'ikiru':     chaosIkiru(seat); break;
+    case 'shutou':    chaosShutou(seat); break;
+    case 'osoreta':   chaosOsoreta(seat); break;
+    case 'irekawari': chaosIrekawari(seat); break;
+    case 'mienai':    chaosMienai(seat); break;
+  }
+}
+
+// 場の札の「面」だけをランダムに差し替える。個体idは保つので、枚数も所在も変わらない。
+// 変化後は誰もウソをつけない状態＝公開情報になるので、伏せ札から表向きへ移す。
+function chaosHachiware(seat){
+  if(!field || !field.actual || !field.actual.length) return;
+  field.actual.forEach(c=>{
+    const f = chaosRandomFace();
+    c.rank = f.rank; c.suit = f.suit;
+    currentTrickHiddenIds.delete(c.id);
+  });
+  field.cards = field.actual.map(c=>({rank:c.rank, suit:c.suit, id:c.id}));
+  field.faceDown = false;
+  field.revealed = true;
+  // 変化後の場はもうダウトできない。巻き戻しの記録も意味を失うので捨てる
+  // （特殊カードの効果は「常に確定」で、ダウトの結果では取り消さない）。
+  field.journal = null;
+  field.pendingClear = null;
+  field.rank = wildcardAwareRank(field.cards);
+  field.count = field.cards.length;
+  field.seq = ++fieldSeqCounter;
+  // 変化した札の特殊効果（5スキップ・8切り等）は発動しない。しばりはすべて解除する。
+  suitLock = null; numberLock = null; prevPlaySuits = null;
+  log('場のカードが「'+field.cards.map(c=>(c.rank==='JOKER'?'ジョーカー':(c.suit||'')+c.rank)).join(' ')+'」に変化した（しばりはすべて解除）');
+}
+
+// 自分の手札をすべて1つ強くする。2はジョーカーになり、ジョーカーは変化しない。
+// 革命中だけは逆に1つ弱くする（3より下は無いのでそのまま据え置く）。
+function chaosIkiru(seat){
+  hands[seat].forEach(c=>{
+    if(c.rank==='JOKER') return;
+    const i = RANKS.indexOf(c.rank);
+    if(i<0) return;
+    if(!revolution){
+      if(i===RANKS.length-1){ c.rank = 'JOKER'; c.suit = null; }
+      else c.rank = RANKS[i+1];
+    } else if(i>0){
+      c.rank = RANKS[i-1];
+    }
+  });
+  log(playerName(seat)+'の手札が'+(revolution?'1つずつ弱く':'1つずつ強く')+'なった');
+}
+
+// 各プレイヤーから最も強い札を1枚ずつ奪う（同じ強さが複数ならランダム）。
+function chaosShutou(seat){
+  const victims = [];
+  activePlayers().forEach(p=>{
+    if(p===seat) return;
+    const card = chaosPickStrongest(hands[p]);
+    if(!card) return;
+    hands[p] = hands[p].filter(c=>c.id!==card.id);
+    hands[seat].push(card);
+    victims.push(playerName(p));
+  });
+  if(victims.length) log(playerName(seat)+'が'+victims.join('・')+'から最強の札を1枚ずつ奪った');
+  // 最後の1枚を奪われて手札が0になった席は、7渡し等と同じ扱いで上がりとして処理する。
+  checkGameEndAfterSideEffect('chaos');
+}
+
+// アウトが0の相手全員に、アウトを2つと捨て札からランダムな2枚を与える。
+function chaosOsoreta(seat){
+  const targets = activePlayers().filter(p=>p!==seat && outs[p]===0);
+  if(!targets.length){ log('アウトが0のプレイヤーがいなかったため、効果は不発に終わった'); return; }
+  targets.forEach(p=>{
+    addOut(p, '恐れたやつが負けなのさ');
+    if(finishedOrder.includes(p)) return;   // 念のため（0→2なので通常は退場しない）
+    addOut(p, '恐れたやつが負けなのさ');
+    const got = chaosTakeFromDiscard(2);
+    if(got.length){
+      hands[p] = hands[p].concat(got);
+      log(playerName(p)+'は捨て札から'+got.length+'枚を押し付けられた');
+    }
+  });
+}
+
+// 上がっていない全員の手札を集めてシャッフルし、元と同じ枚数ずつ配り直す。
+function chaosIrekawari(seat){
+  const seats = activePlayers();
+  const counts = seats.map(p=>hands[p].length);
+  let pool = [];
+  seats.forEach(p=>{ pool = pool.concat(hands[p]); hands[p] = []; });
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  let k = 0;
+  seats.forEach((p,idx)=>{ hands[p] = pool.slice(k, k+counts[idx]); k += counts[idx]; });
+  // 自分の手札が入れ替わったので、選択中のカードは選び直してもらう。
+  selected = new Set();
+  log('全員の手札をシャッフルして配り直した（枚数は変わらず）');
+}
+
+// このトリックの間だけ、発動した席にだけ全員の手札を見せる。
+function chaosMienai(seat){
+  chaosPeek = {seat: seat, trick: trickIndex};
+  log(playerName(seat)+'はこのトリックの間、全員の手札が見えるようになった');
+}
+
+// アウトが3つたまった瞬間の割り込み。「僕は死にましぇん」を持っていれば強制発動し、
+// 敗北を拒否してアウトを1つに戻す。消費できたら true（呼び出し側は退場処理を行わない）。
+function chaosTryShinimasen(idx){
+  if(!isChaosMode()) return false;
+  const hand = chaosHandOf(idx);
+  const i = hand.findIndex(c=>c.type==='shinimasen');
+  if(i<0) return false;
+  const card = hand.splice(i, 1)[0];
+  chaosDiscard.push({id:card.id, type:card.type, seat:idx});
+  outs[idx] = 1;
+  log(playerName(idx)+'は「僕は死にましぇん」で敗北を拒否！　アウトが1つに戻った');
+  showCutIn('僕は死にましぇん！！');
+  return true;
+}
+
+// 人間（オフラインの自席／オンラインの自席）からの発動。ゲストはintentでホストへ送る。
+function chaosActivate(cardId){
+  closeHistoryModal();
+  const card = chaosHandOf(mySeat).find(c=>c.id===cardId);
+  if(!card || !chaosCardUsable(mySeat, card)) return;
+  if(onlineRole==='guest'){ Online.sendIntent({type:'chaos', cardId:cardId}); return; }
+  chaosUseCard(mySeat, card);
+  render();
+  // 効果で手札が0になって上がったなど、盤面が決着している場合に備える。
+  if(gameOver) showResults();
+}
+// 誤発動を防ぐため、内容を見せてから確認する。
+function chaosConfirmActivate(cardId){
+  const card = chaosHandOf(mySeat).find(c=>c.id===cardId);
+  if(!card) return;
+  const d = chaosDef(card.type);
+  showHistoryModal('<h2>特殊カードを発動しますか？</h2>'
+    + '<div class="chaos-card" style="max-width:none;margin-bottom:14px;">'
+    + '<div class="chaos-card-name">'+escapeHtml(d.name)+'</div>'
+    + '<div style="margin-top:4px;">'+escapeHtml(d.desc)+'</div></div>'
+    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">'
+    + '<button class="action play" type="button" onclick="chaosActivate(\''+escapeHtml(card.id)+'\')">発動する</button>'
+    + '<button class="restart" type="button" onclick="closeHistoryModal()">やめる</button></div>');
+}
+// CPUの発動判断（暫定）。手札に腐らせないことだけを狙った控えめなヒューリスティックで、
+// カードごとの戦術的な読みはフェーズ4のCPU実装で詰める。
+function cpuMaybeUseChaos(idx){
+  if(!isChaosMode()) return false;
+  const hand = chaosHandOf(idx);
+  const usable = hand.filter(c=>chaosCardUsable(idx, c));
+  if(!usable.length) return false;
+  const p = (hand.length>=CHAOS_MAX_HAND) ? 0.5 : 0.18;
+  if(Math.random()>=p) return false;
+  chaosUseCard(idx, usable[Math.floor(Math.random()*usable.length)]);
+  return true;
 }
 
 // ---- 手番外ダウト（openDoubtルール）：CPUが場に重ねる直前に、自分がダウト可能な
@@ -3840,6 +4116,8 @@ function addOut(idx, reason){
   Feedback.sfx('out');
   log(playerName(idx)+'にアウト（'+reason+'）　合計 '+outs[idx]+'/3');
   if(outs[idx]>=3 && !finishedOrder.includes(idx)){
+    // カオスモード：「僕は死にましぇん」を持っていれば強制発動して敗北を拒否する。
+    if(chaosTryShinimasen(idx)) return;
     log(playerName(idx)+'はアウト3つで強制敗北！ その時点での最下位候補になります');
     showCutIn('アウト3つ！ 強制敗北！！');
     // 失格した手札は公開して捨てる。伏せたまま消すと、その札が誰かの手にあるものとして
@@ -4496,6 +4774,15 @@ function cpuTrySpecialCounter(idx, hand){
 
 function cpuTurn(idx){
   if(gameOver) return;
+  // 特殊カードの発動は「トランプを出す前」なので、手札を読む前に済ませる。
+  // 効果で手札そのものが入れ替わる（わたしたち、入れ替わってる！？）ことがあるため、
+  // hand を掴むのは必ずこの後。効果で決着したらここで打ち切る。
+  cpuMaybeUseChaos(idx);
+  if(gameOver){ render(); showResults(); return; }
+  // ここで「上がっている席なら手番を送る」という保険を足してはいけない。残り1人になると
+  // advanceTurn は意図的に手番を動かさない（index.html の advanceTurn 参照）ので、送ろうと
+  // すると同じ席を延々と呼び直す無限ループになる。上がった席が0枚のままパスして場を流す、
+  // という既存の流れがこの局面を正しく解消する。
   const hand = hands[idx];
 
   if(isDoubtMode()){
@@ -4746,8 +5033,16 @@ function renderChaosArea(){
       ? '<div class="chaos-card empty">手持ちの特殊カードはありません</div>'
       : mine.map(c=>{
           const d = chaosDef(c.type);
-          return '<div class="chaos-card" title="'+escapeHtml(d.desc)+'">'
-            + '<div class="chaos-card-name">'+escapeHtml(d.name)+'</div></div>';
+          const usable = chaosCardUsable(mySeat, c);
+          // 発動できないカードも内容は見せる（手の内を組み立てられるように）。
+          // 効果が未実装のものだけは、待ちなのか条件不足なのかが分かるよう明示する。
+          const note = d.impl
+            ? (usable ? '' : '<div class="chaos-card-note">いまは発動できません</div>')
+            : '<div class="chaos-card-note">効果は準備中です</div>';
+          return '<button type="button" class="chaos-card'+(usable?' usable':'')+'"'
+            + (usable ? ' onclick="chaosConfirmActivate(\''+escapeHtml(c.id)+'\')"' : ' disabled')
+            + ' title="'+escapeHtml(d.desc)+'">'
+            + '<div class="chaos-card-name">'+escapeHtml(d.name)+'</div>'+note+'</button>';
         }).join('');
   }
   const cnt = document.getElementById('chaosDiscardCount');
@@ -5325,6 +5620,9 @@ function render(){
   const finalRankingForBadges = gameOver ? computeFinalRanking() : null;
   const titleList = seatTitles();
   const spectate = isSpectating();
+  // 相手の手札を開示してよいか。観戦（自席の順位確定後）に加えて、カオスモードの
+  // 「見えないものを見ようとして」の効果中も、その席にだけ開示する。
+  const revealOppHands = spectate || chaosPeekActiveFor(mySeat);
   // 相手席は「自分の次が右端、そこから左へ辿る」固定順（＝卓を左回りに見た並び）。
   const oppSeats = oppSeatDisplayOrder();
   // スマホでは卓を囲む配置（自分の図：D=右・A=上・B=左）が一目でわかるよう、各相手席に
@@ -5352,8 +5650,9 @@ function render(){
         badge = '<div class="badge violation-badge">反則</div>';
       }
     }
-    // 観戦モードでは相手の手札を実カードのチップで開示。通常は裏向きの枚数表示。
-    const cardsCell = spectate
+    // 観戦モード、または「見えないものを見ようとして」の効果中は相手の手札を実カードの
+    // チップで開示。通常は裏向きの枚数表示。
+    const cardsCell = revealOppHands
       ? specHandHtml(hands[i])
       : '<div class="cardback-row">'+(hands[i].map(()=>'<div class="cardback"></div>').join('')||'&nbsp;')+'</div>';
     const activeClass = (currentPlayerIndex===i && !gameOver && !pendingAction && !exchangeInProgress) ? 'active' : '';
@@ -5362,7 +5661,7 @@ function render(){
     // 特殊カードは秘匿情報なので、相手席には枚数だけを出す（中身は出さない）。
     const chaosBadge = isChaosMode()
       ? '<div class="chaos-count-badge">特殊 '+chaosHandOf(i).length+'枚</div>' : '';
-    return '<div class="opp '+activeClass+(spectate?' spectate':'')+' '+slotClass+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
+    return '<div class="opp '+activeClass+(revealOppHands?' spectate':'')+' '+slotClass+'">'+badge+sitOut+'<div class="name">'+playerName(i)+'</div>'
       + cardsCell
       + '<div class="count">残り '+hands[i].length+'枚</div>'
       + outPipsHtml(i)+chaosBadge+'</div>';
@@ -5637,7 +5936,10 @@ function buildRedactedView(viewerSeat){
     // 観戦モード：確定済みの席にだけ全席の実カードを渡す。席番号キーのオブジェクトにして、
     // 空席は自然に欠落させる（Firebaseは空配列を保存しないため、配列だと壊れる）。
     observer,
-    observerHands: observer
+    // 「見えないものを見ようとして」で開示中か。観戦（順位確定）とは別物なので、
+    // フラグも別に持つ（ゲスト側で「観戦モード」の案内を出してしまわないため）。
+    chaosPeeking: chaosPeekActiveFor(viewerSeat),
+    observerHands: (observer || chaosPeekActiveFor(viewerSeat))
       ? hands.reduce((o,h,i)=>{ if(h.length) o[i]=h.map(c=>({rank:c.rank, suit:c.suit, id:c.id})); return o; }, {})
       : null,
     field: redactField(field, viewerSeat, observer),
@@ -5703,9 +6005,10 @@ function applyView(v){
   // 他席は枚数ぶんの伏せプレースホルダにする。Firebaseの空配列ドロップに影響されない。
   // 観戦時（v.observer）は他席も v.observerHands の実カードで埋める。
   spectating = !!v.observer;
+  chaosPeekGuest = !!v.chaosPeeking;
   const _counts = v.handCounts || [];
   const _myHand = (v.myHand||[]).map(c=>c);
-  const _obs = spectating ? (v.observerHands || {}) : null;
+  const _obs = (spectating || chaosPeekGuest) ? (v.observerHands || {}) : null;
   hands = _counts.map((n,i)=>{
     if(i===mySeat) return _myHand;
     if(_obs && _obs[i]) return _obs[i].map(c=>c);
@@ -6719,6 +7022,17 @@ const Online = (function(){
       if(intent.type==='bomber'  && pendingRemoteAction.kind==='bomber')  { applyRemoteBomber(seat, intent.ranks); return true; }
       return true; // 待ち中は他のintentは受け付けない
     }
+    // カオスモードの特殊カード発動。play/pass と同じく「今この瞬間に条件を満たしていなければ
+    // 捨てる」扱いにする（後から遅れて発動すると、本人の意図しない場面で効果が出てしまう）。
+    if(intent.type==='chaos'){
+      const card = chaosHandOf(seat).find(c=>c.id===intent.cardId);
+      if(card && chaosCardUsable(seat, card)){
+        chaosUseCard(seat, card);
+        render();
+        if(gameOver) showResults();
+      }
+      return true;
+    }
     // 以降のplay/pass/doubtは、条件を満たさなければ「不正な操作」として捨てる（true）。
     // 後で条件が揃ってから遅れて適用されると、意図しない手を勝手に打つことになるため、
     // 交換のような再試行はしない。
@@ -6812,6 +7126,7 @@ const Online = (function(){
     clearDoubtWindowTimers(); pendingCpuPlay=null;
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
+    chaosPeek=null; chaosPeekGuest=false;
   }
 
   async function leave(){
