@@ -2201,9 +2201,16 @@ function applyChaosEffect(seat, card){
 // 変化後は誰もウソをつけない状態＝公開情報になるので、伏せ札から表向きへ移す。
 function chaosHachiware(seat){
   if(!field || !field.actual || !field.actual.length) return;
-  field.actual.forEach(c=>{
-    const f = chaosRandomFace();
-    c.rank = f.rank; c.suit = f.suit;
+  // ランクは1回だけ抽選し、全枚数に同じものを割り当てる。1枚ずつ独立に引くと
+  // 「Aと3のペア」のような場として成立しない状態になってしまうため（枚数は変えない、
+  // という仕様は「同じランクがN枚」であることまで含む）。スートは重複しないように
+  // 配り分ける（4枚を超えるときだけ、やむを得ず巡回して重複させる）。
+  const face = chaosRandomFace();
+  const suits = SUITS.slice();
+  for(let i=suits.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [suits[i],suits[j]]=[suits[j],suits[i]]; }
+  field.actual.forEach((c,i)=>{
+    c.rank = face.rank;
+    c.suit = (face.rank==='JOKER') ? null : suits[i % suits.length];
     currentTrickHiddenIds.delete(c.id);
   });
   field.cards = field.actual.map(c=>({rank:c.rank, suit:c.suit, id:c.id}));
@@ -2213,11 +2220,14 @@ function chaosHachiware(seat){
   // （特殊カードの効果は「常に確定」で、ダウトの結果では取り消さない）。
   field.journal = null;
   field.pendingClear = null;
+  // 変化した札の特殊効果（5スキップ・8切り等）は発動しない。しばりはすべて解除する。
+  // 解除は field.rank を求める前に行う必要がある：wildcardAwareRank は数しばり中の
+  // 全ジョーカーを「しばられているランク」として扱うので、先に rank を決めてしまうと
+  // 「ジョーカー2枚なのに場の表示は6×2」のような食い違いが残る。
+  suitLock = null; numberLock = null; prevPlaySuits = null;
   field.rank = wildcardAwareRank(field.cards);
   field.count = field.cards.length;
   field.seq = ++fieldSeqCounter;
-  // 変化した札の特殊効果（5スキップ・8切り等）は発動しない。しばりはすべて解除する。
-  suitLock = null; numberLock = null; prevPlaySuits = null;
   log('場のカードが「'+field.cards.map(c=>(c.rank==='JOKER'?'ジョーカー':(c.suit||'')+c.rank)).join(' ')+'」に変化した（しばりはすべて解除）');
 }
 
