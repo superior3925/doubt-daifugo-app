@@ -1805,6 +1805,8 @@ let doubtWindowSec = 3;
 // CPU補充設定から決まるので、この値は使わない。
 let offlineSeatCount = 4;
 let nextStartingPlayerOverride = null;
+// 場が流れた直後に親になる席（＝最後に札を出した人）。advanceToNextActor が1回だけ使う。
+let pendingTrickLeader = null;
 let turnDirection = 1;
 // ゲスト側で「直前に相手から受け取った札」をモーダルで強調するためのid集合
 // （ホスト側はペアごとに exchangePairs[i].receivedIds を持つ）。
@@ -3785,6 +3787,7 @@ function dealFreshHands(){
   provenHonestCount = new Array(seatCount).fill(0);
   declHistory = [];
   nextStartingPlayerOverride = null;
+  pendingTrickLeader = null;
   lastReceivedCardIds = new Set();
   fastForward = false;
   resultsRecorded = false;
@@ -4091,6 +4094,11 @@ function pendingClearLabel(kind){
 function resolveFieldClearOnPass(){
   if(field===null) return false;
   if(passStreak < passClearThreshold(activePlayers())) return false;
+  // 「場が流れたら、最後に札を出した人が次の親になる」というルールを明示しておく。
+  // これまでは手番送りが偶然そこへ着地するのに頼っていたが、トリックの途中で誰かが
+  // 上がって必要人数が減った場合や、持ち主自身のパスで流れた場合には着地点がずれる。
+  // ここで親を指名し、advanceToNextActor に優先して使わせる。
+  pendingTrickLeader = field.owner;
   const pc = field.pendingClear;
   const wasEightStanding = field.rank==='8' && rules.fourStop && !pc;
   clearField();
@@ -4147,6 +4155,13 @@ function advanceToNextActor(){
   if(act.length<=1) return;
   forcedPassOnly = false;
   relieveIfAllSittingOut();
+  // 場が流れた直後は、その場を出した本人を親にする（ルールの明示）。休み中や上がり済みの
+  // ときだけは親になれないので、その場合は通常の手番送りに委ねる。
+  if(pendingTrickLeader!==null){
+    const t = pendingTrickLeader;
+    pendingTrickLeader = null;
+    if(!finishedOrder.includes(t) && sitOutTricks[t]===0){ currentPlayerIndex = t; return; }
+  }
   let guard = 0;
   while(guard++ < 24){
     advanceTurn();
