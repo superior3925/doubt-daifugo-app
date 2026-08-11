@@ -1903,7 +1903,7 @@ const CHAOS_CARDS = [
   {type:'shinimasen', timing:'auto-out3', impl:true, name:'僕は死にましぇん',
    desc:'アウトが3つたまったとき手札にあると強制発動。その敗北を拒否し、アウトが1つに戻ります（禁止上がりなどの反則負けには効果がありません）。'},
   {type:'osoreta', timing:'preplay', impl:true, name:'恐れたやつが負けなのさ',
-   desc:'アウトが最も少ない相手（同数なら全員）にアウトを1つ与え、捨て札からランダムに1枚ずつ押し付けます。'},
+   desc:'アウトが最も少ない相手（同数なら全員）にアウトを1つ与え、捨て札からランダムに1枚ずつ押し付けます。ただし最も少ない相手が既にアウト2つのときは、アウトは増えず押し付けだけになります。'},
   {type:'kinoko', timing:'preplay', impl:true, select:true, name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
    desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードをランダムに1枚捨てさせます。'},
   {type:'katerukayo', timing:'doubt-alt', impl:true, name:'お前が俺に!!勝てるわけねェだろうが!!!!',
@@ -2474,9 +2474,14 @@ function chaosOsoreta(seat){
   if(!others.length){ log('対象になる相手がいなかったため、効果は不発に終わった'); return; }
   const min = Math.min.apply(null, others.map(p=>outs[p]));
   const targets = others.filter(p=>outs[p]===min);
-  log(targets.map(playerName).join('・')+'が狙われた（アウト'+min+'で最も少ない）');
+  // 最少が既に2つのとき（＝全員が崖っぷち）はアウトを増やさない。ここで増やすと
+  // このカード1枚でそのまま強制敗北させてしまい、駆け引きにならないため。
+  // その場合も捨て札の押し付けだけは通るので、完全な空打ちにはならない。
+  const addsOut = (min < 2);
+  log(targets.map(playerName).join('・')+'が狙われた（アウト'+min+'で最も少ない）'
+    + (addsOut ? '' : '　※全員が崖っぷちのためアウトは増えません'));
   targets.forEach(p=>{
-    addOut(p, '恐れたやつが負けなのさ');
+    if(addsOut) addOut(p, '恐れたやつが負けなのさ');
     if(finishedOrder.includes(p)) return;   // アウト3つで退場した場合は札を渡さない
     const got = chaosTakeFromDiscard(1);
     if(got.length){
