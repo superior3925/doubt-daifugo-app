@@ -4152,16 +4152,19 @@ function relieveIfAllSittingOut(){
 //                      ダウトしようのない場（既にめくれている等）なら黙って飛ばす。
 function advanceToNextActor(){
   const act = activePlayers();
-  if(act.length<=1) return;
   forcedPassOnly = false;
   relieveIfAllSittingOut();
   // 場が流れた直後は、その場を出した本人を親にする（ルールの明示）。休み中や上がり済みの
   // ときだけは親になれないので、その場合は通常の手番送りに委ねる。
+  // この判定は「生存者1人以下なら手番を動かさない」ガードより前に置く必要がある。
+  // 残り1人になった局面では、上がった席が手番を握ったままになることがあり、そこで
+  // 打ち切ると唯一の生存者である持ち主に親が渡らないため。
   if(pendingTrickLeader!==null){
     const t = pendingTrickLeader;
     pendingTrickLeader = null;
     if(!finishedOrder.includes(t) && sitOutTricks[t]===0){ currentPlayerIndex = t; return; }
   }
+  if(act.length<=1) return;
   let guard = 0;
   while(guard++ < 24){
     advanceTurn();
