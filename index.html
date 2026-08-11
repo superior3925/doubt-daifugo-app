@@ -1867,6 +1867,9 @@ let chaosDeferredTurn = null;
 let chaosKaterukayoSeat = null;
 let chaosKaterukayoTarget = null;
 let chaosResumeSchedule = false;
+// 「馬鹿野郎ーっ!!誰を撃ってる!?」は札を新しく生み出すので、山札の枚数より総数が増える。
+// 「札が消えていないか」を検算するときの基準にするため、生成した枚数を数えておく。
+let chaosGeneratedCards = 0;
 // その席がいま「ウソをつけない」状態か（＝伏せずに公開で出す）。
 function chaosHonestForced(seat){
   return chaosNantokaSeat===seat || !!(chaosOrenoTurn && chaosOrenoTurn.seat===seat);
@@ -1922,7 +1925,17 @@ const CHAOS_CARDS = [
   {type:'genkai', timing:'preplay', impl:true, select:true, name:'つーかこれが限界',
    desc:'自分の手札を4枚選び、全スートの4に変えます。'},
   {type:'tsuree', timing:'preplay', impl:true, select:true, name:'やっぱつれぇわ',
-   desc:'自分のアウトが2つ以上のときだけ発動可能。特殊カードをランダムに2枚もらい、手札を2枚選んで表向きに捨てます。'}
+   desc:'自分のアウトが2つ以上のときだけ発動可能。特殊カードをランダムに2枚もらい、手札を2枚選んで表向きに捨てます。'},
+  {type:'bakayarou', timing:'auto-received', impl:true, name:'馬鹿野郎ーっ!!誰を撃ってる!?',
+   desc:'7渡しや特殊カードでカードを渡されたときに強制発動。渡された札をそのまま相手に返し、さらに1つ弱いランクの札を相手の手札に生み出します（それ以上弱い札が無い場合は同じランク）。このカードで返した分には、相手の同じカードは反応しません。'},
+  {type:'sensou', timing:'preplay', impl:true, name:'この戦争を終わらせに来た',
+   desc:'自分を含む全員の手札からランダムに2枚ずつ捨てます。さらに自分のアウトを1つ減らします。'},
+  {type:'funeorio', timing:'preplay', impl:true, name:'お前もう船降りろ',
+   desc:'手札が最も少ない相手を、このトリックの間プレイできなくします（同数なら全員が対象）。'},
+  {type:'jakusha', timing:'preplay', impl:true, name:'弱者の反撃',
+   desc:'強制的に革命を起こします（革命中なら元に戻ります）。そのうえで自分の最も弱い札2枚を、最強の2（革命中は3）に変えます。スートは変わりません。'},
+  {type:'ottotto', timing:'preplay', impl:true, select:true, name:'おォ～っとっとぉ',
+   desc:'場の枚数まで好きな札を裏向きに捨てて、そのターンはパスになります（場が3枚なら3枚まで）。'}
 ];
 const CHAOS_BY_TYPE = CHAOS_CARDS.reduce((m,c)=>{ m[c.type]=c; return m; }, {});
 function chaosDef(type){ return CHAOS_BY_TYPE[type] || {name:'不明な特殊カード', desc:'', timing:'preplay'}; }
@@ -1966,6 +1979,8 @@ function resetChaosState(){
   chaosKaterukayoSeat = null;
   chaosKaterukayoTarget = null;
   chaosResumeSchedule = false;
+  chaosGeneratedCards = 0;
+  chaosGiveDepth = 0;
   clearChaosResend();
   inChaosEffect = 0;
   trickIndex = 0;
@@ -2091,6 +2106,11 @@ function chaosCardUsable(seat, card){
     case 'tsuree':    return outs[seat]>=2 && hands[seat].length>=3;  // 2枚捨てても1枚残る
     // 出す1枚＋人数分＋手元に残す1枚が要る。配ったあとに自分が0枚になる手順は作らない。
     case 'yoroshiku': return hands[seat].length >= activePlayers().filter(p=>p!==seat).length + 2;
+    case 'sensou':    return hands[seat].length >= 3;   // 2枚失っても1枚残る
+    case 'funeorio':  return activePlayers().some(p=>p!==seat);
+    case 'jakusha':   return hands[seat].length >= 1;
+    // 場が無いと捨てる枚数が決まらない。捨てたあとも1枚は残す必要がある。
+    case 'ottotto':   return field!==null && hands[seat].length >= 2;
     default: return true;
   }
 }
@@ -2104,6 +2124,14 @@ function chaosSelectionSpec(cardType, seat){
     const need = Math.max(0, Math.min(others, (hands[s]||[]).length-1));
     return {needCards:need, needTarget:false, title:'よろしくお願いしまああああす！',
       hint:'ほかのプレイヤーへ配るカードを'+need+'枚選んでください（手番の順に1枚ずつ渡されます）'};
+  }
+  if(cardType==='ottotto'){
+    const s = (typeof seat==='number') ? seat : currentPlayerIndex;
+    // 場の枚数まで。捨てたあとも1枚は手元に残す。
+    const cap = field ? field.count : 0;
+    const need = Math.max(0, Math.min(cap, (hands[s]||[]).length-1));
+    return {needCards:need, needTarget:false, atMost:true, title:'おォ～っとっとぉ',
+      hint:'裏向きに捨てる札を'+need+'枚まで選べます（0枚でも構いません）。このターンはパスになります'};
   }
   if(cardType==='katerukayo'){
     const s = (typeof seat==='number') ? seat : currentPlayerIndex;
@@ -2151,9 +2179,12 @@ function chaosResolveSelection(seat, cardType, sel){
     else if(cardType==='tsuree') chaosTsuree(seat, ids);
     else if(cardType==='yoroshiku') chaosYoroshiku(seat, ids);
     else if(cardType==='katerukayo') chaosKaterukayoGive(seat, ids);
+    else if(cardType==='ottotto') chaosOttotto(seat, ids);
   } finally { inChaosEffect--; }
   render();
   if(gameOver){ chaosDeferredTurn = null; showResults(); return; }
+  // 「おォ～っとっとぉ」は捨てたあと必ずパスになる（passAction が描画と進行を担う）。
+  if(cardType==='ottotto'){ chaosDeferredTurn = null; chaosResumeSchedule = false; passAction(seat); return; }
   // 「よろしくお願いしまああああす！」のように、手番送りを保留したまま選ばせた場合は
   // ここで続きを実行する（7渡し等が選択後に finalizeTurn を呼ぶのと同じ形）。
   if(chaosDeferredTurn){
@@ -2181,6 +2212,7 @@ function chaosKaterukayoGive(seat, cardIds){
   hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
   hands[target] = hands[target].concat(give);
   log(playerName(seat)+'が'+playerName(target)+'に'+give.length+'枚押し付けた');
+  chaosNotifyGiven(seat, target, give);
   checkGameEndAfterSideEffect('chaos');
 }
 // 選んだ札を、自分以外の生存プレイヤーへ手番の順に1枚ずつ配る。
@@ -2195,6 +2227,7 @@ function chaosYoroshiku(seat, cardIds){
   hands[seat] = hands[seat].filter(c=>!hset.has(c.id));
   handed.forEach((c,i)=>{ hands[others[i]].push(c); });
   log(playerName(seat)+'が'+others.slice(0,n).map(playerName).join('・')+'にカードを1枚ずつ配った');
+  handed.forEach((c,i)=>{ chaosNotifyGiven(seat, others[i], [c]); });
   checkGameEndAfterSideEffect('chaos');
 }
 // 選んだ4枚を全スートの4に変える（個体idは保つので枚数も所在も変わらない）。
@@ -2212,6 +2245,7 @@ function chaosKinoko(seat, target, cardId){
   hands[seat] = hands[seat].filter(c=>c.id!==card.id);
   hands[target].push(card);
   log(playerName(seat)+'が'+playerName(target)+'にカードを1枚押し付けた');
+  chaosNotifyGiven(seat, target, [card]);
   const th = chaosHandOf(target);
   if(th.length){
     const gone = th.splice(Math.floor(Math.random()*th.length), 1)[0];
@@ -2242,6 +2276,7 @@ function cpuChaosSelection(seat, cardType, spec){
   if(cardType==='tsuree') return {cardIds: weakFirst.slice(0, 2).map(c=>c.id)};
   if(cardType==='yoroshiku') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
   if(cardType==='katerukayo') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
+  if(cardType==='ottotto') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
   if(cardType==='kinoko'){
     const others = activePlayers().filter(p=>p!==seat).sort((a,b)=>hands[a].length-hands[b].length);
     return {target: others[0], cardIds: weakFirst.length ? [weakFirst[0].id] : []};
@@ -2356,6 +2391,9 @@ function applyChaosEffect(seat, card){
                         log(playerName(seat)+'は札を出したあと、全員にカードを1枚ずつ配る'); break;
       // ダウト宣言の代わり。通常のダウトと同じ解決に乗せ、成否で扱いを変える。
       case 'katerukayo': chaosKaterukayoSeat = seat; doubtAction(seat); break;
+      case 'sensou':    chaosSensou(seat); break;
+      case 'funeorio':  chaosFuneorio(seat); break;
+      case 'jakusha':   chaosJakusha(seat); break;
     }
   } finally { inChaosEffect--; }
 }
@@ -2439,6 +2477,7 @@ function chaosOsoreta(seat){
     if(got.length){
       hands[p] = hands[p].concat(got);
       log(playerName(p)+'は捨て札から'+got.length+'枚を押し付けられた');
+      chaosNotifyGiven(seat, p, got);
     }
   });
 }
@@ -2473,6 +2512,114 @@ function chaosOrenoTurnFinish(){
   const seat = chaosOrenoTurn.seat;
   chaosOrenoTurn = null;
   if(!finishedOrder.includes(seat)) grantChaosCard(seat, 'ずっと俺のターン');
+}
+// 「1つ弱いランク」の面。強弱の判定は他のカオス効果と同じく革命だけを見る。
+// これ以上弱い札が無い場合（通常の3／革命中の2）は同じランクのまま。
+function chaosWeakerFace(card){
+  if(card.rank==='JOKER'){
+    // ジョーカーは最強なので、1つ弱い＝最強の実カード。
+    return {rank: revolution ? '3' : '2', suit: card.suit || SUITS[Math.floor(Math.random()*SUITS.length)]};
+  }
+  const i = RANKS.indexOf(card.rank);
+  if(i<0) return {rank:card.rank, suit:card.suit};
+  const j = revolution ? Math.min(RANKS.length-1, i+1) : Math.max(0, i-1);
+  return {rank: RANKS[j], suit: card.suit};
+}
+// カードを渡した直後に必ず呼ぶ。受け取った側が「馬鹿野郎ーっ!!誰を撃ってる!?」を
+// 持っていれば強制発動し、渡された札を送り返したうえで1つ弱い札を相手に生み出す。
+// chaosGiveDepth で、返した分に相手の同じカードが連鎖しないようにしている。
+let chaosGiveDepth = 0;
+function chaosNotifyGiven(fromSeat, toSeat, cards){
+  if(!isChaosMode() || chaosGiveDepth>0) return;
+  if(fromSeat==null || toSeat==null || fromSeat===toSeat) return;
+  if(!cards || !cards.length) return;
+  if(finishedOrder.includes(toSeat) || finishedOrder.includes(fromSeat)) return;
+  const hand = chaosHandOf(toSeat);
+  const i = hand.findIndex(c=>c.type==='bakayarou');
+  if(i<0) return;
+  // 渡された札のうち、まだ受け取った側の手元にあるものだけが返却対象。
+  const back = cards.filter(c=> hands[toSeat].some(x=>x.id===c.id));
+  if(!back.length) return;
+  const card = hand.splice(i, 1)[0];
+  chaosDiscard.push({id:card.id, type:card.type, seat:toSeat});
+  log(playerName(toSeat)+'の「馬鹿野郎ーっ!!誰を撃ってる!?」が発動！');
+  showCutIn('馬鹿野郎ーっ!!誰を撃ってる!?', undefined, {chaos:true});
+  chaosGiveDepth++;
+  try{
+    const ids = new Set(back.map(c=>c.id));
+    hands[toSeat] = hands[toSeat].filter(c=>!ids.has(c.id));
+    back.forEach(c=>{
+      hands[fromSeat].push(c);
+      const f = chaosWeakerFace(c);
+      hands[fromSeat].push({rank:f.rank, suit:f.suit, id:mintCardId()});
+      chaosGeneratedCards++;
+    });
+    log(playerName(fromSeat)+'に'+back.length+'枚が突き返され、さらに1つ弱い札が'+back.length+'枚生まれた');
+    checkGameEndAfterSideEffect('chaos');
+  } finally { chaosGiveDepth--; }
+}
+// 自分を含む全員の手札からランダムに2枚ずつ捨て、自分のアウトを1つ減らす。
+function chaosSensou(seat){
+  activePlayers().forEach(p=>{
+    const drop = [];
+    const pool = hands[p].slice();
+    for(let k=0;k<2 && pool.length;k++) drop.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+    if(!drop.length) return;
+    const ds = new Set(drop.map(c=>c.id));
+    hands[p] = hands[p].filter(c=>!ds.has(c.id));
+    recordDiscard(drop, playerName(p)+'が「この戦争を終わらせに来た」で失った札');
+  });
+  if(outs[seat]>0){ outs[seat]--; log(playerName(seat)+'のアウトが1つ減った（残り'+outs[seat]+'）'); }
+  log('全員の手札からランダムに2枚ずつ失われた');
+  checkGameEndAfterSideEffect('chaos');
+}
+// 手札が最も少ない相手を、このトリックの間だけプレイできなくする（同数なら全員）。
+function chaosFuneorio(seat){
+  const others = activePlayers().filter(p=>p!==seat);
+  if(!others.length) return;
+  const min = Math.min.apply(null, others.map(p=>hands[p].length));
+  const targets = others.filter(p=>hands[p].length===min);
+  // sitOutTricks は clearField（トリック終了）で1ずつ減るので、1を入れると
+  // 「このトリックの間だけ休み」になる。ダウトの罰と同じ仕組みを共有する。
+  targets.forEach(p=>{ sitOutTricks[p] = Math.max(sitOutTricks[p], 1); });
+  log(targets.map(playerName).join('・')+'はこのトリックの間プレイできない（残り'+min+'枚）');
+}
+// 強制的に革命を起こし、自分の最弱2枚を最強ランクへ変える。
+function chaosJakusha(seat){
+  revolution = !revolution;
+  log(revolution ? '弱者の反撃で革命が起きた！' : '弱者の反撃で革命が元に戻った！');
+  const target = revolution ? '3' : '2';   // 革命後の状態で「最強」を決める
+  const hand = hands[seat];
+  if(!hand.length) return;
+  // 最も弱い札（同値が複数あればランダムに）を2枚選ぶ
+  const picked = [];
+  const pool = hand.slice();
+  for(let k=0;k<2 && pool.length;k++){
+    let worst = Infinity, cands = [];
+    pool.forEach(c=>{
+      const s = chaosStrength(c.rank);
+      if(s<worst){ worst = s; cands = [c]; }
+      else if(s===worst) cands.push(c);
+    });
+    const pick = cands[Math.floor(Math.random()*cands.length)];
+    picked.push(pick);
+    pool.splice(pool.indexOf(pick), 1);
+  }
+  picked.forEach(c=>{ c.rank = target; });
+  log(playerName(seat)+'の最も弱い'+picked.length+'枚が'+target+'に変わった');
+}
+// 場の枚数まで裏向きに捨てて、そのターンはパスする。
+function chaosOttotto(seat, cardIds){
+  const ids = new Set(cardIds);
+  const drop = hands[seat].filter(c=>ids.has(c.id));
+  if(drop.length){
+    const ds = new Set(drop.map(c=>c.id));
+    hands[seat] = hands[seat].filter(c=>!ds.has(c.id));
+    // 裏向き＝中身は誰にも分からないまま捨て札へ送る。
+    recordDiscard(drop, playerName(seat)+'が「おォ～っとっとぉ」で裏向きに捨てた', ds);
+    log(playerName(seat)+'が'+drop.length+'枚を裏向きに捨てた');
+  }
+  checkGameEndAfterSideEffect('chaos');
 }
 // このトリックの間だけ、発動した席にだけ全員の手札を見せる。
 function chaosMienai(seat){
@@ -4411,6 +4558,7 @@ function applyRemoteGive(seat, recipient, cardIds){
     hands[recipient] = hands[recipient].concat(giveCards);
     log(playerName(seat)+'が'+playerName(recipient)+'に'+giveCards.length+'枚渡した');
     if(journalActive()) field.journal.gives.push({from:seat, to:recipient, cards:giveCards.slice()});
+    chaosNotifyGiven(seat, recipient, giveCards);
     checkGameEndAfterSideEffect('give');
   }
   finalizeTurn(info, ex);
@@ -4827,13 +4975,23 @@ function undoPlay(journal){
 
   journal.gives.forEach(g=>{
     g.cards.forEach(card=>{
-      // 渡した先を決め打ちで消してはいけない。カオスの「わたしたち、入れ替わってる！？」
-      // のように、このプレイのあとで札が別の席へ移っていることがあるためで、決め打ちだと
+      // 渡した先を決め打ちで消してはいけない。このプレイのあとにカオスの効果が札を
+      // 動かしていることがあるためで（別の席へシャッフル／捨て札へ廃棄など）、決め打ちだと
       // 移動先に残ったまま元の持ち主にも足されて、同じ札が2か所に存在してしまう。
-      // いま実際にどの席にあるかを探してから、元の持ち主へ戻す。
-      for(let i=0;i<hands.length;i++){
+      // いまどこにあるのかを手札と捨て札の両方から探して取り除いてから、持ち主へ戻す。
+      let removed = false;
+      for(let i=0;i<hands.length && !removed;i++){
         const k = (hands[i]||[]).findIndex(c=>c.id===card.id);
-        if(k>=0){ hands[i].splice(k,1); break; }
+        if(k>=0){ hands[i].splice(k,1); removed = true; }
+      }
+      for(let i=0;i<discardHistory.length && !removed;i++){
+        const cards = discardHistory[i].cards || [];
+        const k = cards.findIndex(c=>c.id===card.id);
+        if(k>=0){
+          cards.splice(k,1);
+          if(discardHistory[i].hiddenIds) discardHistory[i].hiddenIds.delete(card.id);
+          removed = true;
+        }
       }
       hands[g.from].push(card);
     });
@@ -5375,6 +5533,7 @@ function cpuDoGive(idx, count){
   hands[recipient] = hands[recipient].concat(giveCards);
   log(playerName(idx)+'が'+playerName(recipient)+'に'+giveCards.length+'枚渡した');
   if(journalActive()) field.journal.gives.push({from:idx, to:recipient, cards:giveCards.slice()});
+  chaosNotifyGiven(idx, recipient, giveCards);
   checkGameEndAfterSideEffect('give');
 }
 
@@ -5705,6 +5864,7 @@ function confirmGive(){
   hands[pa.recipient] = hands[pa.recipient].concat(giveCards);
   log(playerName(pa.idx)+'が'+playerName(pa.recipient)+'に'+giveCards.length+'枚渡した');
   if(journalActive()) field.journal.gives.push({from:pa.idx, to:pa.recipient, cards:giveCards.slice()});
+  chaosNotifyGiven(pa.idx, pa.recipient, giveCards);
   checkGameEndAfterSideEffect('give');
   hideActionModal();
   const info=pa.info, extraSkips=pa.extraSkips;
