@@ -1903,7 +1903,7 @@ const CHAOS_CARDS = [
   {type:'shinimasen', timing:'auto-out3', impl:true, name:'僕は死にましぇん',
    desc:'アウトが3つたまったとき手札にあると強制発動。その敗北を拒否し、アウトが1つに戻ります（禁止上がりなどの反則負けには効果がありません）。'},
   {type:'osoreta', timing:'preplay', impl:true, name:'恐れたやつが負けなのさ',
-   desc:'アウトが0のプレイヤー全員にアウトを2つ与え、捨て札からランダムに2枚ずつ渡します。すでにアウトが1つ以上ある相手には効果がありません。'},
+   desc:'アウトが最も少ない相手（同数なら全員）にアウトを1つ与え、捨て札からランダムに1枚ずつ押し付けます。'},
   {type:'kinoko', timing:'preplay', impl:true, select:true, name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
    desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードをランダムに1枚捨てさせます。'},
   {type:'katerukayo', timing:'doubt-alt', impl:true, name:'お前が俺に!!勝てるわけねェだろうが!!!!',
@@ -1922,8 +1922,8 @@ const CHAOS_CARDS = [
    desc:'自分の手札がすべて1つずつ強くなります（2はジョーカーに、ジョーカーは変化なし。革命中は逆に弱くなります）。'},
   {type:'shutou', timing:'preplay', impl:true, name:'恐ろしく速い手刀',
    desc:'各プレイヤーから、最も強い札を1枚ずつランダムにもらいます。'},
-  {type:'genkai', timing:'preplay', impl:true, select:true, name:'つーかこれが限界',
-   desc:'自分の手札を4枚選び、全スートの4に変えます。'},
+  {type:'genkai', timing:'preplay', impl:true, name:'つーかこれが限界',
+   desc:'自分の手札に全スートの4を加えます（元から4を持っていれば8枚以上の4が揃い、そのまま8枚出し・12枚出しができます）。'},
   {type:'tsuree', timing:'preplay', impl:true, select:true, name:'やっぱつれぇわ',
    desc:'自分のアウトが2つ以上のときだけ発動可能。特殊カードをランダムに2枚もらい、手札を2枚選んで表向きに捨てます。'},
   {type:'bakayarou', timing:'auto-received', impl:true, name:'馬鹿野郎ーっ!!誰を撃ってる!?',
@@ -2099,7 +2099,7 @@ function chaosCardUsable(seat, card){
   switch(card.type){
     case 'irekawari': return finishedOrder.length>0;  // 大富豪が確定してから
     case 'hachiware': return field!==null;            // 場が無いと変えようがない
-    case 'genkai':    return hands[seat].length>=4;   // 4枚選ぶので4枚以上必要
+    // 手札に加えるだけなので、いつでも発動できる（枚数の下限は要らない）。
     // 渡すと自分の手札が0枚になる（＝特殊カードの効果で自分が上がってしまう）状況は
     // 作らない。手番の途中で順位が確定すると、そのあと出す手が無くなって進行が詰まる。
     case 'kinoko':    return hands[seat].length>=2 && activePlayers().some(p=>p!==seat);
@@ -2141,8 +2141,6 @@ function chaosSelectionSpec(cardType, seat){
       hint:'ウソをついた'+playerName(chaosKaterukayoTarget)+'へ押し付ける札を'+need+'枚まで選べます（0枚でも構いません）'};
   }
   switch(cardType){
-    case 'genkai': return {needCards:4, needTarget:false, title:'つーかこれが限界',
-      hint:'4に変える手札をちょうど4枚選んでください（全スートの4になります）'};
     case 'kinoko': return {needCards:1, needTarget:true, title:'猛毒キノコのスープ',
       hint:'押し付ける相手と、渡すカードを1枚選んでください'};
     case 'tsuree': return {needCards:2, needTarget:false, title:'やっぱつれぇわ',
@@ -2174,8 +2172,7 @@ function chaosResolveSelection(seat, cardType, sel){
   const ids = sel.cardIds || [];
   inChaosEffect++;
   try{
-    if(cardType==='genkai') chaosGenkai(seat, ids);
-    else if(cardType==='kinoko') chaosKinoko(seat, sel.target, ids[0]);
+    if(cardType==='kinoko') chaosKinoko(seat, sel.target, ids[0]);
     else if(cardType==='tsuree') chaosTsuree(seat, ids);
     else if(cardType==='yoroshiku') chaosYoroshiku(seat, ids);
     else if(cardType==='katerukayo') chaosKaterukayoGive(seat, ids);
@@ -2230,12 +2227,14 @@ function chaosYoroshiku(seat, cardIds){
   handed.forEach((c,i)=>{ chaosNotifyGiven(seat, others[i], [c]); });
   checkGameEndAfterSideEffect('chaos');
 }
-// 選んだ4枚を全スートの4に変える（個体idは保つので枚数も所在も変わらない）。
-function chaosGenkai(seat, cardIds){
-  const ids = new Set(cardIds);
-  const picked = hands[seat].filter(c=>ids.has(c.id)).slice(0, 4);
-  picked.forEach((c,i)=>{ c.rank = '4'; c.suit = SUITS[i % SUITS.length]; });
-  log(playerName(seat)+'の手札'+picked.length+'枚が4に変わった');
+// 全スートの4を手札に「加える」（変換ではなく追加）。元から4を持っていれば8枚以上の4が
+// 揃い、そのまま8枚出し・12枚出しができる。札を生み出すので生成枚数として数える。
+function chaosGenkai(seat){
+  SUITS.forEach(s=>{
+    hands[seat].push({rank:'4', suit:s, id:mintCardId()});
+    chaosGeneratedCards++;
+  });
+  log(playerName(seat)+'の手札に全スートの4が加わった（手札'+hands[seat].length+'枚）');
 }
 // 相手を1人選んでカードを1枚押し付け、その相手の特殊カードをランダムに1枚捨てさせる。
 function chaosKinoko(seat, target, cardId){
@@ -2272,7 +2271,6 @@ function chaosTsuree(seat, cardIds){
 // CPUの選択（暫定）。genkaiは弱い札から4枚、kinokoは上がりに近い相手へ最弱の札を送る。
 function cpuChaosSelection(seat, cardType, spec){
   const weakFirst = sortByStrength(hands[seat]);
-  if(cardType==='genkai') return {cardIds: weakFirst.slice(0, 4).map(c=>c.id)};
   if(cardType==='tsuree') return {cardIds: weakFirst.slice(0, 2).map(c=>c.id)};
   if(cardType==='yoroshiku') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
   if(cardType==='katerukayo') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
@@ -2391,6 +2389,7 @@ function applyChaosEffect(seat, card){
                         log(playerName(seat)+'は札を出したあと、全員にカードを1枚ずつ配る'); break;
       // ダウト宣言の代わり。通常のダウトと同じ解決に乗せ、成否で扱いを変える。
       case 'katerukayo': chaosKaterukayoSeat = seat; doubtAction(seat); break;
+      case 'genkai':    chaosGenkai(seat); break;
       case 'sensou':    chaosSensou(seat); break;
       case 'funeorio':  chaosFuneorio(seat); break;
       case 'jakusha':   chaosJakusha(seat); break;
@@ -2465,15 +2464,21 @@ function chaosShutou(seat){
   checkGameEndAfterSideEffect('chaos');
 }
 
-// アウトが0の相手全員に、アウトを2つと捨て札からランダムな2枚を与える。
+// 「まだ傷を負っていない者」を狙う効果。アウトが最も少ない相手全員（同数なら全員）に、
+// アウトを1つと捨て札からランダムな1枚を与える。
+// 以前は「アウトが0の相手」限定だったが、一度使うと該当者が居なくなって以降ほぼ空打ちに
+// なり、実質1試合1回しか使えなかった。「最も少ない相手」にすると必ず対象が居るので、
+// そのぶん1回あたりの威力を半分（アウト2→1、札2枚→1枚）にして釣り合いを取っている。
 function chaosOsoreta(seat){
-  const targets = activePlayers().filter(p=>p!==seat && outs[p]===0);
-  if(!targets.length){ log('アウトが0のプレイヤーがいなかったため、効果は不発に終わった'); return; }
+  const others = activePlayers().filter(p=>p!==seat);
+  if(!others.length){ log('対象になる相手がいなかったため、効果は不発に終わった'); return; }
+  const min = Math.min.apply(null, others.map(p=>outs[p]));
+  const targets = others.filter(p=>outs[p]===min);
+  log(targets.map(playerName).join('・')+'が狙われた（アウト'+min+'で最も少ない）');
   targets.forEach(p=>{
     addOut(p, '恐れたやつが負けなのさ');
-    if(finishedOrder.includes(p)) return;   // 念のため（0→2なので通常は退場しない）
-    addOut(p, '恐れたやつが負けなのさ');
-    const got = chaosTakeFromDiscard(2);
+    if(finishedOrder.includes(p)) return;   // アウト3つで退場した場合は札を渡さない
+    const got = chaosTakeFromDiscard(1);
     if(got.length){
       hands[p] = hands[p].concat(got);
       log(playerName(p)+'は捨て札から'+got.length+'枚を押し付けられた');
