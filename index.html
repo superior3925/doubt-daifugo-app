@@ -4110,8 +4110,19 @@ function resolveFieldClearOnPass(){
   if(gameOver){ render(); showResults(); }
   return true;
 }
-function countSeatAsPass(){
+// その席が「まだ生存している場の持ち主」か。passClearThreshold は「持ち主以外の全員が
+// 降りたら場が流れる」（act.length-1）という前提で数えているので、持ち主自身の降りは
+// どの経路（パス／休み／5スキップ）でも数に入れてはいけない。数えると1人ぶん早く場が
+// 流れ、本来は親になるはずの持ち主ではなく次の席が親になってしまう。
+// 逆に、既に上がった持ち主が手番を握ったまま降りる場合は必ず数える。残り1人になると
+// advanceTurn は手番を動かさないため、その空パスだけがトリックを終わらせる唯一の手段に
+// なっており、数えないと場が永久に流れなくなる。
+function isOwnLiveField(seat){
+  return !!(field && field.owner===seat && !finishedOrder.includes(seat));
+}
+function countSeatAsPass(seat){
   if(field===null) return false;
+  if(isOwnLiveField(seat)) return false;
   passStreak++;
   return resolveFieldClearOnPass();
 }
@@ -4142,14 +4153,14 @@ function advanceToNextActor(){
     const p = currentPlayerIndex;
     if(sitOutTricks[p] > 0){
       log(playerName(p)+'：休み（ダウトの罰）');
-      countSeatAsPass();
+      countSeatAsPass(p);
       continue;
     }
     if(skipQuota > 0){
       skipQuota--;
       if(doubtAvailableFor(p)){ forcedPassOnly = true; return; }
       log(playerName(p)+'：5スキップで飛ばされた');
-      countSeatAsPass();
+      countSeatAsPass(p);
       continue;
     }
     return;
@@ -4617,7 +4628,7 @@ function passAction(playerIdx){
     log(playerName(playerIdx)+'はパスしたため、連続手番はここで終わり');
     chaosOrenoTurnFinish();
   }
-  passStreak++;
+  if(!isOwnLiveField(playerIdx)) passStreak++;
   Feedback.sfx('pass');
   log(playerName(playerIdx)+'： パス');
   resolveFieldClearOnPass();
