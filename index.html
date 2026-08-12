@@ -340,6 +340,23 @@
   .decl-history-chip.latest{ opacity:1; }
   .decl-history-chip.fading{ opacity:0.55; }
 
+  /* 直近に発動された特殊カードと、その結果を盤面に出しておく。カットインは流れて
+     消えてしまうので、見逃しても後から読めるようにするための控え。 */
+  .chaos-recent{
+    display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap; justify-content:center;
+    font-size:11px; padding:2px 0 4px;
+  }
+  .chaos-recent-rows{ display:flex; flex-direction:column; gap:3px; align-items:center; max-width:min(560px, 92vw); }
+  .chaos-recent-row{
+    padding:3px 10px; border-radius:10px;
+    border:1px solid rgba(191,120,220,0.45); background:rgba(52,20,72,0.45);
+    color:#e8dcf2; line-height:1.35; text-align:center;
+  }
+  .chaos-recent-row.latest{ border-color:rgba(255,210,120,0.75); background:rgba(78,26,60,0.55); }
+  .chaos-recent-row .who{ color:var(--gold-soft); }
+  .chaos-recent-row .what{ font-weight:700; }
+  .chaos-recent-row .note{ opacity:0.85; }
+
   /* --- カオスモードの特殊カード --- */
   .chaos-toggle-block.disabled-rule{ opacity:0.45; }
   .chaos-toggle-block.disabled-rule .switch .slider{ cursor:not-allowed; }
@@ -567,6 +584,34 @@
     text-shadow:0 0 16px rgba(255,224,150,0.9), 0 2px 4px rgba(0,0,0,0.7);
     animation:cutInChaos 3.2s cubic-bezier(.2,.9,.25,1) forwards,
               chaosGlow 0.9s ease-in-out 3 both;
+  }
+  /* 効果の結果を1行で添える帯。カード名より少し遅れて滑り込ませ、読む時間を稼ぐ。
+     結果つきのときは名前側の表示時間も伸ばして、2行が同時に消えるようにする。 */
+  .cut-in-stack{ display:flex; flex-direction:column; align-items:center; gap:10px; max-width:94vw; }
+  .cut-in-text.chaos.with-sub{
+    animation:cutInChaos 4.2s cubic-bezier(.2,.9,.25,1) forwards,
+              chaosGlow 0.9s ease-in-out 4 both;
+  }
+  @keyframes cutInSubSlide{
+    0%{   transform:translateX(-125%) skewX(-8deg); opacity:0; }
+    11%{  transform:translateX(-125%) skewX(-8deg); opacity:0; }
+    20%{  transform:translateX(0)     skewX(-8deg); opacity:1; }
+    86%{  transform:translateX(0)     skewX(-8deg); opacity:1; }
+    100%{ transform:translateX(125%)  skewX(-8deg); opacity:0; }
+  }
+  .cut-in-sub{
+    font-family:'Shippori Mincho', serif;
+    font-weight:700;
+    font-size:clamp(13px, 3.2vw, 25px);
+    line-height:1.4; text-align:center; white-space:normal; max-width:92vw;
+    padding:10px 24px;
+    color:#fff6e2;
+    background:linear-gradient(100deg, rgba(38,14,58,0.95), rgba(104,30,22,0.95));
+    border-top:2px solid rgba(255,233,168,0.85);
+    border-bottom:2px solid rgba(255,233,168,0.85);
+    box-shadow:0 10px 34px rgba(0,0,0,0.7);
+    text-shadow:0 2px 5px rgba(0,0,0,0.85);
+    animation:cutInSubSlide 4.2s cubic-bezier(.2,.9,.25,1) forwards;
   }
   /* 発動の瞬間に画面全体を一瞬だけ光らせる（特殊カード専用） */
   @keyframes chaosFlash{
@@ -1320,6 +1365,10 @@
             <span class="decl-history-label">直近の宣言</span>
             <div class="decl-history-chips" id="declHistoryChips"></div>
           </div>
+          <div class="chaos-recent" id="chaosRecent" style="display:none;">
+            <span class="decl-history-label">直近の特殊カード</span>
+            <div class="chaos-recent-rows" id="chaosRecentRows"></div>
+          </div>
           <div class="you-row" id="youRow">
             <div class="you-label-row">
               <div class="you-label" id="youLabel">あなたの手札</div>
@@ -1951,6 +2000,27 @@ const CHAOS_CARDS = [
 ];
 const CHAOS_BY_TYPE = CHAOS_CARDS.reduce((m,c)=>{ m[c.type]=c; return m; }, {});
 function chaosDef(type){ return CHAOS_BY_TYPE[type] || {name:'不明な特殊カード', desc:'', timing:'preplay'}; }
+
+// ---- カットインに添える「何が起きたか」の一行 ----
+// 効果の適用中に chaosSay() で積み、適用が終わった時点で chaosCutIn() がまとめて出す。
+//
+// ★ここに書いてよいのは公開情報だけ。他家の手札の中身・伏せたまま渡した札の正体・
+//   伏せ札の中身は絶対に書かない。カットインは「自分の画面」に出るが、CPUや他の
+//   プレイヤーの効果でも出るため、書いた内容はそのまま覗き見になってしまう。
+//   人数・枚数・席名・アウト数・表向きになった札は公開情報なので書いてよい。
+let chaosResultLines = [];
+let chaosCutInShown = false;
+// いま結果を書き込むべき使用済みカードのエントリ。カットインは流れて消えるので、
+// 同じ文面を chaosDiscard にも残して盤面と一覧から後から読めるようにする。
+let chaosNoteTarget = null;
+function chaosSay(text){ if(text) chaosResultLines.push(String(text)); }
+function chaosCutIn(name){
+  const sub = chaosResultLines.join('　／　');
+  chaosResultLines = [];
+  chaosCutInShown = true;
+  if(chaosNoteTarget){ chaosNoteTarget.note = sub; chaosNoteTarget = null; }
+  showCutIn(name, undefined, {chaos:true, sub:sub});
+}
 // カオスモードはダウト大富豪モードの上でしか成立しない（伏せ札・アウトの仕組みに乗るため）。
 // 設定UI側でも連動させているが、ここでも両方を条件にして単一の真実源にする。
 function isChaosMode(){ return !!(rules.chaosMode && isDoubtMode()); }
@@ -2000,6 +2070,9 @@ function resetChaosState(){
   chaosGrantedForTrick = -1;
   chaosOutSnapshot = new Array(seatCount).fill(0);
   chaosRecycleSel = new Set();
+  chaosNoteTarget = null;
+  chaosResultLines = [];
+  chaosCutInFresh = false;
   if(isChaosMode()){
     for(let s=0;s<seatCount;s++){
       for(let k=0;k<CHAOS_INITIAL_HAND;k++) chaosHandOf(s).push(drawChaosCard());
@@ -2070,7 +2143,7 @@ function chaosRecycle(seat, cardIds){
   picked.forEach(c=>{
     const i = hand.indexOf(c);
     if(i>=0) hand.splice(i, 1);
-    chaosDiscard.push({id:c.id, type:c.type, seat:seat});
+    chaosDiscard.push({id:c.id, type:c.type, seat:seat, kind:'recycled'});
   });
   log(playerName(seat)+'は特殊カードを'+CHAOS_RECYCLE_COST+'枚捨てて引き直した（'
     + picked.map(c=>chaosDef(c.type).name).join('・')+'）');
@@ -2266,6 +2339,8 @@ function chaosResolveSelection(seat, cardType, sel){
     else if(cardType==='bakayarou') chaosBakayarouGive(seat, ids);
     else if(cardType==='ottotto') chaosOttotto(seat, ids);
   } finally { inChaosEffect--; }
+  // 選び終えたので、ここで結果つきのカットインを出す。
+  chaosCutIn(chaosDef(cardType).name);
   render();
   if(gameOver){ chaosDeferredTurn = null; showResults(); return; }
   // 「おォ～っとっとぉ」は捨てたあと必ずパスになる（passAction が描画と進行を担う）。
@@ -2299,11 +2374,13 @@ function chaosKaterukayoGive(seat, cardIds){
   if(target===null || target===seat || !activePlayers().includes(target)) return;
   const ids = new Set(cardIds);
   const give = hands[seat].filter(c=>ids.has(c.id)).slice(0, 2);
-  if(!give.length){ log(playerName(seat)+'は札を押し付けなかった'); return; }
+  if(!give.length){ log(playerName(seat)+'は札を押し付けなかった');
+    chaosSay('ダウト成功！　ただし札は押し付けなかった'); return; }
   const gset = new Set(give.map(c=>c.id));
   hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
   hands[target] = hands[target].concat(give);
   log(playerName(seat)+'が'+playerName(target)+'に'+give.length+'枚押し付けた');
+  chaosSay('ダウト成功！　'+playerName(target)+'に手札を'+give.length+'枚押し付けた');
   chaosNotifyGiven(seat, target, give);
   checkGameEndAfterSideEffect('chaos');
 }
@@ -2319,6 +2396,8 @@ function chaosYoroshiku(seat, cardIds){
   hands[seat] = hands[seat].filter(c=>!hset.has(c.id));
   handed.forEach((c,i)=>{ hands[others[i]].push(c); });
   log(playerName(seat)+'が'+others.slice(0,n).map(playerName).join('・')+'にカードを1枚ずつ配った');
+  chaosSay(others.slice(0,n).map(playerName).join('・')
+    + (n>1 ? 'にカードを1枚ずつ配った' : 'にカードを1枚配った') + '（中身は本人だけが見えます）');
   handed.forEach((c,i)=>{ chaosNotifyGiven(seat, others[i], [c]); });
   checkGameEndAfterSideEffect('chaos');
 }
@@ -2330,6 +2409,7 @@ function chaosGenkai(seat){
     chaosGeneratedCards++;
   });
   log(playerName(seat)+'の手札に全スートの4が加わった（手札'+hands[seat].length+'枚）');
+  chaosSay('手札に4が4枚加わった（手札'+hands[seat].length+'枚に）');
 }
 // 相手を1人選んでカードを1枚押し付け、その相手の特殊カードをランダムに1枚捨てさせる。
 function chaosKinoko(seat, target, cardId){
@@ -2343,10 +2423,12 @@ function chaosKinoko(seat, target, cardId){
   const th = chaosHandOf(target);
   if(th.length){
     const gone = th.splice(Math.floor(Math.random()*th.length), 1)[0];
-    chaosDiscard.push({id:gone.id, type:gone.type, seat:target});
+    chaosDiscard.push({id:gone.id, type:gone.type, seat:target, kind:'discarded'});
     log(playerName(target)+'は特殊カード「'+chaosDef(gone.type).name+'」を失った');
+    chaosSay(playerName(target)+'にカードを1枚押し付け、特殊カード「'+chaosDef(gone.type).name+'」を失わせた');
   } else {
     log(playerName(target)+'は特殊カードを持っていなかった');
+    chaosSay(playerName(target)+'にカードを1枚押し付けた（相手は特殊カードを持っていなかった）');
   }
 }
 // 特殊カードを2枚もらい、手札を2枚まで表向きに捨てる。捨てた札は誰の目にも残るので、
@@ -2356,6 +2438,9 @@ function chaosTsuree(seat, cardIds){
   grantChaosCard(seat, 'やっぱつれぇわ');
   const ids = new Set(cardIds);
   const dropped = hands[seat].filter(c=>ids.has(c.id)).slice(0, 2);
+  chaosSay(dropped.length
+    ? ('特殊カードを2枚もらい、手札'+dropped.length+'枚を表向きに捨てた')
+    : '特殊カードを2枚もらった（手札は捨てなかった）');
   if(!dropped.length) return;
   const dset = new Set(dropped.map(c=>c.id));
   hands[seat] = hands[seat].filter(c=>!dset.has(c.id));
@@ -2459,11 +2544,18 @@ function chaosUseCard(seat, card){
   const i = hand.findIndex(c=>c.id===card.id);
   if(i<0) return false;
   hand.splice(i, 1);
-  chaosDiscard.push({id:card.id, type:card.type, seat:seat});
+  const entry = {id:card.id, type:card.type, seat:seat};
+  chaosDiscard.push(entry);
+  chaosNoteTarget = entry;
   const def = chaosDef(card.type);
   log(playerName(seat)+'が特殊カード「'+def.name+'」を発動！');
-  showCutIn(def.name, undefined, {chaos:true});
+  // カットインは効果を適用したあとに出す（結果を一行で添えるため）。ただし
+  // 選択待ちに入ったカードは選び終えてから、自前でカットインを出したカード
+  // （ダウト演出が続くお前が俺に!!）は二重に出さないよう、それぞれ判定する。
+  chaosResultLines = [];
+  chaosCutInShown = false;
   applyChaosEffect(seat, card);
+  if(!chaosPending && !chaosCutInShown) chaosCutIn(def.name);
   return true;
 }
 function applyChaosEffect(seat, card){
@@ -2481,9 +2573,13 @@ function applyChaosEffect(seat, card){
       case 'orenoTurn': chaosOrenoTurnStart(seat); break;
       // 効果が出るのは「札を出したあと」なので、ここでは席を覚えるだけ。
       case 'yoroshiku': chaosYoroshikuSeat = seat;
-                        log(playerName(seat)+'は札を出したあと、全員にカードを1枚ずつ配る'); break;
+                        log(playerName(seat)+'は札を出したあと、全員にカードを1枚ずつ配る');
+                        chaosSay('このあと札を出したら、ほかの全員にカードを1枚ずつ配る'); break;
       // ダウト宣言の代わり。通常のダウトと同じ解決に乗せ、成否で扱いを変える。
-      case 'katerukayo': chaosKaterukayoSeat = seat; doubtAction(seat); break;
+      case 'katerukayo':
+        chaosSay('ダウトの代わりに宣言！　外してもアウト・休みのペナルティは受けない');
+        chaosCutIn(chaosDef('katerukayo').name);   // このあとダウトの演出が続くので先に出す
+        chaosKaterukayoSeat = seat; doubtAction(seat); break;
       case 'genkai':    chaosGenkai(seat); break;
       case 'sensou':    chaosSensou(seat); break;
       case 'funeorio':  chaosFuneorio(seat); break;
@@ -2523,7 +2619,10 @@ function chaosHachiware(seat){
   field.rank = wildcardAwareRank(field.cards);
   field.count = field.cards.length;
   field.seq = ++fieldSeqCounter;
-  log('場のカードが「'+field.cards.map(c=>(c.rank==='JOKER'?'ジョーカー':(c.suit||'')+c.rank)).join(' ')+'」に変化した（しばりはすべて解除）');
+  const faceLabel = field.cards.map(c=>(c.rank==='JOKER'?'ジョーカー':(c.suit||'')+c.rank)).join(' ');
+  log('場のカードが「'+faceLabel+'」に変化した（しばりはすべて解除）');
+  // 変化後の場は表向きになるので、中身を書いても覗き見にならない。
+  chaosSay('場が「'+faceLabel+'」に変化！　しばりはすべて解除、変化した札の効果も無し');
 }
 
 // 自分の手札をすべて2つ強くする。上limitをはみ出した札（Aと2）はジョーカーになり、
@@ -2538,12 +2637,14 @@ function chaosIkiru(seat){
     else c.rank = RANKS[j];
   });
   log(playerName(seat)+'の手札が'+(revolution?'2つずつ弱く':'2つずつ強く')+'なった');
+  chaosSay(playerName(seat)+'の手札がすべて2つずつ'+(revolution?'弱くなった（3と4はジョーカーに）':'強くなった（Aと2はジョーカーに）'));
 }
 // アウトを2つ減らす。任意発動なら事実上0に、アウト3つでの自動発動なら1に戻る。
 function chaosShinimasen(seat){
   const before = outs[seat];
   outs[seat] = Math.max(0, outs[seat]-2);
   log(playerName(seat)+'のアウトが'+before+'から'+outs[seat]+'に減った');
+  chaosSay('アウトが'+before+'→'+outs[seat]+'に減った');
 }
 
 // 各プレイヤーから最も強い札を1枚ずつ奪う（同じ強さが複数ならランダム）。
@@ -2557,7 +2658,10 @@ function chaosShutou(seat){
     hands[seat].push(card);
     victims.push(playerName(p));
   });
-  if(victims.length) log(playerName(seat)+'が'+victims.join('・')+'から最強の札を1枚ずつ奪った');
+  if(victims.length){
+    log(playerName(seat)+'が'+victims.join('・')+'から最強の札を1枚ずつ奪った');
+    chaosSay(victims.join('・')+'から最も強い札を1枚ずつ奪った（計'+victims.length+'枚）');
+  } else chaosSay('奪える相手がおらず不発');
   // 最後の1枚を奪われて手札が0になった席は、7渡し等と同じ扱いで上がりとして処理する。
   checkGameEndAfterSideEffect('chaos');
 }
@@ -2566,17 +2670,19 @@ function chaosShutou(seat){
 // アウトを1つ与える。「おォ～っとっとぉ」の一部として発動する。
 function chaosGiveOutToLeastHurt(seat, reason){
   const others = activePlayers().filter(p=>p!==seat);
-  if(!others.length){ log('アウトを与える相手がいなかった'); return; }
+  if(!others.length){ log('アウトを与える相手がいなかった'); chaosSay('アウトを与える相手がいなかった'); return; }
   const min = Math.min.apply(null, others.map(p=>outs[p]));
   const targets = others.filter(p=>outs[p]===min);
   // 最少が既に2つのとき（＝全員が崖っぷち）はアウトを増やさない。ここで増やすと
   // このカード1枚でそのまま強制敗北させてしまい、駆け引きにならないため。
   if(min >= 2){
     log(targets.map(playerName).join('・')+'は既にアウト2つのため、アウトは増えません');
+    chaosSay(targets.map(playerName).join('・')+'は既にアウト2つのため、アウトは増えなかった');
     return;
   }
   log(targets.map(playerName).join('・')+'が狙われた（アウト'+min+'で最も少ない）');
   targets.forEach(p=>{ addOut(p, reason); });
+  chaosSay('アウトが最も少ない'+targets.map(playerName).join('・')+'にアウトを1つ与えた');
 }
 
 // 上がっていない全員の手札を集めてシャッフルし、元と同じ枚数ずつ配り直す。
@@ -2591,6 +2697,7 @@ function chaosIrekawari(seat){
   // 自分の手札が入れ替わったので、選択中のカードは選び直してもらう。
   selected = new Set();
   log('全員の手札をシャッフルして配り直した（枚数は変わらず）');
+  chaosSay('残っている全員の手札をシャッフルして配り直した（枚数はそのまま）');
 }
 
 // 次の1手を「公開・ウソ不可・必ず場が流れて自分の番に戻る」にして、そのあと特殊カードを
@@ -2600,6 +2707,7 @@ function chaosOrenoTurnStart(seat){
   chaosNantokaSeat = seat;
   chaosOrenoTurn = {seat: seat, left: 1};
   log(playerName(seat)+'の次の1手は、ウソをつけない代わりに必ず場が流れて自分の番になる');
+  chaosSay('次の1手はウソ厳禁（公開で出す）。代わりに必ず場が流れて続けて自分の番！　そのあと特殊カードを1枚引く');
 }
 // 効果を終了して特殊カードを1枚引く。手番の消化・パス・上がりのいずれからも呼ばれる。
 function chaosOrenoTurnFinish(){
@@ -2623,9 +2731,13 @@ function chaosTryBakayarou(ownerIdx, doubterIdx){
   const i = hand.findIndex(c=>c.type==='bakayarou');
   if(i<0) return false;
   const card = hand.splice(i, 1)[0];
-  chaosDiscard.push({id:card.id, type:card.type, seat:ownerIdx});
+  const entry = {id:card.id, type:card.type, seat:ownerIdx};
+  chaosDiscard.push(entry);
+  chaosNoteTarget = entry;
+  // カットインは渡す札を選び終えてから、結果つきで出す（chaosResolveSelection 側）。
   log(playerName(ownerIdx)+'の「馬鹿野郎ーっ!!誰を撃ってる!?」が発動！');
-  showCutIn('馬鹿野郎ーっ!!誰を撃ってる!?', undefined, {chaos:true});
+  chaosResultLines = [];
+  chaosSay('ダウトを宣言された仕返し');
   chaosBakayarouTarget = doubterIdx;
   chaosResumeSchedule = true;
   render();
@@ -2654,9 +2766,9 @@ function chaosNotifyGiven(fromSeat, toSeat, cards){
   const give = sortByStrength(hands[toSeat]).slice(0, need);
   if(!give.length) return;   // 渡せる札が無いなら発動しない（カードは手元に残る）
   const card = hand.splice(i, 1)[0];
-  chaosDiscard.push({id:card.id, type:card.type, seat:toSeat});
+  const entry = {id:card.id, type:card.type, seat:toSeat};
+  chaosDiscard.push(entry);
   log(playerName(toSeat)+'の「馬鹿野郎ーっ!!誰を撃ってる!?」が発動！');
-  showCutIn('馬鹿野郎ーっ!!誰を撃ってる!?', undefined, {chaos:true});
   chaosGiveDepth++;
   try{
     const gset = new Set(give.map(c=>c.id));
@@ -2665,6 +2777,14 @@ function chaosNotifyGiven(fromSeat, toSeat, cards){
     log(playerName(toSeat)+'が'+playerName(fromSeat)+'に'+give.length+'枚を突き返した');
     checkGameEndAfterSideEffect('chaos');
   } finally { chaosGiveDepth--; }
+  // 別の特殊カードの効果の中で渡された場合（キノコ・よろしく等）は、その札のカットインに
+  // 追記するだけにする。ここで単独のカットインを出すと、直後に呼び出し元のカットインが
+  // 上書きしてしまい、突き返しが一瞬で消えてしまうため。
+  const line = playerName(toSeat)+'がカードを渡された仕返しに、'
+    + playerName(fromSeat)+'へ手札を'+give.length+'枚突き返した';
+  entry.note = line;
+  if(inChaosEffect>0) chaosSay(line);
+  else showCutIn(chaosDef('bakayarou').name, undefined, {chaos:true, sub:line});
 }
 // 選ばれた札を、ダウトしてきた相手へ渡す（2枚まで・0枚でも可）。
 function chaosBakayarouGive(seat, cardIds){
@@ -2673,11 +2793,13 @@ function chaosBakayarouGive(seat, cardIds){
   if(target===null || target===seat || !activePlayers().includes(target)) return;
   const ids = new Set(cardIds);
   const give = hands[seat].filter(c=>ids.has(c.id)).slice(0, 2);
-  if(!give.length){ log(playerName(seat)+'は札を渡さなかった'); return; }
+  if(!give.length){ log(playerName(seat)+'は札を渡さなかった');
+    chaosSay('ただし札は渡さなかった'); return; }
   const gset = new Set(give.map(c=>c.id));
   hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
   hands[target] = hands[target].concat(give);
   log(playerName(seat)+'がダウトしてきた'+playerName(target)+'に'+give.length+'枚を渡した');
+  chaosSay('ダウトしてきた'+playerName(target)+'に手札を'+give.length+'枚押し付けた');
   checkGameEndAfterSideEffect('chaos');
 }
 // 自分を含む全員の手札からランダムに2枚ずつ捨て、自分のアウトを1つ減らす。
@@ -2691,8 +2813,11 @@ function chaosSensou(seat){
     hands[p] = hands[p].filter(c=>!ds.has(c.id));
     recordDiscard(drop, playerName(p)+'が「この戦争を終わらせに来た」で失った札');
   });
-  if(outs[seat]>0){ outs[seat]--; log(playerName(seat)+'のアウトが1つ減った（残り'+outs[seat]+'）'); }
+  let cut = false;
+  if(outs[seat]>0){ outs[seat]--; cut = true; log(playerName(seat)+'のアウトが1つ減った（残り'+outs[seat]+'）'); }
   log('全員の手札からランダムに2枚ずつ失われた');
+  chaosSay('自分を含む全員の手札からランダムに2枚ずつ消えた'
+    + (cut ? '　／　自分のアウトが1つ減って'+outs[seat]+'に' : ''));
   checkGameEndAfterSideEffect('chaos');
 }
 // 手札が最も少ない相手ひとりを、このトリックの間だけプレイできなくする（同数ならランダム）。
@@ -2709,6 +2834,7 @@ function chaosFuneorio(seat){
   sitOutTricks[target] = Math.max(sitOutTricks[target], 1);
   log(playerName(target)+'はこのトリックの間プレイできない（残り'+min+'枚）'
     + (cands.length>1 ? '　※同数'+cands.length+'人からランダムに選ばれました' : ''));
+  chaosSay(playerName(target)+'（残り'+min+'枚）はこのトリックの間プレイできない');
 }
 // 強制的に革命を起こし、自分の最弱2枚を最強ランクへ変える。
 function chaosJakusha(seat){
@@ -2733,6 +2859,7 @@ function chaosJakusha(seat){
   }
   picked.forEach(c=>{ c.rank = target; });
   log(playerName(seat)+'の最も弱い'+picked.length+'枚が'+target+'に変わった');
+  chaosSay('最も弱い'+picked.length+'枚が最強の'+target+'に変わった');
 }
 // アウトが最も少ない相手にアウトを1つ与えたうえで、場の枚数まで裏向きに捨ててパスする。
 function chaosOttotto(seat, cardIds){
@@ -2746,12 +2873,14 @@ function chaosOttotto(seat, cardIds){
     recordDiscard(drop, playerName(seat)+'が「おォ～っとっとぉ」で裏向きに捨てた', ds);
     log(playerName(seat)+'が'+drop.length+'枚を裏向きに捨てた');
   }
+  chaosSay(drop.length ? ('手札'+drop.length+'枚を裏向きに捨てて、このターンはパス') : 'このターンはパス');
   checkGameEndAfterSideEffect('chaos');
 }
 // このトリックの間だけ、発動した席にだけ全員の手札を見せる。
 function chaosMienai(seat){
   chaosPeek = {seat: seat, trick: trickIndex};
   log(playerName(seat)+'はこのトリックの間、全員の手札が見えるようになった');
+  chaosSay(playerName(seat)+'はこのトリックの間、全員の手札が見えるようになった');
 }
 
 // ダウトの決着時の割り込み。「お前さぁ…疲れてんだよ」を持っていれば強制発動し、
@@ -2769,18 +2898,19 @@ function chaosTryTsukareten(ownerIdx, victimIdx){
   const i = hand.findIndex(c=>c.type==='tsukareten');
   if(i<0) return false;
   const card = hand.splice(i, 1)[0];
-  chaosDiscard.push({id:card.id, type:card.type, seat:ownerIdx});
+  const entry = {id:card.id, type:card.type, seat:ownerIdx};
+  chaosDiscard.push(entry);
   log(playerName(ownerIdx)+'の「お前さぁ…疲れてんだよ」が発動！');
-  showCutIn('お前さぁ…疲れてんだよ', undefined, {chaos:true});
   inChaosEffect++;
+  let tookChaos = false, taken = 0;
   try{
     const theirs = chaosHandOf(victimIdx);
     if(theirs.length && chaosHandOf(ownerIdx).length < CHAOS_MAX_HAND){
       const got = theirs.splice(Math.floor(Math.random()*theirs.length), 1)[0];
       chaosHandOf(ownerIdx).push(got);
+      tookChaos = true;
       log(playerName(ownerIdx)+'は'+playerName(victimIdx)+'から特殊カード「'+chaosDef(got.type).name+'」を奪った');
     }
-    let taken = 0;
     for(let k=0;k<2;k++){
       const strongest = chaosPickStrongest(hands[victimIdx]);
       if(!strongest) break;
@@ -2794,6 +2924,14 @@ function chaosTryTsukareten(ownerIdx, victimIdx){
       checkGameEndAfterSideEffect('chaos');
     }
   } finally { inChaosEffect--; }
+  // 奪った特殊カードの名前は書かない：この札は相手の手札から自分の手札へ移るだけで
+  // 表には出ないため、書くと他家の秘匿情報を漏らすことになる（枚数だけなら公開情報）。
+  const parts = [];
+  if(tookChaos) parts.push('特殊カード1枚');
+  if(taken) parts.push('最も強い札'+taken+'枚');
+  entry.note = '場を流して'+playerName(ownerIdx)+'が次の親に！'
+    + (parts.length ? '　／　'+playerName(victimIdx)+'から'+parts.join('と')+'を奪った' : '');
+  showCutIn(chaosDef('tsukareten').name, undefined, {chaos:true, sub:entry.note});
   return true;
 }
 // アウトが3つたまった瞬間の割り込み。「僕は死にましぇん」を持っていれば強制発動し、
@@ -2804,10 +2942,13 @@ function chaosTryShinimasen(idx){
   const i = hand.findIndex(c=>c.type==='shinimasen');
   if(i<0) return false;
   const card = hand.splice(i, 1)[0];
-  chaosDiscard.push({id:card.id, type:card.type, seat:idx});
-  outs[idx] = 1;
-  log(playerName(idx)+'は「僕は死にましぇん」で敗北を拒否！　アウトが1つに戻った');
-  showCutIn('僕は死にましぇん！！', undefined, {chaos:true});
+  const entry = {id:card.id, type:card.type, seat:idx};
+  chaosDiscard.push(entry);
+  const beforeOuts = outs[idx];
+  outs[idx] = Math.max(0, outs[idx]-2);   // 3つたまった瞬間に発動するので必ず1に戻る
+  log(playerName(idx)+'は「僕は死にましぇん」で敗北を拒否！　アウトが'+outs[idx]+'つに戻った');
+  entry.note = playerName(idx)+'が敗北を拒否！　アウトが'+beforeOuts+'→'+outs[idx]+'に戻った';
+  showCutIn(chaosDef('shinimasen').name, undefined, {chaos:true, sub:entry.note});
   return true;
 }
 
@@ -3884,6 +4025,7 @@ function dealFreshHands(){
   if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer=null; }
   flowingOutCards = null;
   if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
+  clearCutInQueue();
   clearDoubtWindowTimers();
   pendingCpuPlay = null;
   const cutInHost = document.getElementById('cutInHost');
@@ -4592,7 +4734,8 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
     clearField('「ずっと俺のターン!!」で流れた札');
     fieldCleared=true;
     log('「ずっと俺のターン!!」で場が流れた！ 続けて'+playerName(playerIdx)+'の番です');
-    showCutIn('ずっと俺のターン!!ドローっ!!', undefined, {chaos:true});
+    showCutIn('ずっと俺のターン!!ドローっ!!', undefined, {chaos:true,
+      sub:'公開で出したので誰もダウトできず、4止め・スペ3返しも不可。場が流れて続けて'+playerName(playerIdx)+'の番！'});
   } else if(rank==='8' && rules.eightGiri && !rules.fourStop){
     if(faceDown){
       field.pendingClear = 'eightGiri';
@@ -4801,6 +4944,29 @@ function passAction(playerIdx){
   scheduleNextIfCpu();
 }
 
+// 特殊カードの演出を読み切るための「ため」。カットインが流れている間に次の手が進むと、
+// 何が起きたのか分からないまま盤面だけ変わってしまうため、CPUの手を意図的に遅らせる。
+const CHAOS_CPU_COOLDOWN_MS = 2800;
+// オンライン対戦でゲストにも同じ演出を届けるための最新カットイン。中身は公開情報だけで
+// 構成しているので、そのまま全員へ配ってよい（秘匿情報は showCutIn に渡していない）。
+let cutInFeed = null;
+let cutInSeq = 0;
+let lastSeenCutInSeq = null;   // ゲスト側で再生済みのseq（null＝参加直後で未再生）
+// 直前に特殊カードの演出を出したか。次の1手だけ長めに待たせるために使う。
+let chaosCutInFresh = false;
+// 特殊カードを撃ったCPUの手番を、間をおいてから同じ席のまま再開する。
+function scheduleCpuResume(idx){
+  const myGen = gameGen;
+  chaosCutInFresh = false;   // この待ちで演出は消化されるので、次の手番は通常速度でよい
+  setTimeout(()=>{
+    if(myGen!==gameGen) return;
+    if(gameOver || pendingAction || exchangeInProgress || revealPending || chaosPending) return;
+    // 効果自体が手番を動かした（おォ～っとっとぉのパス等）場合は、通常の進行に任せる。
+    if(currentPlayerIndex!==idx) return;
+    if(seatController(idx)!=='local-cpu') return;
+    cpuTurn(idx, {afterChaos:true});
+  }, turboMs(CHAOS_CPU_COOLDOWN_MS));
+}
 function scheduleNextIfCpu(){
   if(gameOver) return;
   // ゲストはエンジンを進めない（ホストが配信するスナップショットを描画するだけ）。
@@ -4821,7 +4987,8 @@ function scheduleNextIfCpu(){
       // 操作権が本人に戻った）場合は、CPUが本人の代わりに指してしまわないよう中止する。
       if(seatController(currentPlayerIndex)!=='local-cpu') return;
       cpuTurn(currentPlayerIndex);
-    }, turboMs(850));
+      // 直前に特殊カードの演出が出ていたら、次の1手だけ待ちを長くして読む時間を作る。
+    }, turboMs(chaosCutInFresh ? (chaosCutInFresh = false, CHAOS_CPU_COOLDOWN_MS) : 850));
   }
 }
 
@@ -5669,17 +5836,22 @@ function cpuTrySpecialCounter(idx, hand){
   return false;
 }
 
-function cpuTurn(idx){
+function cpuTurn(idx, opts){
   if(gameOver) return;
   // 特殊カードの発動は「トランプを出す前」なので、手札を読む前に済ませる。
   // 効果で手札そのものが入れ替わる（わたしたち、入れ替わってる！？）ことがあるため、
   // hand を掴むのは必ずこの後。効果で決着したらここで打ち切る。
-  cpuMaybeUseChaos(idx);
+  // afterChaos で再入したときは、この手番の発動はもう済んでいるので飛ばす
+  // （1手番につき特殊カードは1枚、という従来の挙動を保つ）。
+  const usedChaos = (opts && opts.afterChaos) ? false : cpuMaybeUseChaos(idx);
   if(gameOver){ render(); showResults(); return; }
   // ダウト代替（お前が俺に!!）を使った場合は、その時点で手番を消費してめくり処理へ移る。
   // 選択待ちが立った場合も同じ。ここで打ち切らないと、同じ手番で続けてカードを出してしまい、
   // あとから走るめくり処理が「既に上書きされた場」を読んで壊れる。
   if(revealPending || chaosPending) return;
+  // 特殊カードを撃った直後は、演出を読み切る前に盤面が動いてしまわないよう一拍おく。
+  // 続きは同じ手番のまま scheduleCpuResume から再開する。
+  if(usedChaos){ render(); scheduleCpuResume(idx); return; }
   // ここで「上がっている席なら手番を送る」という保険を足してはいけない。残り1人になると
   // advanceTurn は意図的に手番を動かさない（index.html の advanceTurn 参照）ので、送ろうと
   // すると同じ席を延々と呼び直す無限ループになる。上がった席が0枚のままパスして場を流す、
@@ -5834,23 +6006,62 @@ let cutInTimer = null;
 // 効果演出。読み切れるように表示時間は長めに取る（従来1.3秒→通常2.2秒／特殊カード3.2秒）。
 // opts.chaos で特殊カード専用の派手な見た目（拡大・グラデーション・画面フラッシュ）にする。
 // あなたが上がった後の高速消化中（fastForward）は turboMs でごく短くなる。
+// opts.sub に「何が起きたか」の一行を渡すと、カード名の下に結果の帯を出す。
+// 全18種の効果を覚えていなくても、その場で何が起きたか分かるようにするため。
 function showCutIn(text, sound, opts){
+  const chaos = !!(opts && opts.chaos);
+  const sub = (opts && opts.sub) ? String(opts.sub) : '';
+  // 特殊カードの演出を出したことを覚えておき、次のCPUの手を1回だけ遅らせる。
+  if(chaos) chaosCutInFresh = true;
+  // ホストは同じ演出をゲストへ配る（ゲストは受け取って再生する側なので積まない）。
+  if(onlineRole==='host') cutInFeed = {text:String(text), sub:sub, chaos:chaos, seq:++cutInSeq};
+  // 特殊カードの演出が出ている最中に次が来たら、上書きせず順番待ちにする。
+  // 自動発動どうし（お前さぁ…疲れてんだよ→馬鹿野郎ーっ など）は同じ一瞬に続けて
+  // 起きるので、上書きすると前の演出が一度も読めないまま消えてしまう。
+  // 待ち行列が伸びすぎると盤面と演出がずれるので、上限を超えた分は捨てる
+  // （見逃しても「直近の特殊カード」欄と使用済み一覧から後で読める）。
+  if(cutInBusy){
+    if(cutInQueue.length < CUT_IN_QUEUE_MAX) cutInQueue.push({text:text, sound:sound, chaos:chaos, sub:sub});
+    return;
+  }
+  renderCutIn(text, sound, chaos, sub);
+}
+const CUT_IN_QUEUE_MAX = 3;
+let cutInQueue = [];
+let cutInBusy = false;
+function clearCutInQueue(){ cutInQueue = []; cutInBusy = false; }
+function renderCutIn(text, sound, chaos, sub){
   Feedback.sfx(sound===undefined ? 'cutin' : sound);
   const host = document.getElementById('cutInHost');
   if(!host) return;
   if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
   host.innerHTML = '';
-  const chaos = !!(opts && opts.chaos);
   if(chaos){
     const flash = document.createElement('div');
     flash.className = 'chaos-flash';
     host.appendChild(flash);
   }
+  const stack = document.createElement('div');
+  stack.className = 'cut-in-stack';
   const el = document.createElement('div');
-  el.className = 'cut-in-text' + (chaos ? ' chaos' : '');
+  el.className = 'cut-in-text' + (chaos ? ' chaos' : '') + (sub ? ' with-sub' : '');
   el.textContent = text;
-  host.appendChild(el);
-  cutInTimer = setTimeout(()=>{ host.innerHTML=''; cutInTimer=null; }, turboMs(chaos ? 3200 : 2200));
+  stack.appendChild(el);
+  if(sub){
+    const s = document.createElement('div');
+    s.className = 'cut-in-sub';
+    s.textContent = sub;
+    stack.appendChild(s);
+  }
+  host.appendChild(stack);
+  // 特殊カードの演出の間だけ「表示中」として、後続を待たせる。通常の効果演出は
+  // 短く数も多いので、従来どおり上書きで流す。
+  cutInBusy = chaos;
+  cutInTimer = setTimeout(()=>{
+    host.innerHTML=''; cutInTimer=null; cutInBusy=false;
+    const next = cutInQueue.shift();
+    if(next) renderCutIn(next.text, next.sound, next.chaos, next.sub);
+  }, turboMs(sub ? 4200 : (chaos ? 3200 : 2200)));
 }
 
 function showActionModal(html){
@@ -5962,6 +6173,7 @@ function renderChaosArea(){
             + '<div class="chaos-card-name">'+escapeHtml(d.name)+'</div>'+note+'</button>';
         }).join('');
   }
+  renderChaosRecent();
   const cnt = document.getElementById('chaosDiscardCount');
   if(cnt) cnt.textContent = chaosDiscard.length;
 }
@@ -6040,6 +6252,29 @@ function confirmChaosRecycle(){
   if(onlineRole==='guest'){ Online.sendIntent({type:'chaosRecycle', cardIds:ids}); return; }
   if(chaosRecycle(mySeat, ids)) render();
 }
+// 直近に発動された特殊カードを盤面に出しておく。カットインは流れて消えるので、
+// 見逃しても「誰が・何を・どうなったか」を後から読めるようにするための控え。
+// 中身は使用済みの山（＝公開情報）から作るので、ここに秘匿情報は載らない。
+const CHAOS_RECENT_SHOWN = 2;
+function renderChaosRecent(){
+  const box = document.getElementById('chaosRecent');
+  const rows = document.getElementById('chaosRecentRows');
+  if(!box || !rows) return;
+  // 引き直し・キノコで「捨てられただけ」の札は発動していないので、ここには出さない
+  // （出すと使われてもいない効果が起きたように読めてしまう）。
+  const used = chaosDiscard.filter(c=>!c.kind || c.kind==='used');
+  if(!isChaosMode() || used.length===0){ box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  const recent = used.slice(-CHAOS_RECENT_SHOWN).reverse();
+  rows.innerHTML = recent.map((c,i)=>{
+    const d = chaosDef(c.type);
+    return '<div class="chaos-recent-row'+(i===0?' latest':'')+'">'
+      + '<span class="who">'+escapeHtml(playerName(c.seat))+'</span>：'
+      + '<span class="what">'+escapeHtml(d.name)+'</span>'
+      + (c.note ? '<br><span class="note">'+escapeHtml(c.note)+'</span>' : '')
+      + '</div>';
+  }).join('');
+}
 function openChaosDiscardModal(){
   const html = chaosDiscard.length===0
     ? '<h2>使用済みの特殊カード</h2><p>まだ使われた特殊カードはありません。</p>'
@@ -6048,7 +6283,10 @@ function openChaosDiscardModal(){
           const d = chaosDef(c.type);
           return '<div class="chaos-card" style="max-width:none;margin-bottom:8px;">'
             + '<div class="chaos-card-name">'+escapeHtml(d.name)+'</div>'
-            + '<div>'+escapeHtml(playerName(c.seat))+' が使用</div>'
+            + '<div>'+escapeHtml(playerName(c.seat))
+              + (c.kind==='recycled' ? ' が引き直しで捨てた（発動していません）'
+                 : c.kind==='discarded' ? ' が捨てさせられた（発動していません）' : ' が使用')+'</div>'
+            + (c.note ? '<div class="chaos-catalog-timing" style="color:var(--gold-soft);">→ '+escapeHtml(c.note)+'</div>' : '')
             + '<div style="opacity:0.75;margin-top:3px;">'+escapeHtml(d.desc)+'</div>'
             + '</div>';
         }).join('')
@@ -6944,7 +7182,7 @@ function buildRedactedView(viewerSeat){
     // 「自席の実カード」に分ける。使用済みの特殊カードは公開情報なので全員へそのまま送る。
     chaosHandCounts: Array.from({length: seatCount}, (_,i)=> (chaosHands[i]||[]).length),
     myChaosHand: (chaosHands[viewerSeat]||[]).map(c=>({id:c.id, type:c.type})),
-    chaosDiscard: chaosDiscard.map(c=>({id:c.id, type:c.type, seat:c.seat})),
+    chaosDiscard: chaosDiscard.map(c=>({id:c.id, type:c.type, seat:c.seat, note:c.note||'', kind:c.kind||'used'})),
     // 特殊カードの選択をこのゲストに要求しているときだけ載せる。選ぶ対象は自分の手札と
     // 相手の席番号だけなので、追加で秘匿情報を送る必要はない（myHandで既に持っている）。
     pendingChaos: (chaosPending && chaosPending.seat===viewerSeat)
@@ -6960,6 +7198,8 @@ function buildRedactedView(viewerSeat){
     // 「見えないものを見ようとして」で開示中か。観戦（順位確定）とは別物なので、
     // フラグも別に持つ（ゲスト側で「観戦モード」の案内を出してしまわないため）。
     chaosPeeking: chaosPeekActiveFor(viewerSeat),
+    // 最新のカットイン（公開情報のみ）。seqが変わったゲストだけが再生する。
+    cutIn: cutInFeed,
     observerHands: (observer || chaosPeekActiveFor(viewerSeat))
       ? hands.reduce((o,h,i)=>{ if(h.length) o[i]=h.map(c=>({rank:c.rank, suit:c.suit, id:c.id})); return o; }, {})
       : null,
@@ -7042,6 +7282,14 @@ function applyView(v){
   chaosHands = Array.from({length: seatCount}, (_,i)=>
     i===mySeat ? _myChaos : Array.from({length:_chaosCounts[i]||0},()=>({hidden:true})));
   chaosDiscard = v.chaosDiscard || [];
+  // カットインの再生。参加直後（lastSeenCutInSeq===null）は、過去の演出を蒸し返さない
+  // ようにseqを覚えるだけにして、以降の新しいものだけを再生する。
+  if(v.cutIn && v.cutIn.seq){
+    if(lastSeenCutInSeq!==null && v.cutIn.seq!==lastSeenCutInSeq){
+      showCutIn(v.cutIn.text, undefined, {chaos:!!v.cutIn.chaos, sub:v.cutIn.sub||''});
+    }
+    lastSeenCutInSeq = v.cutIn.seq;
+  }
   chaosNantokaSeat = (typeof v.chaosNantokaSeat==='number' && v.chaosNantokaSeat>=0) ? v.chaosNantokaSeat : null;
   chaosOrenoTurn = v.chaosOrenoTurn || null;
   // 特殊カードの選択要求。ホストのビューに要求がある間だけモーダルを開いておき、
@@ -8188,6 +8436,8 @@ const Online = (function(){
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
     chaosOutSnapshot=[]; chaosRecycleSel=new Set();
+    chaosNoteTarget=null; chaosResultLines=[]; chaosCutInFresh=false;
+    cutInFeed=null; lastSeenCutInSeq=null; clearCutInQueue();
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
     chaosNantokaSeat=null; chaosOrenoTurn=null; chaosYoroshikuSeat=null; chaosDeferredTurn=null;
     chaosKaterukayoSeat=null; chaosKaterukayoTarget=null; chaosBakayarouTarget=null;
