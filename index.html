@@ -1851,13 +1851,12 @@ let chaosUidSeq = 0;
 // その席にだけ全員の手札を見せる。ゲストはホストの判定結果（view の chaosPeeking）に従う。
 let chaosPeek = null;
 let chaosPeekGuest = false;
-// 「なんとかなれーッ!!」を発動した席。次にその席がトランプを出すとき、ウソをつけない
-// （＝伏せずに公開で出す＝ダウトの対象にならない）代わりに、必ず場が流れて自分の番になる。
-// 出さずにパスした場合は空打ちとして効果が消える。
+// 「ずっと俺のターン!!ドローっ!!」で「次の1手を公開・ウソ不可・必ず場が流れる」に
+// された席（＝伏せずに公開で出す＝ダウトの対象にならない）。出さずにパスした場合は
+// 空打ちとして、場を流す効果だけが消える。
 let chaosNantokaSeat = null;
-// 「ずっと俺のターン!!ドローっ!!」の発動中の状態。{seat, left} で left は残りの手番回数。
-// なんとかなれーと同じくウソはつけない（公開で出す＝ダウトされない）が、場を強制的に
-// 流すことはせず、特殊効果は通常どおり発動する。2回終わったら特殊カードを1枚引く。
+// 同カードの引き札ぶんの状態。{seat, left} で left は「まだ消化していない手番の回数」。
+// 1手を消化した時点（またはパス・上がり）で特殊カードを1枚引いて終わる。
 let chaosOrenoTurn = null;
 // 「よろしくお願いしまああああす！」を発動した席。札を出した"あと"に効果が出るので、
 // 発動時点では席を覚えるだけにして、finalizeTurn で配る枚数を選ばせる。
@@ -1869,6 +1868,11 @@ let chaosDeferredTurn = null;
 // 押し付ける相手（＝ウソをついた出し手）。選択が終わったら手番の再開だけ行う。
 let chaosKaterukayoSeat = null;
 let chaosKaterukayoTarget = null;
+// 「馬鹿野郎ーっ!!誰を撃ってる!?」で札を渡す相手（＝ダウトを宣言してきた席）。
+let chaosBakayarouTarget = null;
+// ダウト解決後にまだ済ませていない締めの処理。{owner, doubter}。「お前が俺に!!」の
+// 選択を先に走らせている間だけ立ち、選択が確定したら finishDoubtTail に戻ってくる。
+let chaosDoubtTail = null;
 let chaosResumeSchedule = false;
 // 「馬鹿野郎ーっ!!誰を撃ってる!?」は札を新しく生み出すので、山札の枚数より総数が増える。
 // 「札が消えていないか」を検算するときの基準にするため、生成した枚数を数えておく。
@@ -1898,28 +1902,26 @@ const CHAOS_INITIAL_HAND = 2;   // ゲーム開始時の配布枚数
 const CHAOS_RECYCLE_COST = 2;   // 引き直しで捨てる枚数
 const CHAOS_RECYCLE_GAIN = 1;   // 引き直しで引ける枚数
 
-// 特殊カードのカタログ。timing は発動タイミングで、効果の実装（フェーズ2以降）で使う。
-//   preplay      … 自分のターンでトランプを出す前に発動できる
-//   doubt-alt    … ダウト宣言の代わりに発動できる
-//   auto-out3    … アウトが3つたまったときに強制発動する
-//   auto-doubted … ダウトされて正直だったときに強制発動する
+// 特殊カードのカタログ。timing は発動タイミング。
+//   preplay           … 自分のターンでトランプを出す前に発動できる
+//   doubt-alt         … ダウト宣言の代わりに発動できる
+//   auto-doubted      … ダウトされて正直だったとき／自分のダウトが成功したときに強制発動する
+//   auto-doubted-any  … 自分の出した札がダウトされたとき、成否によらず強制発動する
+// autoTiming は「任意発動もできるが、特定の瞬間には強制発動もする」カードの追加トリガー。
+//   out3 … アウトが3つたまった瞬間
 // impl:true が効果を実装済みのカード。未実装のものも手札には配られ内容も見えるが、
 // 発動はできない（UI上も「準備中」と表示する）。
 const CHAOS_CARDS = [
-  {type:'nantoka', timing:'preplay', impl:true, name:'なんとかなれーッ!!',
-   desc:'このターンはウソをつけない代わりに、出した札で必ず場が流れて自分の番になります（4止め・スペ3返しでも返されません）。出せる札が無ければ空打ちとなり効果は消えます。'},
   {type:'hachiware', timing:'preplay', impl:true, name:'なんとかしろーッ!!ハチワレーッ!!',
    desc:'場のカードをランダムな札に変えます（枚数は変わりません）。変化した札の特殊効果は発動せず、スートしばり・数しばりはすべて解除されます。'},
-  {type:'shinimasen', timing:'auto-out3', impl:true, name:'僕は死にましぇん',
-   desc:'アウトが3つたまったとき手札にあると強制発動。その敗北を拒否し、アウトが1つに戻ります（禁止上がりなどの反則負けには効果がありません）。'},
-  {type:'osoreta', timing:'preplay', impl:true, name:'恐れたやつが負けなのさ',
-   desc:'アウトが最も少ない相手（同数なら全員）にアウトを1つ与え、捨て札からランダムに1枚ずつ押し付けます。ただし最も少ない相手が既にアウト2つのときは、アウトは増えず押し付けだけになります。'},
+  {type:'shinimasen', timing:'preplay', autoTiming:'out3', impl:true, name:'僕は死にましぇん',
+   desc:'アウトを2つ減らします（アウトが1つ以上のときに発動できます）。手札にあればアウトが3つたまった瞬間にも強制発動し、その敗北を拒否してアウトが1つに戻ります（禁止上がりなどの反則負けには効果がありません）。'},
   {type:'kinoko', timing:'preplay', impl:true, select:true, name:'人はいつ死ぬと思う…?猛毒キノコのスープを飲んだ時だ…!!!',
    desc:'相手を1人選び、任意のカードを1枚渡したうえで、特殊カードをランダムに1枚捨てさせます。'},
   {type:'katerukayo', timing:'doubt-alt', impl:true, name:'お前が俺に!!勝てるわけねェだろうが!!!!',
    desc:'ダウト宣言の代わりに発動。通常のダウトと同じく相手の札をめくります。成功なら手札を2枚まで相手に渡せ、失敗してもアウト・休みのペナルティを受けません。'},
   {type:'orenoTurn', timing:'preplay', impl:true, name:'ずっと俺のターン!!ドローっ!!',
-   desc:'ウソをつけない代わりに、ターンを2回続けて行います（7渡し・8切りなどの特殊効果は通常どおり発動）。終了後、特殊カードを1枚引きます。'},
+   desc:'次の1手はウソをつけない代わりに、伏せず公開で出して必ず場が流れ、続けて自分の番になります（公開なのでダウトされず、4止め・スペ3返しでも返されません）。そのあと特殊カードを1枚引きます。出せる札が無ければ空打ちとなり、場を流す効果は消えます。'},
   {type:'mienai', timing:'preplay', impl:true, name:'見えないものを見ようとして',
    desc:'このトリックの間だけ、全員の手札が自分にだけ見えるようになります。'},
   {type:'irekawari', timing:'preplay', impl:true, name:'わたしたち、入れ替わってる！？',
@@ -1927,25 +1929,25 @@ const CHAOS_CARDS = [
   {type:'yoroshiku', timing:'preplay', impl:true, select:true, name:'よろしくお願いしまああああす！',
    desc:'自分が札を出したあと、ほかのプレイヤー全員にカードを1枚ずつ渡します。'},
   {type:'tsukareten', timing:'auto-doubted', impl:true, name:'お前さぁ…疲れてんだよ',
-   desc:'ダウトされて正直だったときに強制発動。場は必ず流れて次の番になり、ダウトした相手から特殊カード1枚と最も強い札1枚をもらいます。'},
+   desc:'ダウトされて正直だったとき、または自分のダウトが成功したときに強制発動。場は必ず流れて自分が次の親になり、ペナルティを受ける相手から特殊カード1枚と最も強い札2枚をもらいます。'},
   {type:'ikiru', timing:'preplay', impl:true, name:'生きるのは最高だ',
-   desc:'自分の手札がすべて1つずつ強くなります（2はジョーカーに、ジョーカーは変化なし。革命中は逆に弱くなります）。'},
+   desc:'自分の手札がすべて2つずつ強くなります（Aと2はジョーカーに、ジョーカーは変化なし）。革命中は逆に2つずつ弱くなります（3と4がジョーカーになります）。'},
   {type:'shutou', timing:'preplay', impl:true, name:'恐ろしく速い手刀',
    desc:'各プレイヤーから、最も強い札を1枚ずつランダムにもらいます。'},
   {type:'genkai', timing:'preplay', impl:true, name:'つーかこれが限界',
    desc:'自分の手札に全スートの4を加えます（元から4を持っていれば8枚以上の4が揃い、そのまま8枚出し・12枚出しができます）。'},
   {type:'tsuree', timing:'preplay', impl:true, select:true, name:'やっぱつれぇわ',
-   desc:'自分のアウトが2つ以上のときだけ発動可能。特殊カードをランダムに2枚もらい、手札を2枚選んで表向きに捨てます。'},
-  {type:'bakayarou', timing:'auto-received', impl:true, name:'馬鹿野郎ーっ!!誰を撃ってる!?',
-   desc:'7渡しや特殊カードでカードを渡されたときに強制発動。渡された札をそのまま相手に返し、さらに1つ弱いランクの札を相手の手札に生み出します（それ以上弱い札が無い場合は同じランク）。このカードで返した分には、相手の同じカードは反応しません。'},
+   desc:'自分のアウトが1つ以上のときだけ発動可能。特殊カードをランダムに2枚もらい、手札を2枚まで選んで表向きに捨てられます（0枚でも構いません）。'},
+  {type:'bakayarou', timing:'auto-doubted-any', autoTiming:'received', impl:true, name:'馬鹿野郎ーっ!!誰を撃ってる!?',
+   desc:'自分の出した札にダウトを宣言されたとき（ウソでも正直でも）、または7渡し・特殊カードでカードを渡されたときに強制発動。手札から2枚を相手に突き返します。ダウトされた場合は渡す札を自分で選べ、ウソが暴かれたときは札が手元に戻ったあとに選ぶので戻ってきた札もそのまま渡せます。カードを渡された場合は弱い札から自動で選ばれます（突き返した分に相手の同じカードは反応しません）。'},
   {type:'sensou', timing:'preplay', impl:true, name:'この戦争を終わらせに来た',
    desc:'自分を含む全員の手札からランダムに2枚ずつ捨てます。さらに自分のアウトを1つ減らします。'},
   {type:'funeorio', timing:'preplay', impl:true, name:'お前もう船降りろ',
-   desc:'手札が最も少ない相手を、このトリックの間プレイできなくします（同数なら全員が対象）。'},
+   desc:'手札が最も少ない相手ひとりを、このトリックの間プレイできなくします（同数ならランダムに1人）。すでに休んでいる相手は対象に含めず、いま動ける相手の中から選びます。'},
   {type:'jakusha', timing:'preplay', impl:true, name:'弱者の反撃',
    desc:'強制的に革命を起こします（革命中なら元に戻ります）。そのうえで自分の最も弱い札2枚を、最強の2（革命中は3）に変えます。スートは変わりません。'},
   {type:'ottotto', timing:'preplay', impl:true, select:true, name:'おォ～っとっとぉ',
-   desc:'場の枚数まで好きな札を裏向きに捨てて、そのターンはパスになります（場が3枚なら3枚まで）。'}
+   desc:'アウトが最も少ない相手（同数なら全員）にアウトを1つ与えたうえで、場の枚数まで好きな札を裏向きに捨てて、そのターンはパスになります（場が3枚なら3枚まで）。ただし最も少ない相手が既にアウト2つのときは、アウトは増えません。'}
 ];
 const CHAOS_BY_TYPE = CHAOS_CARDS.reduce((m,c)=>{ m[c.type]=c; return m; }, {});
 function chaosDef(type){ return CHAOS_BY_TYPE[type] || {name:'不明な特殊カード', desc:'', timing:'preplay'}; }
@@ -1988,6 +1990,7 @@ function resetChaosState(){
   chaosDeferredTurn = null;
   chaosKaterukayoSeat = null;
   chaosKaterukayoTarget = null;
+  chaosBakayarouTarget = null;
   chaosResumeSchedule = false;
   chaosGeneratedCards = 0;
   chaosGiveDepth = 0;
@@ -2172,14 +2175,17 @@ function chaosCardUsable(seat, card){
     // 渡すと自分の手札が0枚になる（＝特殊カードの効果で自分が上がってしまう）状況は
     // 作らない。手番の途中で順位が確定すると、そのあと出す手が無くなって進行が詰まる。
     case 'kinoko':    return hands[seat].length>=2 && activePlayers().some(p=>p!==seat);
-    case 'tsuree':    return outs[seat]>=2 && hands[seat].length>=3;  // 2枚捨てても1枚残る
+    // 捨てるのは「2枚まで」なので手札の下限は要らない。減らせるアウトが無いと空打ちになる。
+    case 'shinimasen': return outs[seat] >= 1;
+    case 'tsuree':    return outs[seat] >= 1;
     // 出す1枚＋人数分＋手元に残す1枚が要る。配ったあとに自分が0枚になる手順は作らない。
     case 'yoroshiku': return hands[seat].length >= activePlayers().filter(p=>p!==seat).length + 2;
     case 'sensou':    return hands[seat].length >= 3;   // 2枚失っても1枚残る
-    case 'funeorio':  return activePlayers().some(p=>p!==seat);
+    // すでに休んでいる相手は対象に含めないので、動ける相手が居ないと空打ちになる。
+    case 'funeorio':  return activePlayers().some(p=>p!==seat && sitOutTricks[p]===0);
     case 'jakusha':   return hands[seat].length >= 1;
-    // 場が無いと捨てる枚数が決まらない。捨てたあとも1枚は残す必要がある。
-    case 'ottotto':   return field!==null && hands[seat].length >= 2;
+    // 場が無いと捨てる枚数が決まらない。捨てるのは「場の枚数まで」なので0枚でもよい。
+    case 'ottotto':   return field!==null;
     default: return true;
   }
 }
@@ -2209,11 +2215,23 @@ function chaosSelectionSpec(cardType, seat){
     return {needCards:need, needTarget:false, atMost:true, title:'お前が俺に!!勝てるわけねェだろうが!!!!',
       hint:'ウソをついた'+playerName(chaosKaterukayoTarget)+'へ押し付ける札を'+need+'枚まで選べます（0枚でも構いません）'};
   }
+  if(cardType==='bakayarou'){
+    const s = (typeof seat==='number') ? seat : currentPlayerIndex;
+    // 渡したあとも必ず1枚は手元に残す（特殊カードの効果で自分が上がる手順は作らない）。
+    const need = Math.max(0, Math.min(2, (hands[s]||[]).length-1));
+    return {needCards:need, needTarget:false, atMost:true, title:'馬鹿野郎ーっ!!誰を撃ってる!?',
+      hint:'ダウトしてきた'+playerName(chaosBakayarouTarget)+'へ渡す札を'+need+'枚まで選べます（0枚でも構いません）'};
+  }
+  if(cardType==='tsuree'){
+    const s = (typeof seat==='number') ? seat : currentPlayerIndex;
+    // 「2枚まで」なので atMost。捨てたあとも必ず1枚は手元に残す。
+    const need = Math.max(0, Math.min(2, (hands[s]||[]).length-1));
+    return {needCards:need, needTarget:false, atMost:true, title:'やっぱつれぇわ',
+      hint:'表向きに捨てる手札を'+need+'枚まで選べます（0枚でも構いません）。特殊カードは2枚もらえます'};
+  }
   switch(cardType){
     case 'kinoko': return {needCards:1, needTarget:true, title:'猛毒キノコのスープ',
       hint:'押し付ける相手と、渡すカードを1枚選んでください'};
-    case 'tsuree': return {needCards:2, needTarget:false, title:'やっぱつれぇわ',
-      hint:'表向きに捨てる手札をちょうど2枚選んでください（特殊カードを2枚もらいます）'};
     default: return null;
   }
 }
@@ -2245,6 +2263,7 @@ function chaosResolveSelection(seat, cardType, sel){
     else if(cardType==='tsuree') chaosTsuree(seat, ids);
     else if(cardType==='yoroshiku') chaosYoroshiku(seat, ids);
     else if(cardType==='katerukayo') chaosKaterukayoGive(seat, ids);
+    else if(cardType==='bakayarou') chaosBakayarouGive(seat, ids);
     else if(cardType==='ottotto') chaosOttotto(seat, ids);
   } finally { inChaosEffect--; }
   render();
@@ -2259,8 +2278,15 @@ function chaosResolveSelection(seat, cardType, sel){
     finalizeTurn(d.info, d.extraSkips);
     return;
   }
-  // ダウト解決の途中で選ばせた場合（お前が俺に!!）は、手番はすでに正しい席にあるので
-  // 進行の再開だけ行う。選択待ちの間は scheduleNextIfCpu が空振りしているため必要。
+  // ダウト解決の途中で選ばせた場合は、まだ済ませていない締めの処理（馬鹿野郎ーっ!!）が
+  // 残っていることがあるので、そちらへ戻す。
+  if(chaosDoubtTail){
+    const t = chaosDoubtTail;
+    finishDoubtTail(t.owner, t.doubter);
+    return;
+  }
+  // 手番はすでに正しい席にあるので進行の再開だけ行う。選択待ちの間は
+  // scheduleNextIfCpu が空振りしているため、ここで呼び直す必要がある。
   if(chaosResumeSchedule){
     chaosResumeSchedule = false;
     scheduleNextIfCpu();
@@ -2323,7 +2349,7 @@ function chaosKinoko(seat, target, cardId){
     log(playerName(target)+'は特殊カードを持っていなかった');
   }
 }
-// 特殊カードを2枚もらい、手札を2枚だけ表向きに捨てる。捨てた札は誰の目にも残るので、
+// 特殊カードを2枚もらい、手札を2枚まで表向きに捨てる。捨てた札は誰の目にも残るので、
 // 以降その札で嘘をつくことはできなくなる（＝手札を減らせる代わりに手の内を晒す）。
 function chaosTsuree(seat, cardIds){
   grantChaosCard(seat, 'やっぱつれぇわ');
@@ -2340,10 +2366,11 @@ function chaosTsuree(seat, cardIds){
 // CPUの選択（暫定）。genkaiは弱い札から4枚、kinokoは上がりに近い相手へ最弱の札を送る。
 function cpuChaosSelection(seat, cardType, spec){
   const weakFirst = sortByStrength(hands[seat]);
-  if(cardType==='tsuree') return {cardIds: weakFirst.slice(0, 2).map(c=>c.id)};
-  if(cardType==='yoroshiku') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
-  if(cardType==='katerukayo') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
-  if(cardType==='ottotto') return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
+  // 手札から出ていく系は、いずれも弱い札から差し出すのが定石。
+  if(cardType==='tsuree' || cardType==='yoroshiku' || cardType==='katerukayo'
+     || cardType==='ottotto' || cardType==='bakayarou'){
+    return {cardIds: weakFirst.slice(0, spec ? spec.needCards : 0).map(c=>c.id)};
+  }
   if(cardType==='kinoko'){
     const others = activePlayers().filter(p=>p!==seat).sort((a,b)=>hands[a].length-hands[b].length);
     return {target: others[0], cardIds: weakFirst.length ? [weakFirst[0].id] : []};
@@ -2448,10 +2475,9 @@ function applyChaosEffect(seat, card){
       case 'hachiware': chaosHachiware(seat); break;
       case 'ikiru':     chaosIkiru(seat); break;
       case 'shutou':    chaosShutou(seat); break;
-      case 'osoreta':   chaosOsoreta(seat); break;
+      case 'shinimasen': chaosShinimasen(seat); break;
       case 'irekawari': chaosIrekawari(seat); break;
       case 'mienai':    chaosMienai(seat); break;
-      case 'nantoka':   chaosNantoka(seat); break;
       case 'orenoTurn': chaosOrenoTurnStart(seat); break;
       // 効果が出るのは「札を出したあと」なので、ここでは席を覚えるだけ。
       case 'yoroshiku': chaosYoroshikuSeat = seat;
@@ -2500,21 +2526,24 @@ function chaosHachiware(seat){
   log('場のカードが「'+field.cards.map(c=>(c.rank==='JOKER'?'ジョーカー':(c.suit||'')+c.rank)).join(' ')+'」に変化した（しばりはすべて解除）');
 }
 
-// 自分の手札をすべて1つ強くする。2はジョーカーになり、ジョーカーは変化しない。
-// 革命中だけは逆に1つ弱くする（3より下は無いのでそのまま据え置く）。
+// 自分の手札をすべて2つ強くする。上limitをはみ出した札（Aと2）はジョーカーになり、
+// ジョーカーは変化しない。革命中だけは逆に2つ弱くし、はみ出した札（3と4）がジョーカーになる。
 function chaosIkiru(seat){
   hands[seat].forEach(c=>{
     if(c.rank==='JOKER') return;
     const i = RANKS.indexOf(c.rank);
     if(i<0) return;
-    if(!revolution){
-      if(i===RANKS.length-1){ c.rank = 'JOKER'; c.suit = null; }
-      else c.rank = RANKS[i+1];
-    } else if(i>0){
-      c.rank = RANKS[i-1];
-    }
+    const j = revolution ? (i-2) : (i+2);
+    if(j<0 || j>=RANKS.length){ c.rank = 'JOKER'; c.suit = null; }
+    else c.rank = RANKS[j];
   });
-  log(playerName(seat)+'の手札が'+(revolution?'1つずつ弱く':'1つずつ強く')+'なった');
+  log(playerName(seat)+'の手札が'+(revolution?'2つずつ弱く':'2つずつ強く')+'なった');
+}
+// アウトを2つ減らす。任意発動なら事実上0に、アウト3つでの自動発動なら1に戻る。
+function chaosShinimasen(seat){
+  const before = outs[seat];
+  outs[seat] = Math.max(0, outs[seat]-2);
+  log(playerName(seat)+'のアウトが'+before+'から'+outs[seat]+'に減った');
 }
 
 // 各プレイヤーから最も強い札を1枚ずつ奪う（同じ強さが複数ならランダム）。
@@ -2533,32 +2562,21 @@ function chaosShutou(seat){
   checkGameEndAfterSideEffect('chaos');
 }
 
-// 「まだ傷を負っていない者」を狙う効果。アウトが最も少ない相手全員（同数なら全員）に、
-// アウトを1つと捨て札からランダムな1枚を与える。
-// 以前は「アウトが0の相手」限定だったが、一度使うと該当者が居なくなって以降ほぼ空打ちに
-// なり、実質1試合1回しか使えなかった。「最も少ない相手」にすると必ず対象が居るので、
-// そのぶん1回あたりの威力を半分（アウト2→1、札2枚→1枚）にして釣り合いを取っている。
-function chaosOsoreta(seat){
+// 「まだ傷を負っていない者」を狙う効果。アウトが最も少ない相手全員（同数なら全員）に
+// アウトを1つ与える。「おォ～っとっとぉ」の一部として発動する。
+function chaosGiveOutToLeastHurt(seat, reason){
   const others = activePlayers().filter(p=>p!==seat);
-  if(!others.length){ log('対象になる相手がいなかったため、効果は不発に終わった'); return; }
+  if(!others.length){ log('アウトを与える相手がいなかった'); return; }
   const min = Math.min.apply(null, others.map(p=>outs[p]));
   const targets = others.filter(p=>outs[p]===min);
   // 最少が既に2つのとき（＝全員が崖っぷち）はアウトを増やさない。ここで増やすと
   // このカード1枚でそのまま強制敗北させてしまい、駆け引きにならないため。
-  // その場合も捨て札の押し付けだけは通るので、完全な空打ちにはならない。
-  const addsOut = (min < 2);
-  log(targets.map(playerName).join('・')+'が狙われた（アウト'+min+'で最も少ない）'
-    + (addsOut ? '' : '　※全員が崖っぷちのためアウトは増えません'));
-  targets.forEach(p=>{
-    if(addsOut) addOut(p, '恐れたやつが負けなのさ');
-    if(finishedOrder.includes(p)) return;   // アウト3つで退場した場合は札を渡さない
-    const got = chaosTakeFromDiscard(1);
-    if(got.length){
-      hands[p] = hands[p].concat(got);
-      log(playerName(p)+'は捨て札から'+got.length+'枚を押し付けられた');
-      chaosNotifyGiven(seat, p, got);
-    }
-  });
+  if(min >= 2){
+    log(targets.map(playerName).join('・')+'は既にアウト2つのため、アウトは増えません');
+    return;
+  }
+  log(targets.map(playerName).join('・')+'が狙われた（アウト'+min+'で最も少ない）');
+  targets.forEach(p=>{ addOut(p, reason); });
 }
 
 // 上がっていない全員の手札を集めてシャッフルし、元と同じ枚数ずつ配り直す。
@@ -2575,38 +2593,53 @@ function chaosIrekawari(seat){
   log('全員の手札をシャッフルして配り直した（枚数は変わらず）');
 }
 
-// 次に出す1手を「公開・ウソ不可・必ず場が流れる」にする。実際の適用は resolvePlayCore 側。
-function chaosNantoka(seat){
-  chaosNantokaSeat = seat;
-  log(playerName(seat)+'の次の1手は、ウソをつけない代わりに必ず場が流れる');
-}
-// 連続手番を開始する。left は「これから行う手番の回数」。
+// 次の1手を「公開・ウソ不可・必ず場が流れて自分の番に戻る」にして、そのあと特殊カードを
+// 1枚引く。場を流す処理そのものは resolvePlayCore 側が chaosNantokaSeat を見て行う。
+// left は「これから行う手番の回数」で、1回ぶんを消化した時点で引き札に移る。
 function chaosOrenoTurnStart(seat){
-  chaosOrenoTurn = {seat: seat, left: 2};
-  log(playerName(seat)+'はウソをつけない代わりに、ターンを2回続けて行う');
+  chaosNantokaSeat = seat;
+  chaosOrenoTurn = {seat: seat, left: 1};
+  log(playerName(seat)+'の次の1手は、ウソをつけない代わりに必ず場が流れて自分の番になる');
 }
-// 連続手番を終了して特殊カードを1枚引く。パス・上がり・2回消化のいずれからも呼ばれる。
+// 効果を終了して特殊カードを1枚引く。手番の消化・パス・上がりのいずれからも呼ばれる。
 function chaosOrenoTurnFinish(){
   if(!chaosOrenoTurn) return;
   const seat = chaosOrenoTurn.seat;
   chaosOrenoTurn = null;
   if(!finishedOrder.includes(seat)) grantChaosCard(seat, 'ずっと俺のターン');
 }
-// 「1つ弱いランク」の面。強弱の判定は他のカオス効果と同じく革命だけを見る。
-// これ以上弱い札が無い場合（通常の3／革命中の2）は同じランクのまま。
-function chaosWeakerFace(card){
-  if(card.rank==='JOKER'){
-    // ジョーカーは最強なので、1つ弱い＝最強の実カード。
-    return {rank: revolution ? '3' : '2', suit: card.suit || SUITS[Math.floor(Math.random()*SUITS.length)]};
-  }
-  const i = RANKS.indexOf(card.rank);
-  if(i<0) return {rank:card.rank, suit:card.suit};
-  const j = revolution ? Math.min(RANKS.length-1, i+1) : Math.max(0, i-1);
-  return {rank: RANKS[j], suit: card.suit};
+// 自分の出した札にダウトを宣言されたときの割り込み。ウソでも正直でも発動し、手札を
+// 2枚まで相手に渡す（＝ダウトそのものへの抑止力）。渡す札を選ばせるので、選択が
+// 終わってから進行を再開する。選択待ちに入ったら true。
+// ウソが暴かれた場合は annulFieldPlay で札が手元に戻ったあとに呼ばれるため、
+// 戻ってきた札もそのまま渡す対象に選べる。
+function chaosTryBakayarou(ownerIdx, doubterIdx){
+  if(!isChaosMode()) return false;
+  if(ownerIdx==null || doubterIdx==null || ownerIdx===doubterIdx) return false;
+  if(finishedOrder.includes(ownerIdx) || finishedOrder.includes(doubterIdx)) return false;
+  // 渡したあとも1枚は手元に残す（特殊カードの効果で自分が上がる手順は作らない）。
+  if(hands[ownerIdx].length < 2) return false;
+  const hand = chaosHandOf(ownerIdx);
+  const i = hand.findIndex(c=>c.type==='bakayarou');
+  if(i<0) return false;
+  const card = hand.splice(i, 1)[0];
+  chaosDiscard.push({id:card.id, type:card.type, seat:ownerIdx});
+  log(playerName(ownerIdx)+'の「馬鹿野郎ーっ!!誰を撃ってる!?」が発動！');
+  showCutIn('馬鹿野郎ーっ!!誰を撃ってる!?', undefined, {chaos:true});
+  chaosBakayarouTarget = doubterIdx;
+  chaosResumeSchedule = true;
+  render();
+  chaosBeginSelection(ownerIdx, 'bakayarou');
+  return true;
 }
-// カードを渡した直後に必ず呼ぶ。受け取った側が「馬鹿野郎ーっ!!誰を撃ってる!?」を
-// 持っていれば強制発動し、渡された札を送り返したうえで1つ弱い札を相手に生み出す。
-// chaosGiveDepth で、返した分に相手の同じカードが連鎖しないようにしている。
+// カードを渡された側の割り込み。「馬鹿野郎ーっ!!誰を撃ってる!?」を持っていれば強制発動し、
+// 手札から2枚を渡してきた相手へ突き返す。カードを渡す処理の直後に必ず呼ぶ。
+//
+// ここは7渡しなどの解決の真っ最中（手番が動いている最中）に呼ばれるため、渡す札は
+// 選ばせず弱い順に自動で決める。選択待ちを挟むと、その間に呼び出し元の処理が進んでしまい
+// 進行が壊れる。ダウト経由の発動（chaosTryBakayarou）は手番が落ち着いた場所で起きるので、
+// そちらだけモーダルで選ばせている。
+// chaosGiveDepth は、突き返した分に相手の同じカードが連鎖しないようにする番人。
 let chaosGiveDepth = 0;
 function chaosNotifyGiven(fromSeat, toSeat, cards){
   if(!isChaosMode() || chaosGiveDepth>0) return;
@@ -2616,26 +2649,36 @@ function chaosNotifyGiven(fromSeat, toSeat, cards){
   const hand = chaosHandOf(toSeat);
   const i = hand.findIndex(c=>c.type==='bakayarou');
   if(i<0) return;
-  // 渡された札のうち、まだ受け取った側の手元にあるものだけが返却対象。
-  const back = cards.filter(c=> hands[toSeat].some(x=>x.id===c.id));
-  if(!back.length) return;
+  // 突き返したあとも1枚は手元に残す（特殊カードの効果で自分が上がる手順は作らない）。
+  const need = Math.max(0, Math.min(2, hands[toSeat].length-1));
+  const give = sortByStrength(hands[toSeat]).slice(0, need);
+  if(!give.length) return;   // 渡せる札が無いなら発動しない（カードは手元に残る）
   const card = hand.splice(i, 1)[0];
   chaosDiscard.push({id:card.id, type:card.type, seat:toSeat});
   log(playerName(toSeat)+'の「馬鹿野郎ーっ!!誰を撃ってる!?」が発動！');
   showCutIn('馬鹿野郎ーっ!!誰を撃ってる!?', undefined, {chaos:true});
   chaosGiveDepth++;
   try{
-    const ids = new Set(back.map(c=>c.id));
-    hands[toSeat] = hands[toSeat].filter(c=>!ids.has(c.id));
-    back.forEach(c=>{
-      hands[fromSeat].push(c);
-      const f = chaosWeakerFace(c);
-      hands[fromSeat].push({rank:f.rank, suit:f.suit, id:mintCardId()});
-      chaosGeneratedCards++;
-    });
-    log(playerName(fromSeat)+'に'+back.length+'枚が突き返され、さらに1つ弱い札が'+back.length+'枚生まれた');
+    const gset = new Set(give.map(c=>c.id));
+    hands[toSeat] = hands[toSeat].filter(c=>!gset.has(c.id));
+    hands[fromSeat] = hands[fromSeat].concat(give);
+    log(playerName(toSeat)+'が'+playerName(fromSeat)+'に'+give.length+'枚を突き返した');
     checkGameEndAfterSideEffect('chaos');
   } finally { chaosGiveDepth--; }
+}
+// 選ばれた札を、ダウトしてきた相手へ渡す（2枚まで・0枚でも可）。
+function chaosBakayarouGive(seat, cardIds){
+  const target = chaosBakayarouTarget;
+  chaosBakayarouTarget = null;
+  if(target===null || target===seat || !activePlayers().includes(target)) return;
+  const ids = new Set(cardIds);
+  const give = hands[seat].filter(c=>ids.has(c.id)).slice(0, 2);
+  if(!give.length){ log(playerName(seat)+'は札を渡さなかった'); return; }
+  const gset = new Set(give.map(c=>c.id));
+  hands[seat] = hands[seat].filter(c=>!gset.has(c.id));
+  hands[target] = hands[target].concat(give);
+  log(playerName(seat)+'がダウトしてきた'+playerName(target)+'に'+give.length+'枚を渡した');
+  checkGameEndAfterSideEffect('chaos');
 }
 // 自分を含む全員の手札からランダムに2枚ずつ捨て、自分のアウトを1つ減らす。
 function chaosSensou(seat){
@@ -2652,16 +2695,20 @@ function chaosSensou(seat){
   log('全員の手札からランダムに2枚ずつ失われた');
   checkGameEndAfterSideEffect('chaos');
 }
-// 手札が最も少ない相手を、このトリックの間だけプレイできなくする（同数なら全員）。
+// 手札が最も少ない相手ひとりを、このトリックの間だけプレイできなくする（同数ならランダム）。
+// すでに休んでいる相手は「止めても意味がない」ので候補から外し、いま動ける相手の中だけで
+// 最少を判定する。
 function chaosFuneorio(seat){
-  const others = activePlayers().filter(p=>p!==seat);
-  if(!others.length) return;
+  const others = activePlayers().filter(p=>p!==seat && sitOutTricks[p]===0);
+  if(!others.length){ log('いま動ける相手がおらず、効果は不発に終わった'); return; }
   const min = Math.min.apply(null, others.map(p=>hands[p].length));
-  const targets = others.filter(p=>hands[p].length===min);
+  const cands = others.filter(p=>hands[p].length===min);
+  const target = cands[Math.floor(Math.random()*cands.length)];
   // sitOutTricks は clearField（トリック終了）で1ずつ減るので、1を入れると
   // 「このトリックの間だけ休み」になる。ダウトの罰と同じ仕組みを共有する。
-  targets.forEach(p=>{ sitOutTricks[p] = Math.max(sitOutTricks[p], 1); });
-  log(targets.map(playerName).join('・')+'はこのトリックの間プレイできない（残り'+min+'枚）');
+  sitOutTricks[target] = Math.max(sitOutTricks[target], 1);
+  log(playerName(target)+'はこのトリックの間プレイできない（残り'+min+'枚）'
+    + (cands.length>1 ? '　※同数'+cands.length+'人からランダムに選ばれました' : ''));
 }
 // 強制的に革命を起こし、自分の最弱2枚を最強ランクへ変える。
 function chaosJakusha(seat){
@@ -2687,8 +2734,9 @@ function chaosJakusha(seat){
   picked.forEach(c=>{ c.rank = target; });
   log(playerName(seat)+'の最も弱い'+picked.length+'枚が'+target+'に変わった');
 }
-// 場の枚数まで裏向きに捨てて、そのターンはパスする。
+// アウトが最も少ない相手にアウトを1つ与えたうえで、場の枚数まで裏向きに捨ててパスする。
 function chaosOttotto(seat, cardIds){
+  chaosGiveOutToLeastHurt(seat, 'おォ～っとっとぉ');
   const ids = new Set(cardIds);
   const drop = hands[seat].filter(c=>ids.has(c.id));
   if(drop.length){
@@ -2706,12 +2754,17 @@ function chaosMienai(seat){
   log(playerName(seat)+'はこのトリックの間、全員の手札が見えるようになった');
 }
 
-// ダウトされて正直だったときの割り込み。「お前さぁ…疲れてんだよ」を持っていれば強制発動し、
-// ダウトに失敗した相手から特殊カード1枚と最も強い札1枚を奪う。場を流す処理は呼び出し側。
+// ダウトの決着時の割り込み。「お前さぁ…疲れてんだよ」を持っていれば強制発動し、
+// ペナルティを受ける側（victimIdx）から特殊カード1枚と最も強い札2枚を奪う。
+// 呼び出し元は2つ：
+//   ・ダウトされて正直だった出し手（doubtFailed）… victim はダウトに失敗した相手
+//   ・自分のダウトが成功した宣言者（doubtSucceeded）… victim はウソをついた相手
+// どちらの経路でも「場が流れて自分が次の親になる」ところまでは呼び出し側が担う。
 // 消費できたら true。すでに順位が確定した席は対象外（奪った札の置き場が無くなるため）。
-function chaosTryTsukareten(ownerIdx, doubterIdx){
+function chaosTryTsukareten(ownerIdx, victimIdx){
   if(!isChaosMode()) return false;
-  if(ownerIdx==null || finishedOrder.includes(ownerIdx)) return false;
+  if(ownerIdx==null || victimIdx==null || ownerIdx===victimIdx) return false;
+  if(finishedOrder.includes(ownerIdx)) return false;
   const hand = chaosHandOf(ownerIdx);
   const i = hand.findIndex(c=>c.type==='tsukareten');
   if(i<0) return false;
@@ -2721,17 +2774,22 @@ function chaosTryTsukareten(ownerIdx, doubterIdx){
   showCutIn('お前さぁ…疲れてんだよ', undefined, {chaos:true});
   inChaosEffect++;
   try{
-    const theirs = chaosHandOf(doubterIdx);
+    const theirs = chaosHandOf(victimIdx);
     if(theirs.length && chaosHandOf(ownerIdx).length < CHAOS_MAX_HAND){
       const got = theirs.splice(Math.floor(Math.random()*theirs.length), 1)[0];
       chaosHandOf(ownerIdx).push(got);
-      log(playerName(ownerIdx)+'は'+playerName(doubterIdx)+'から特殊カード「'+chaosDef(got.type).name+'」を奪った');
+      log(playerName(ownerIdx)+'は'+playerName(victimIdx)+'から特殊カード「'+chaosDef(got.type).name+'」を奪った');
     }
-    const strongest = chaosPickStrongest(hands[doubterIdx]);
-    if(strongest){
-      hands[doubterIdx] = hands[doubterIdx].filter(c=>c.id!==strongest.id);
+    let taken = 0;
+    for(let k=0;k<2;k++){
+      const strongest = chaosPickStrongest(hands[victimIdx]);
+      if(!strongest) break;
+      hands[victimIdx] = hands[victimIdx].filter(c=>c.id!==strongest.id);
       hands[ownerIdx].push(strongest);
-      log(playerName(ownerIdx)+'は'+playerName(doubterIdx)+'から最も強い札を1枚奪った');
+      taken++;
+    }
+    if(taken){
+      log(playerName(ownerIdx)+'は'+playerName(victimIdx)+'から最も強い札を'+taken+'枚奪った');
       // 最後の1枚を奪われて0枚になった席は、7渡し等と同じ扱いで上がりとして処理する。
       checkGameEndAfterSideEffect('chaos');
     }
@@ -4436,10 +4494,10 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   const rank = wildcardAwareRank(cardsPlayed);
   const count = cardsPlayed.length;
 
-  // 「なんとかなれーッ!!」の発動中は、ウソをつけない＝伏せずに公開で出す。公開なので
+  // 「ずっと俺のターン!!」の発動中は、ウソをつけない＝伏せずに公開で出す。公開なので
   // 他のプレイヤーはダウトを宣言できない（doubtAvailableFor が faceDown を要求する）。
   const nantoka = (chaosNantokaSeat===playerIdx);
-  const honestForced = chaosHonestForced(playerIdx);   // なんとかなれー／ずっと俺のターン
+  const honestForced = chaosHonestForced(playerIdx);
   if(nantoka) chaosNantokaSeat = null;
   const faceDown = isDoubtMode() && !honestForced;
   // journal はこのプレイ自身の効果だけを巻き戻すための記録。ダウトで嘘が暴かれたときに
@@ -4528,13 +4586,13 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   // doubtSucceeded）に回す。fieldCleared を false のままにしておくことで、
   // finalizeTurn は「場は生きている」ものとして通常どおり次のプレイヤーへ手番を渡す。
   let fieldCleared=false;
-  // 「なんとかなれーッ!!」は他のどの効果よりも優先して即座に場を流す。公開で出しているので
+  // 「ずっと俺のターン!!」は他のどの効果よりも優先して即座に場を流す。公開で出しているので
   // ダウトを待つ必要がなく、4止め・スペ3返しで返される余地も残さない（仕様どおり）。
   if(nantoka){
-    clearField('「なんとかなれーッ!!」で流れた札');
+    clearField('「ずっと俺のターン!!」で流れた札');
     fieldCleared=true;
-    log('「なんとかなれーッ!!」で場が流れた！ 続けて'+playerName(playerIdx)+'の番です');
-    showCutIn('なんとかなれーッ!!', undefined, {chaos:true});
+    log('「ずっと俺のターン!!」で場が流れた！ 続けて'+playerName(playerIdx)+'の番です');
+    showCutIn('ずっと俺のターン!!ドローっ!!', undefined, {chaos:true});
   } else if(rank==='8' && rules.eightGiri && !rules.fourStop){
     if(faceDown){
       field.pendingClear = 'eightGiri';
@@ -4727,16 +4785,13 @@ function resolvePendingRemoteWithCpu(){
 }
 
 function passAction(playerIdx){
-  // 出せる札が無くてパスした場合、「なんとかなれーッ!!」は空打ちとして効果が消える。
+  // 出せる札が無くてパスした場合、「ずっと俺のターン!!」は空打ちとして場を流す効果が消える。
+  // 引き札だけは残る（打てなかったこと自体への救済）。
   if(chaosNantokaSeat===playerIdx){
     chaosNantokaSeat = null;
-    log(playerName(playerIdx)+'は出せる札がなく、「なんとかなれーッ!!」は空打ちに終わった');
+    log(playerName(playerIdx)+'は出せる札がなく、「ずっと俺のターン!!」は空打ちに終わった');
   }
-  // 連続手番の途中でパスしたら、そこで打ち切って特殊カードを1枚引く。
-  if(chaosOrenoTurn && chaosOrenoTurn.seat===playerIdx){
-    log(playerName(playerIdx)+'はパスしたため、連続手番はここで終わり');
-    chaosOrenoTurnFinish();
-  }
+  if(chaosOrenoTurn && chaosOrenoTurn.seat===playerIdx) chaosOrenoTurnFinish();
   if(!isOwnLiveField(playerIdx)) passStreak++;
   Feedback.sfx('pass');
   log(playerName(playerIdx)+'： パス');
@@ -5047,10 +5102,10 @@ function doubtFailed(doubterIdx){
   if(honestOwner!==null && chaosTryTsukareten(honestOwner, doubterIdx)){
     if(gameOver){ render(); showResults(); return; }
     clearField('「お前さぁ…疲れてんだよ」で流れた札');
+    pendingTrickLeader = null;   // 親をここで直接決めるので、古い指名は捨てる
     currentPlayerIndex = honestOwner;
     log(playerName(honestOwner)+'が親として次のトリックを始めます');
-    render();
-    scheduleNextIfCpu();
+    finishDoubtTail(honestOwner, doubterIdx);
     return;
   }
   // 失敗ダウトは「場を返せなかった」ので、パスと同じく場を流すのに寄与させる。数えないと
@@ -5061,6 +5116,19 @@ function doubtFailed(doubterIdx){
     resolveFieldClearOnPass();
   }
   advanceToNextActor();
+  finishDoubtTail(honestOwner, doubterIdx);
+}
+
+// ダウトの解決が一通り終わったあとの共通の締め。カオスモードで出し手が
+// 「馬鹿野郎ーっ!!誰を撃ってる!?」を持っていればここで発動する（ウソでも正直でも）。
+// 発動すると渡す札の選択待ちに入るので、進行の再開は選択が確定してから行う。
+// 「お前が俺に!!」の選択が先に走る場合は、そちらが終わってからここへ戻ってくる
+// （chaosDoubtTail 経由）。カードは発動時に消費されるので、2周目で無限には回らない。
+function finishDoubtTail(ownerIdx, doubterIdx){
+  chaosDoubtTail = null;
+  chaosResumeSchedule = false;
+  if(gameOver){ render(); showResults(); return; }
+  if(chaosTryBakayarou(ownerIdx, doubterIdx)) return;   // 選択待ちへ（再開は選択後）
   render();
   scheduleNextIfCpu();
 }
@@ -5078,21 +5146,25 @@ function doubtSucceeded(doubterIdx){
   if(gameOver){ render(); showResults(); return; }
   // clearField がトリック終了として全員の休みを1減らすので、嘘つきの休みはその後に立てる。
   if(!finishedOrder.includes(liar)) sitOutTricks[liar] = 1;
+  pendingTrickLeader = null;   // 親をここで直接決めるので、古い指名は捨てる
   currentPlayerIndex = doubterIdx;
   passStreak = 0;
   log(playerName(doubterIdx)+'が親として次のトリックを始めます');
+  // カオスモード：ダウトを成功させた側が「お前さぁ…疲れてんだよ」を持っていれば強制発動し、
+  // ウソをついた相手から奪う。場は既に流れ、親も doubterIdx になっているので奪うだけでよい。
+  chaosTryTsukareten(doubterIdx, liar);
+  if(gameOver){ render(); showResults(); return; }
   // 「お前が俺に!!」で成功した場合、ウソをついた相手へ札を2枚まで押し付けられる。
-  // 手番はすでに doubterIdx に移っているので、選択が終わったら進行を再開するだけでよい。
+  // 手番はすでに doubterIdx に移っているので、選択が終わったら締めの処理へ戻る。
   if(katerukayo && !finishedOrder.includes(doubterIdx) && !finishedOrder.includes(liar)
      && hands[doubterIdx].length>1){
     chaosKaterukayoTarget = liar;
-    chaosResumeSchedule = true;
+    chaosDoubtTail = {owner: liar, doubter: doubterIdx};
     render();
     chaosBeginSelection(doubterIdx, 'katerukayo');
     return;
   }
-  render();
-  scheduleNextIfCpu();
+  finishDoubtTail(liar, doubterIdx);
 }
 
 // このプレイ自身の効果だけを巻き戻す。7渡し・10捨て・12ボンバーで動いたカードを元の
@@ -5614,7 +5686,7 @@ function cpuTurn(idx){
   // という既存の流れがこの局面を正しく解消する。
   const hand = hands[idx];
 
-  // 「なんとかなれーッ!!」の発動中は、宣言（＝ウソをつく経路）を使わず、非ダウトモードと
+  // 「ずっと俺のターン!!」の発動中は、宣言（＝ウソをつく経路）を使わず、非ダウトモードと
   // 同じ「選んだ札をそのまま出す」経路へ落とす。cpuCommitPlay に actual を渡さないことで
   // 宣言＝実カードになり、必ず正直な手になる。
   if(isDoubtMode() && !chaosHonestForced(idx)){
@@ -5897,14 +5969,24 @@ function renderChaosArea(){
 const CHAOS_TIMING_LABEL = {
   'preplay': '自分の番／札を出す前',
   'doubt-alt': '自分の番／ダウトの代わりに',
-  'auto-out3': 'アウトが3つたまると自動発動',
-  'auto-doubted': 'ダウトされて正直だったとき自動発動'
+  'auto-doubted': 'ダウトされて正直だったとき／自分のダウトが成功したとき自動発動',
+  'auto-doubted-any': '自分の札がダウトされたとき自動発動（ウソでも正直でも）'
 };
+// autoTiming（任意発動もできるが、特定の瞬間には強制発動もする）ぶんの追記。
+const CHAOS_AUTO_LABEL = {
+  'out3': 'アウトが3つたまると自動発動',
+  'received': 'カードを渡されたときも自動発動'
+};
+function chaosTimingLabel(def){
+  const base = CHAOS_TIMING_LABEL[def.timing] || def.timing;
+  const auto = def.autoTiming ? CHAOS_AUTO_LABEL[def.autoTiming] : null;
+  return auto ? (base + '／' + auto) : base;
+}
 function openChaosCatalogModal(){
   const rows = CHAOS_CARDS.map(function(c){
     return '<div class="chaos-card" style="max-width:none;margin-bottom:10px;">'
       + '<div class="chaos-card-name">'+escapeHtml(c.name)+'</div>'
-      + '<div class="chaos-catalog-timing">'+escapeHtml(CHAOS_TIMING_LABEL[c.timing]||c.timing)+'</div>'
+      + '<div class="chaos-catalog-timing">'+escapeHtml(chaosTimingLabel(c))+'</div>'
       + '<div style="margin-top:4px;">'+escapeHtml(c.desc)+'</div>'
       + '</div>';
   }).join('');
@@ -5931,7 +6013,7 @@ function renderChaosRecycleModal(){
       + ' style="max-width:none;margin-bottom:8px;"'
       + ' onclick="toggleChaosRecycleSel(\''+escapeHtml(c.id)+'\')">'
       + '<div class="chaos-card-name">'+(on?'✓ ':'')+escapeHtml(d.name)+'</div>'
-      + '<div class="chaos-catalog-timing">'+escapeHtml(CHAOS_TIMING_LABEL[d.timing]||d.timing)+'</div>'
+      + '<div class="chaos-catalog-timing">'+escapeHtml(chaosTimingLabel(d))+'</div>'
       + '</button>';
   }).join('');
   const ready = chaosRecycleSel.size===CHAOS_RECYCLE_COST;
@@ -6364,7 +6446,7 @@ function humanPlay(){
   if(!humanCanAct()) return;
   const cards = currentSelectionCards();
   if(cards.length===0){ flashMsg('カードを選んでください'); return; }
-  // 「なんとかなれーッ!!」の発動中はウソをつけないので、宣言モーダルを出さずに
+  // 「ずっと俺のターン!!」の発動中はウソをつけないので、宣言モーダルを出さずに
   // そのまま正直に出す（＝「正直に出す」と同じ経路）。
   if(isDoubtMode() && chaosHonestForced(mySeat)){
     if(forcedPassOnly){ flashMsg('5スキップの対象です。ダウトかパスしかできません'); return; }
@@ -6709,11 +6791,9 @@ function render(){
     handHint.style.display = 'block';
     handHint.textContent = forcedPassOnly
       ? '5スキップの対象です。カードは出せませんが、ダウトは宣言できます'
-      : (chaosNantokaSeat===mySeat
-          ? '「なんとかなれーッ!!」発動中：ウソはつけません（選んだ札をそのまま公開で出し、必ず場が流れます）'
-          : ((chaosOrenoTurn && chaosOrenoTurn.seat===mySeat)
-              ? '「ずっと俺のターン!!」発動中：ウソはつけません（公開で出します。残り'+chaosOrenoTurn.left+'回）'
-              : '緑枠＝正直に出せる札。ウソをつくならどの札を選んでもかまいません'));
+      : (chaosHonestForced(mySeat)
+          ? '「ずっと俺のターン!!」発動中：ウソはつけません（選んだ札をそのまま公開で出し、必ず場が流れて自分の番に戻ります）'
+          : '緑枠＝正直に出せる札。ウソをつくならどの札を選んでもかまいません');
   } else {
     handHint.style.display = 'none';
   }
@@ -6869,7 +6949,7 @@ function buildRedactedView(viewerSeat){
     // 相手の席番号だけなので、追加で秘匿情報を送る必要はない（myHandで既に持っている）。
     pendingChaos: (chaosPending && chaosPending.seat===viewerSeat)
       ? {cardType: chaosPending.cardType} : null,
-    // 「なんとかなれーッ!!」の発動中の席（公開情報：使用済み特殊カードは全員に見えている）。
+    // 「ずっと俺のターン!!」で公開出しを強制されている席（公開情報）。
     // ゲスト側は自席がこれに一致するとき、宣言モーダルを出さず正直に出す経路へ切り替える。
     chaosNantokaSeat: (chaosNantokaSeat===null ? -1 : chaosNantokaSeat),
     // 連続手番の状態も公開情報として配る（ゲスト側の「ウソをつけない」分岐に使う）。
@@ -6968,10 +7048,14 @@ function applyView(v){
   // 要求が消えた＝ホストが受理したと確定してから閉じる（応答が落ちても取りこぼさない）。
   if(v.pendingChaos){
     if(!chaosPending){
-      const spec = chaosSelectionSpec(v.pendingChaos.cardType);
+      // 枚数は「要求されている席（＝自分）の手札」から決める。seat を省くと
+      // currentPlayerIndex 基準になり、手番が別の席にある局面（馬鹿野郎ーっ!! など）で
+      // 他人の手札枚数から上限を計算してしまう。
+      const spec = chaosSelectionSpec(v.pendingChaos.cardType, mySeat);
       if(spec){
         chaosPending = {seat:mySeat, cardType:v.pendingChaos.cardType, needCards:spec.needCards,
-          needTarget:spec.needTarget, chosen:new Set(), target:null, remote:true, sent:false};
+          needTarget:spec.needTarget, atMost:!!spec.atMost,
+          chosen:new Set(), target:null, remote:true, sent:false};
         renderChaosSelectModal();
       }
     }
@@ -8106,7 +8190,8 @@ const Online = (function(){
     chaosOutSnapshot=[]; chaosRecycleSel=new Set();
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
     chaosNantokaSeat=null; chaosOrenoTurn=null; chaosYoroshikuSeat=null; chaosDeferredTurn=null;
-    chaosKaterukayoSeat=null; chaosKaterukayoTarget=null; chaosResumeSchedule=false;
+    chaosKaterukayoSeat=null; chaosKaterukayoTarget=null; chaosBakayarouTarget=null;
+    chaosResumeSchedule=false;
   }
 
   async function leave(){
