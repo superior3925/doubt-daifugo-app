@@ -1148,8 +1148,8 @@
     <div class="mode-toggle-block chaos-toggle-block" id="chaosModeBlock">
       <label class="switch"><input type="checkbox" id="chaosModeToggle"><span class="slider"></span></label>
       <div>
-        <div class="mode-toggle-title">カオスモード（開発中）</div>
-        <div class="rule-desc">ダウト大富豪モード専用。トランプとは別に「特殊カード」が配られ、発動すると場や手札が大きく動きます。開始時に2枚、親になるたびに1枚（手札は最大3枚まで）。特殊カードは常に表向きで処理されるためウソはつけず、発動内容は全員が確認できます。何枚持っていても勝敗には関係なく、トランプがなくなった時点で上がりです。バランス確保のため、都落ちは適用されません。</div>
+        <div class="mode-toggle-title">カオスモード</div>
+        <div class="rule-desc">ダウト大富豪モード専用。トランプとは別に「特殊カード」が配られ、発動すると場や手札が大きく動きます。開始時に2枚、親になるたびに1枚、アウトを受けるたびに1枚（手札は最大3枚まで）。自分の番には2枚捨てて1枚引き直すこともできます。特殊カードは常に表向きで処理されるためウソはつけず、発動内容は全員が確認できます。何枚持っていても勝敗には関係なく、トランプがなくなった時点で上がりです。バランス確保のため、都落ちは適用されません。</div>
         <button type="button" class="rules-toggle chaos-catalog-btn" onclick="openChaosCatalogModal()">✨ 特殊カード一覧を見る</button>
       </div>
     </div>
@@ -1331,6 +1331,7 @@
               <div class="chaos-row-label">
                 <span id="chaosHandLabel">特殊カード</span>
                 <button type="button" class="chaos-catalog-link" onclick="openChaosCatalogModal()">一覧を見る</button>
+                <button type="button" class="chaos-catalog-link" id="chaosRecycleBtn" onclick="openChaosRecycleModal()" style="display:none;">♻ 2枚捨てて1枚引く</button>
               </div>
               <div class="chaos-cards" id="chaosHand"></div>
             </div>
@@ -1887,8 +1888,15 @@ let inChaosEffect = 0;
 let trickIndex = 0;
 // 特殊カードを配布済みのトリック番号。同じトリックで二重に配らないための番人。
 let chaosGrantedForTrick = -1;
+// 前回の配布判定の時点で各席が抱えていたアウト数。ここからの増分で「アウトを受けた」
+// 配布を判定する（詳細は grantChaosCardsAtSettlePoint のコメント）。
+let chaosOutSnapshot = [];
+// 引き直しモーダルで「捨てる」と選んだ特殊カードのid（自分の画面だけの選択状態）。
+let chaosRecycleSel = new Set();
 const CHAOS_MAX_HAND = 3;       // 手札上限（超える分は配られない）
 const CHAOS_INITIAL_HAND = 2;   // ゲーム開始時の配布枚数
+const CHAOS_RECYCLE_COST = 2;   // 引き直しで捨てる枚数
+const CHAOS_RECYCLE_GAIN = 1;   // 引き直しで引ける枚数
 
 // 特殊カードのカタログ。timing は発動タイミングで、効果の実装（フェーズ2以降）で使う。
 //   preplay      … 自分のターンでトランプを出す前に発動できる
@@ -1987,26 +1995,85 @@ function resetChaosState(){
   inChaosEffect = 0;
   trickIndex = 0;
   chaosGrantedForTrick = -1;
+  chaosOutSnapshot = new Array(seatCount).fill(0);
+  chaosRecycleSel = new Set();
   if(isChaosMode()){
     for(let s=0;s<seatCount;s++){
       for(let k=0;k<CHAOS_INITIAL_HAND;k++) chaosHandOf(s).push(drawChaosCard());
     }
   }
 }
-// 新しいトリックの親になった席へ1枚配る。ゲーム開始時の親（trickIndex===0）は対象外。
-// 手番が確定したあと（＝engineが落ち着いた時点）に呼ぶので、親は配られたカードを
-// そのターンからすぐ使える。同じトリックで二重に配らないよう chaosGrantedForTrick で守る。
-function grantChaosCardToTrickLeader(){
+// 配布条件を満たした席へまとめて配る。手番が確定したあと（＝engineが落ち着いた時点）に
+// 呼ぶので、配られたカードはその席のターンからすぐ使える。
+//
+// 「アウトを受けた瞬間」「親になった瞬間」ではなく、必ずこの落ち着いた時点で配るのが要。
+// ダウトで嘘が暴かれると undoPlay がアウトも上がりも巻き戻すため、瞬間に配ってしまうと
+// 「巻き戻ったのに配られたカードだけ残る」幻の配布が起きる。巻き戻しはここへ来る前に
+// 完了しているので、直前のスナップショットとの差分を見るだけでその事故を原理的に防げる。
+function grantChaosCardsAtSettlePoint(){
   if(!isChaosMode()) return false;
-  if(gameOver || field!==null) return false;
+  if(gameOver) return false;
   // 手番がまだ確定していない局面（めくり演出中・追加アクション待ち・カード交換中）では
   // 配らない。これらが片付くと finalizeTurn などから再び scheduleNextIfCpu が呼ばれるので、
   // 配布は取りこぼされずその時点まで先送りされるだけ。
   if(revealPending || exchangeInProgress || pendingAction || pendingRemoteAction || chaosPending) return false;
-  if(trickIndex<=0) return false;
-  if(chaosGrantedForTrick===trickIndex) return false;
-  chaosGrantedForTrick = trickIndex;
-  return grantChaosCard(currentPlayerIndex, '親になった');
+  let granted = false;
+  // (1) アウトを受けた席へ1枚（増えた分だけ）。負けている側への救済で、アウトは
+  //     「休み1回＋敗北への1歩」という重い代償なので、これ目当てのウソ得は生じない。
+  //     「僕は死にましぇん」でアウトが減った場合は差分が負になるので何も起きない。
+  for(let s=0;s<seatCount;s++){
+    const now = outs[s]||0;
+    const before = chaosOutSnapshot[s]||0;
+    for(let k=before;k<now;k++){
+      if(grantChaosCard(s, 'アウトを受けた')) granted = true;
+    }
+    chaosOutSnapshot[s] = now;
+  }
+  // (2) 新しいトリックの親になった席へ1枚。ゲーム開始時の親（trickIndex===0）は対象外で、
+  //     同じトリックで二重に配らないよう chaosGrantedForTrick で守る。
+  if(field===null && trickIndex>0 && chaosGrantedForTrick!==trickIndex){
+    chaosGrantedForTrick = trickIndex;
+    if(grantChaosCard(currentPlayerIndex, '親になった')) granted = true;
+  }
+  return granted;
+}
+
+// ---- カオスモード：特殊カードの引き直し（2枚捨てて1枚引く） ----
+// 自動発動待ちや条件付きのカードばかりが手元に溜まり、何もできなくなる「詰まり」を
+// 自力で解消するための手段。発動と同じく自分の手番でトランプを出す前にだけ使え、
+// 手番は消費しない。2枚→1枚と目減りするので、使える札があるうちは使うほうが得。
+function chaosRecycleAvailable(seat){
+  if(!isChaosMode()) return false;
+  if(gameOver || exchangeInProgress || revealPending) return false;
+  if(pendingAction || pendingRemoteAction || chaosPending) return false;
+  if(currentPlayerIndex!==seat) return false;
+  if(finishedOrder.includes(seat)) return false;
+  if(sitOutTricks[seat]>0) return false;      // ダウトの罰で休み中は行動できない
+  return chaosHandOf(seat).length >= CHAOS_RECYCLE_COST;
+}
+// 選ばれた札を表向きに捨てて引き直す。捨てた札は使用済みの山に公開される＝「何を切ったか」は
+// 全員に知られるので、引き直しは手の内を晒すことと引き換えになる。
+function chaosRecycle(seat, cardIds){
+  if(!chaosRecycleAvailable(seat)) return false;
+  const hand = chaosHandOf(seat);
+  const picked = [];
+  (Array.isArray(cardIds) ? cardIds : []).forEach(id=>{
+    if(picked.length>=CHAOS_RECYCLE_COST) return;
+    if(picked.some(c=>c.id===id)) return;     // 同じ札の二重指定は無視する
+    const c = hand.find(x=>x.id===id);
+    if(c) picked.push(c);
+  });
+  if(picked.length!==CHAOS_RECYCLE_COST) return false;
+  picked.forEach(c=>{
+    const i = hand.indexOf(c);
+    if(i>=0) hand.splice(i, 1);
+    chaosDiscard.push({id:c.id, type:c.type, seat:seat});
+  });
+  log(playerName(seat)+'は特殊カードを'+CHAOS_RECYCLE_COST+'枚捨てて引き直した（'
+    + picked.map(c=>chaosDef(c.type).name).join('・')+'）');
+  showCutIn(playerName(seat)+'　特殊カードを引き直し');
+  for(let k=0;k<CHAOS_RECYCLE_GAIN;k++) grantChaosCard(seat, '2枚捨てて引き直し');
+  return true;
 }
 
 // ---- カオスモード：特殊カードの発動 ----
@@ -2715,7 +2782,15 @@ function chaosConfirmActivate(cardId){
 function cpuMaybeUseChaos(idx){
   if(!isChaosMode()) return false;
   const hand = chaosHandOf(idx);
-  const usable = hand.filter(c=>chaosCardUsable(idx, c));
+  let usable = hand.filter(c=>chaosCardUsable(idx, c));
+  // 発動できる札が1枚も無いまま持て余しているときだけ引き直す（2枚→1枚と目減りするので、
+  // 使える札があるうちは使うほうが得）。引き直した札はその場で使えることがあるので、
+  // 引いたあとにもう一度だけ発動候補を数え直す。
+  if(!usable.length && chaosRecycleAvailable(idx)){
+    if(chaosRecycle(idx, hand.slice(0, CHAOS_RECYCLE_COST).map(c=>c.id))){
+      usable = hand.filter(c=>chaosCardUsable(idx, c));
+    }
+  }
   if(!usable.length) return false;
   const p = (hand.length>=CHAOS_MAX_HAND) ? 0.5 : 0.18;
   if(Math.random()>=p) return false;
@@ -4150,20 +4225,32 @@ function relieveIfAllSittingOut(){
 //   ダウト罰の休み … 完全に関与できない（ダウトも不可）。5スキップの枚数は消費しない。
 //   5スキップの対象 … 札は出せないがダウトはできるので、手番自体は渡す（forcedPassOnly）。
 //                      ダウトしようのない場（既にめくれている等）なら黙って飛ばす。
+// 場が流れた直後の親（＝最後に札を出した人）を手番に据える。据えたら true。
+// 休み中・上がり済みで親になれないときは指名を捨て、通常の手番送りに委ねる。
+//
+// 指名は「立てたらその場で必ず使い切る」のが鉄則。持ち越すと、無関係なあとの手番送りで
+// 突然その席へ手番が飛ぶ——これが親ずれの正体だった。指名は resolveFieldClearOnPass が
+// 立てるが、それは advanceToNextActor の外（パス・ダウト解決）だけでなく、この関数の
+// ループ内から countSeatAsPass 経由でも立ちうるので、立ちうる場所すべてで回収する。
+function takePendingTrickLeader(){
+  if(pendingTrickLeader===null) return false;
+  const t = pendingTrickLeader;
+  pendingTrickLeader = null;
+  if(finishedOrder.includes(t) || sitOutTricks[t]>0) return false;
+  currentPlayerIndex = t;
+  // 新しいトリックが始まるので、前のトリックの5スキップは持ち越さない。
+  skipQuota = 0;
+  return true;
+}
 function advanceToNextActor(){
   const act = activePlayers();
   forcedPassOnly = false;
   relieveIfAllSittingOut();
-  // 場が流れた直後は、その場を出した本人を親にする（ルールの明示）。休み中や上がり済みの
-  // ときだけは親になれないので、その場合は通常の手番送りに委ねる。
+  // 場が流れた直後は、その場を出した本人を親にする（ルールの明示）。
   // この判定は「生存者1人以下なら手番を動かさない」ガードより前に置く必要がある。
   // 残り1人になった局面では、上がった席が手番を握ったままになることがあり、そこで
   // 打ち切ると唯一の生存者である持ち主に親が渡らないため。
-  if(pendingTrickLeader!==null){
-    const t = pendingTrickLeader;
-    pendingTrickLeader = null;
-    if(!finishedOrder.includes(t) && sitOutTricks[t]===0){ currentPlayerIndex = t; return; }
-  }
+  if(takePendingTrickLeader()) return;
   if(act.length<=1) return;
   let guard = 0;
   while(guard++ < 24){
@@ -4172,6 +4259,9 @@ function advanceToNextActor(){
     if(sitOutTricks[p] > 0){
       log(playerName(p)+'：休み（ダウトの罰）');
       countSeatAsPass(p);
+      // この休みで場が流れたなら、そこで新しいトリックの親が決まっている。
+      // 席送りを続けてしまうと、親が持ち主ではなくその次の席になる。
+      if(takePendingTrickLeader()) return;
       continue;
     }
     if(skipQuota > 0){
@@ -4179,6 +4269,7 @@ function advanceToNextActor(){
       if(doubtAvailableFor(p)){ forcedPassOnly = true; return; }
       log(playerName(p)+'：5スキップで飛ばされた');
       countSeatAsPass(p);
+      if(takePendingTrickLeader()) return;
       continue;
     }
     return;
@@ -4659,9 +4750,9 @@ function scheduleNextIfCpu(){
   if(gameOver) return;
   // ゲストはエンジンを進めない（ホストが配信するスナップショットを描画するだけ）。
   if(onlineRole==='guest') return;
-  // 手番が確定したこの時点が「誰が親になったか」の唯一の判定点。カオスモードで
-  // 親になった席に特殊カードを配り、配れたら描画を更新してから手番の処理へ進む。
-  if(grantChaosCardToTrickLeader()) render();
+  // 手番が確定したこの時点が、カオスモードの特殊カード配布の唯一の判定点。
+  // 配れたら描画を更新してから手番の処理へ進む。
+  if(grantChaosCardsAtSettlePoint()) render();
   // 席ごとの controller で分岐：local-cpu は自動、host-ui（自席）とremote-human は
   // それぞれ手元UI／リモートのintentを待つので、ここでは何もしない。
   if(seatController(currentPlayerIndex)==='local-cpu'){
@@ -5778,6 +5869,9 @@ function renderChaosArea(){
   const mine = (mySeat>=0 && mySeat<seatCount) ? chaosHandOf(mySeat) : [];
   const label = document.getElementById('chaosHandLabel');
   if(label) label.textContent = '特殊カード（'+mine.length+'/'+CHAOS_MAX_HAND+'枚）';
+  // 引き直しは自分の手番でトランプを出す前だけ。使えない局面ではボタンごと隠す。
+  const recycleBtn = document.getElementById('chaosRecycleBtn');
+  if(recycleBtn) recycleBtn.style.display = chaosRecycleAvailable(mySeat) ? 'inline-block' : 'none';
   const host = document.getElementById('chaosHand');
   if(host){
     host.innerHTML = mine.length===0
@@ -5816,9 +5910,53 @@ function openChaosCatalogModal(){
   }).join('');
   showHistoryModal('<h2>特殊カード一覧</h2>'
     + '<p style="text-align:left;">カオスモードで使える全'+CHAOS_CARDS.length+'種です。'
-    + '開始時に2枚、親になるたびに1枚（最大3枚まで）配られます。'
+    + '開始時に2枚、親になるたびに1枚、アウトを受けるたびに1枚（最大3枚まで）配られます。'
+    + '自分の番にはトランプを出す前に、2枚捨てて1枚引き直すこともできます。'
     + '特殊カードは常に表向きで処理されるためウソはつけず、勝敗にも関与しません。</p>'
     + '<div style="max-height:56vh;overflow-y:auto;text-align:left;">'+rows+'</div>');
+}
+// 引き直し（2枚捨てて1枚引く）の選択モーダル。捨てる札を自分で選べるようにしてある——
+// 「使えない札を切る」のか「読まれたくない札を隠す」のかはプレイヤーの判断だから。
+function openChaosRecycleModal(){
+  if(!chaosRecycleAvailable(mySeat)) return;
+  chaosRecycleSel = new Set();
+  renderChaosRecycleModal();
+}
+function renderChaosRecycleModal(){
+  const mine = chaosHandOf(mySeat);
+  const rows = mine.map(c=>{
+    const d = chaosDef(c.type);
+    const on = chaosRecycleSel.has(c.id);
+    return '<button type="button" class="chaos-card'+(on?' usable':'')+'"'
+      + ' style="max-width:none;margin-bottom:8px;"'
+      + ' onclick="toggleChaosRecycleSel(\''+escapeHtml(c.id)+'\')">'
+      + '<div class="chaos-card-name">'+(on?'✓ ':'')+escapeHtml(d.name)+'</div>'
+      + '<div class="chaos-catalog-timing">'+escapeHtml(CHAOS_TIMING_LABEL[d.timing]||d.timing)+'</div>'
+      + '</button>';
+  }).join('');
+  const ready = chaosRecycleSel.size===CHAOS_RECYCLE_COST;
+  showHistoryModal('<h2>特殊カードを引き直す</h2>'
+    + '<p style="text-align:left;">捨てる'+CHAOS_RECYCLE_COST+'枚を選んでください。'
+    + '捨てた札は使用済みの山に公開され、代わりに'+CHAOS_RECYCLE_GAIN+'枚引きます。'
+    + '手番は消費しないので、このあと通常どおりトランプを出せます。</p>'
+    + '<div style="max-height:46vh;overflow-y:auto;text-align:left;">'+rows+'</div>'
+    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">'
+    + '<button class="action play" type="button"'+(ready?'':' disabled')
+    + ' onclick="confirmChaosRecycle()">'+chaosRecycleSel.size+'/'+CHAOS_RECYCLE_COST+'枚を捨てて引き直す</button>'
+    + '<button class="restart" type="button" onclick="closeHistoryModal()">やめる</button></div>');
+}
+function toggleChaosRecycleSel(id){
+  if(chaosRecycleSel.has(id)) chaosRecycleSel.delete(id);
+  else if(chaosRecycleSel.size < CHAOS_RECYCLE_COST) chaosRecycleSel.add(id);
+  renderChaosRecycleModal();
+}
+function confirmChaosRecycle(){
+  if(chaosRecycleSel.size!==CHAOS_RECYCLE_COST) return;
+  const ids = Array.from(chaosRecycleSel);
+  chaosRecycleSel = new Set();
+  closeHistoryModal();
+  if(onlineRole==='guest'){ Online.sendIntent({type:'chaosRecycle', cardIds:ids}); return; }
+  if(chaosRecycle(mySeat, ids)) render();
 }
 function openChaosDiscardModal(){
   const html = chaosDiscard.length===0
@@ -7854,6 +7992,12 @@ const Online = (function(){
       }
       return true;
     }
+    // 特殊カードの引き直し（2枚捨てて1枚引く）。合法性は chaosRecycle 側で検証するので、
+    // 不正・手遅れなintentは何も起こさずそのまま処理済みとして落とす。
+    if(intent.type==='chaosRecycle'){
+      if(chaosRecycle(seat, intent.cardIds||[])) render();
+      return true;
+    }
     // 特殊カードの選択への応答。まだこの席へ要求を出せていない（ビューより先に届いた等）
     // ときは未処理のまま残して再試行させる——ここで消費すると、その席の選択が永久に
     // 成立せず進行が止まってしまう（カード交換で踏んだのと同じ落とし穴）。
@@ -7959,6 +8103,7 @@ const Online = (function(){
     clearDoubtWindowTimers(); pendingCpuPlay=null;
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
+    chaosOutSnapshot=[]; chaosRecycleSel=new Set();
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
     chaosNantokaSeat=null; chaosOrenoTurn=null; chaosYoroshikuSeat=null; chaosDeferredTurn=null;
     chaosKaterukayoSeat=null; chaosKaterukayoTarget=null; chaosResumeSchedule=false;
