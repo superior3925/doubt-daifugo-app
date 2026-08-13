@@ -1970,7 +1970,7 @@ const CHAOS_CARDS = [
   {type:'katerukayo', timing:'doubt-alt', impl:true, name:'お前が俺に!!勝てるわけねェだろうが!!!!',
    desc:'ダウト宣言の代わりに発動。通常のダウトと同じく相手の札をめくります。成功なら手札を2枚まで相手に渡せ、失敗してもアウト・休みのペナルティを受けません。'},
   {type:'orenoTurn', timing:'preplay', impl:true, name:'ずっと俺のターン!!ドローっ!!',
-   desc:'次の1手はウソをつけない代わりに、伏せず公開で出して必ず場が流れ、続けて自分の番になります（公開なのでダウトされず、4止め・スペ3返しでも返されません）。そのあと特殊カードを1枚引きます。出せる札が無ければ空打ちとなり、場を流す効果は消えます。'},
+   desc:'次の1手はウソをつけない代わりに、伏せず公開で出して必ず場が流れ、続けて自分の番になります（公開なのでダウトされず、4止め・スペ3返しでも返されません）。そのあと特殊カードを1枚引きます。ウソをつかずに出せる手が無いときは発動できません（空打ちを防ぐため）。'},
   {type:'mienai', timing:'preplay', impl:true, name:'見えないものを見ようとして',
    desc:'このトリックの間だけ、全員の手札が自分にだけ見えるようになります。'},
   {type:'irekawari', timing:'preplay', impl:true, name:'わたしたち、入れ替わってる！？',
@@ -2259,10 +2259,25 @@ function chaosCardUsable(seat, card){
     case 'jakusha':   return hands[seat].length >= 1;
     // 場が無いと捨てる枚数が決まらない。捨てるのは「場の枚数まで」なので0枚でもよい。
     case 'ottotto':   return field!==null;
+    // ウソをつけなくなる代わりの効果なので、正直に出せる手が1つも無いと発動しても
+    // そのままパス＝空打ちになる。「必ず場が流れる」と予告して何も起きないのが
+    // 一番分かりにくいので、出せる見込みが無い局面では最初から選べないようにする。
+    case 'orenoTurn': return hasHonestPlay(seat);
     default: return true;
   }
 }
-// 選択を要するカードの仕様。needCards=選ぶ手札の枚数、needTarget=相手を選ぶか。
+// その席が「ウソをつかずに出せる手」を持っているか。CPUが実際に手を選ぶときと同じ
+// 候補集めを使うので、ここが空なら必ずパスになる＝発動しても空打ちに終わる。
+function hasHonestPlay(seat){
+  const hand = hands[seat] || [];
+  if(!hand.length) return false;
+  if(sitOutTricks[seat]>0 || forcedPassOnly) return false;
+  const groups = groupByRank(hand);
+  return (field===null)
+    ? gatherLeadCandidates(hand, groups).length > 0
+    : gatherFollowCandidates(hand, groups).length > 0;
+}
+// 選択を要するカードの仕様。needCards=選ぶ枚数、needTarget=相手を選ぶか。
 // yoroshiku だけは相手の人数と手札に応じて枚数が変わるので seat を見る。
 function chaosSelectionSpec(cardType, seat){
   if(cardType==='yoroshiku'){
@@ -2770,13 +2785,14 @@ function chaosNotifyGiven(fromSeat, toSeat, cards){
   chaosDiscard.push(entry);
   log(playerName(toSeat)+'の「馬鹿野郎ーっ!!誰を撃ってる!?」が発動！');
   chaosGiveDepth++;
+  inChaosEffect++;   // ここで動いた札もダウトでは巻き戻さない（journalActive を参照）
   try{
     const gset = new Set(give.map(c=>c.id));
     hands[toSeat] = hands[toSeat].filter(c=>!gset.has(c.id));
     hands[fromSeat] = hands[fromSeat].concat(give);
     log(playerName(toSeat)+'が'+playerName(fromSeat)+'に'+give.length+'枚を突き返した');
     checkGameEndAfterSideEffect('chaos');
-  } finally { chaosGiveDepth--; }
+  } finally { chaosGiveDepth--; inChaosEffect--; }
   // 別の特殊カードの効果の中で渡された場合（キノコ・よろしく等）は、その札のカットインに
   // 追記するだけにする。ここで単独のカットインを出すと、直後に呼び出し元のカットインが
   // 上書きしてしまい、突き返しが一瞬で消えてしまうため。
@@ -3936,8 +3952,14 @@ function updateDiscardPileButton(){
 // この間に発生した上がり・カードの授受は、その宣言自体がウソだと暴かれたときに
 // undoPlay で巻き戻せるよう journal に記録する。既に失敗ダウトで真実と確定した後
 // （revealed=true）の出来事は無関係な巻き戻し対象になってしまうので記録しない。
+// 特殊カードの効果は「常に確定」で、ダウトの結果では取り消さない（捨てた札も戻らない）。
+// なので効果の適用中（inChaosEffect>0）に動いた札や生じた上がりは journal に載せない。
+// 載せると、あとで undoPlay がその上がりだけ取り消し、効果で捨てた札は戻らないため、
+// 「手札0枚なのに上がっていない席」が残る。その席は永久に出せずパスし続けるので、
+// 誰も場を取れないまま進行が止まる。
 function journalActive(){
-  return isDoubtMode() && !!(field && field.journal && field.faceDown && !field.revealed);
+  return isDoubtMode() && inChaosEffect===0
+    && !!(field && field.journal && field.faceDown && !field.revealed);
 }
 
 function markLegitFinish(idx){
@@ -4933,6 +4955,13 @@ function passAction(playerIdx){
   if(chaosNantokaSeat===playerIdx){
     chaosNantokaSeat = null;
     log(playerName(playerIdx)+'は出せる札がなく、「ずっと俺のターン!!」は空打ちに終わった');
+    // 「必ず場が流れる」と予告した直後に何も起きないと、効果が壊れているように見える。
+    // 空振りに終わったことも同じ強さで見せて、使用済みの山にも結果として残す。
+    const spent = chaosDiscard.slice().reverse()
+      .find(c=>c.type==='orenoTurn' && c.seat===playerIdx && (!c.kind || c.kind==='used'));
+    const line = playerName(playerIdx)+'は出せる札がなく空打ち。場を流す効果は消えました';
+    if(spent) spent.note = line;
+    showCutIn(chaosDef('orenoTurn').name, undefined, {chaos:true, sub:line});
   }
   if(chaosOrenoTurn && chaosOrenoTurn.seat===playerIdx) chaosOrenoTurnFinish();
   if(!isOwnLiveField(playerIdx)) passStreak++;
@@ -5828,9 +5857,13 @@ function cpuTrySpecialCounter(idx, hand){
     // group is always just "strongest single card x N", not a 4-stop counter.
     if(fours.length>=1 && fours.length + jokers.length >= needed){
       cpuCommitPlay(idx, fours.concat(jokers).slice(0, needed));
-    } else {
-      passAction(idx);
+      return true;
     }
+    // 4止めができないなら、通常は重ねても8切りで流れるだけなのでパスする。
+    // ただし「ずっと俺のターン!!」の発動中は、出しさえすれば必ず自分の番で場が流れる。
+    // ここでパスすると効果が空打ちで消えてしまうので、通常の候補選びへ回す。
+    if(chaosHonestForced(idx)) return false;
+    passAction(idx);
     return true;
   }
   return false;
@@ -5877,9 +5910,15 @@ function cpuTurn(idx, opts){
 
   const groups = groupByRank(hand);
   const candidates = (field===null) ? gatherLeadCandidates(hand, groups) : gatherFollowCandidates(hand, groups);
-  const chosen = (field===null)
+  let chosen = (field===null)
     ? (candidates.length ? chooseLeadPlay(idx, hand, candidates) : null)
     : chooseFollowPlay(idx, hand, candidates);
+  // 「ずっと俺のターン!!」の発動中は、出せる手があるのに温存でパスしてはいけない。
+  // パスすると効果が空打ちで消えてしまい、撃った意味がなくなるため、出せるなら
+  // 最も弱い候補で必ず出す。
+  if(!chosen && candidates.length && chaosHonestForced(idx)){
+    chosen = candidates.slice().sort((a,b)=> a.es - b.es)[0];
+  }
   if(chosen){ cpuCommitPlay(idx, chosen.cards); return; }
   passAction(idx);
 }
