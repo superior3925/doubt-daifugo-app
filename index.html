@@ -5665,13 +5665,19 @@ const SHAPE_W = {
 // そちらへ正しく誘導される（自己対戦で -0.126 → -0.176）。通常モードにその逃げ道は
 // 無く、割る損を数えても「代わりに悪い札を選ぶ」だけになって逆効果だった
 // （-0.160 → -0.042）。同じ重みでモードをまたぐと、どちらかが必ず損をする。
-function splitPenaltyWeight(){ return isDoubtMode() ? SHAPE_W.split : 0; }
+function splitPenaltyWeight(){ return (cpuLevel==='legend' && isDoubtMode()) ? SHAPE_W.split : 0; }
 // 見送り（戦略的パス）は自己対戦では一貫して有害だった。hold を上げるほど成績が落ちる
 // （0/4で-0.175、8で-0.128、14以上で+0.060）。大富豪は手札を早く空にした者が勝つゲームで、
 // 1枚も捌けないパスは、役を温存できる価値では割に合わない。既定の0で無効にしてある。
 
 // 「そのランクより強い未確認札が何枚あるか」をランクごとに数えた表。候補ごとに未確認
 // プールを作り直すと重いので、1回の判断につき1度だけ作って使い回す。
+// エリート用の簡易版。未確認の札を一切数えず、「上位3ランク（K・A・2相当）とジョーカーなら
+// 場を取れる」という経験則だけで支配力を測る。手札を手数と支配力で見るという考え方は
+// エリートも共有し、未確認の札を数えて読む部分がレジェンドの武器になる。
+const ROUGH_BEAT_TABLE = {rough:true};
+// 「そのランクより強い未確認札が何枚あるか」をランクごとに数えた表。候補ごとに数え直すと
+// 重いので、1回の判断につき1度だけ作って使い回す。
 function buildBeatTable(idx){
   const pool = unseenCardPool(idx);
   const strengths = pool.map(c=>effStrength(c.rank));
@@ -5680,24 +5686,22 @@ function buildBeatTable(idx){
     const s = effStrength(r);
     stronger.set(r, strengths.filter(v=>v>s).length);
   }
-  return {poolSize: pool.length, stronger: stronger,
-          oppHandSizes: activePlayers().filter(i=>i!==idx).map(i=>hands[i].length)};
+  return {poolSize: pool.length, stronger: stronger};
 }
-// その組を出したとき誰かに返される確率の粗い見積り。公開情報のみ（他家の手札は枚数しか
-// 見ない）。count枚出しは「同じ強いランクをcount枚まとめて」持っていないと返せないぶん
-// 通りやすいので、必要枚数の分だけ確率を掛けて効かせる（同ランク条件までは追わない近似）。
+// その組が場を取れずに返される見込み。0なら支配札、1なら当てにできない。
+//
+// ここは一度、未確認プールの枚数と相手の手札枚数から「返される確率」をきちんと計算する
+// 形にしていたが、自己対戦では経験則に負けた（通常モードで legend が elite に +0.045）。
+// 原因は、確率としては正しくても支配札の価値としては外れていること：ジョーカーが1枚でも
+// 未確認なら、単騎の2の支配力を0.13まで割り引いてしまう。実戦の2は、ジョーカーが
+// どこかにあってもたいてい場を取れる（相手も切り札は温存する）。
+// そこで経験則を土台にし、確率のほうは「もうこれを返せる札は1枚も残っていない」と
+// 言い切れる場合の上乗せに絞った。終盤、上の札が尽きたあとの中位札がこれに当たる。
 function beatRiskOf(table, rank, count){
+  const rough = (effStrength(rank) >= 10) ? 0 : 1;
+  if(table.rough) return rough;
   if(table.poolSize===0) return 0;
-  const strong = table.stronger.get(rank) || 0;
-  if(strong < count) return 0;
-  const p = strong / table.poolSize;
-  let noneCanBeat = 1;
-  for(const h of table.oppHandSizes){
-    if(h < count) continue;
-    const hasOne = 1 - Math.pow(1-p, h);
-    noneCanBeat *= (1 - Math.pow(hasOne, count));
-  }
-  return 1 - noneCanBeat;
+  return ((table.stronger.get(rank) || 0) < count) ? 0 : rough;
 }
 // 手札の捌きやすさ。小さいほど良い。
 function handShapeScore(hand, table){
@@ -5714,7 +5718,7 @@ function handShapeScore(hand, table){
 // 応じて損を上乗せする。それでも出したほうがマシなら出す——この比較が戦略的パスになる。
 function bestByHandShape(idx, hand, candidates){
   if(candidates.length===0) return null;
-  const table = buildBeatTable(idx);
+  const table = (cpuLevel==='legend') ? buildBeatTable(idx) : ROUGH_BEAT_TABLE;
   let best=null;
   for(const c of candidates){
     const ids = new Set(c.cards.map(x=>x.id));
@@ -5742,23 +5746,14 @@ function chooseLeadPlay_normal(hand, candidates){
   }
   return best;
 }
-function chooseLeadPlay_elite(hand, candidates){
-  let best=null;
-  for(const c of candidates){
-    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
-    if(c.cards.length===1) score -= 5; // 孤立した単騎を優先的に処分し、役はなるべく温存する
-    if(best===null || score < best.score) best = Object.assign({}, c, {score});
-  }
-  return best;
-}
-// ノーマルとエリートは「弱い手から出す」素朴な採点。レジェンドだけが、出したあとの
-// 手札の形（handShapeScore）で選ぶ。かつてレジェンドはここで「返され率」と「上がり間際の
-// 相手がいるときの重い蓋」を加点していたが、素朴な採点への継ぎ足しでは勝率に寄与せず
-// 撤去した。返され率は評価軸そのものとして作り直してある。
+// ノーマルだけが「出せる中でいちばん弱い手を出す」素朴な採点。エリートとレジェンドは
+// どちらも出したあとの手札の形（handShapeScore）で選び、支配力の測り方だけが違う
+// （エリートは経験則、レジェンドは未確認プールからの確率）。
+// かつてレジェンドはここで「返され率」と「上がり間際の相手がいるときの重い蓋」を素朴な
+// 採点に加点していたが、勝率に寄与せず撤去した。返され率は評価軸そのものとして作り直してある。
 function chooseLeadPlay(idx, hand, candidates){
   if(cpuLevel==='normal') return chooseLeadPlay_normal(hand, candidates);
-  if(cpuLevel==='legend') return bestByHandShape(idx, hand, candidates);
-  return chooseLeadPlay_elite(hand, candidates);
+  return bestByHandShape(idx, hand, candidates);
 }
 
 function chooseFollowPlay_normal(hand, candidates){
@@ -5770,31 +5765,16 @@ function chooseFollowPlay_normal(hand, candidates){
   }
   return best;
 }
-function chooseFollowPlay_elite(hand, candidates){
-  if(candidates.length===0) return null;
-  let best=null;
-  for(const c of candidates){
-    const remainder = c.groupSize - c.cards.length;
-    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
-    if(remainder>0) score += remainder*2; // ペア・トリプルを崩す手はできるだけ避ける
-    if(best===null || score < best.score) best = Object.assign({}, c, {score});
-  }
-  if(best && hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed'){
-    return null; // 強い役を崩してまで返さず、あえて見送る
-  }
-  return best;
-}
-// リードと同じ構成。レジェンドは手札の形で選ぶが、「強い役を崩してまで返さず見送る」
-// というエリートの判断はそのまま引き継ぐ（見送りの是非自体は別途検討する）。
+// リードと同じ構成。見送るかどうかの判断だけ段階で分かれる：エリートは「大きな役を
+// 崩すくらいなら見送る」という決めうち、レジェンドは出した場合と見送った場合を同じ
+// 物差しで比べる（禁止上がりの番人は score 側に入っている）。
 function chooseFollowPlay(idx, hand, candidates){
   if(cpuLevel==='normal') return chooseFollowPlay_normal(hand, candidates);
-  if(cpuLevel==='legend'){
-    // レジェンドは「役を崩すなら見送る」という固定の決めうちではなく、出した場合と
-    // 見送った場合を同じ物差しで比べて決める（禁止上がりの番人は score 側に入っている）。
-    const best = bestByHandShape(idx, hand, candidates);
-    return shapePrefersHold(best) ? null : best;
-  }
-  return chooseFollowPlay_elite(hand, candidates);
+  const best = bestByHandShape(idx, hand, candidates);
+  if(cpuLevel==='legend') return shapePrefersHold(best) ? null : best;
+  if(best && hand.length>6 && best.groupSize>=3
+     && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed') return null;
+  return best;
 }
 
 // ---- ダウトモード専用のCPU判断（正直宣言／ブラフ／ダウト） ----
@@ -5967,7 +5947,7 @@ function cpuDeclareLead(idx, hand, groups){
 
 // ---- フォロー時の宣言 ----
 // 合法な正直フォローがあればそれを使う。ただし役（ペア・トリプル等）を崩してまで
-// 追随するのを避けたい場合（chooseFollowPlay_elite の温存ロジックと同じ判定）は、
+// 追随するのを避けたい場合（chooseFollowPlay と同じ見送り判断）は、
 // 同じランク・枚数を安全なブラフで宣言し、実物の代わりにジャンクを出して役を守る。
 // 合法な正直フォローが無いときも、パスの代わりにブラフで場をつなぐことがある。
 // legalDeclRanks は弱い順に返す。先頭から採るということは「場に通る中でいちばん安い名前を
@@ -6001,17 +5981,7 @@ function cpuDeclareFollow(idx, hand, groups){
   // エリート／レジェンドは「役を崩したくないので見送る」と判断したケースを自前で検出し、
   // 崩す代わりにブラフで凌げないか試す。見送り判断をここで再現する必要があるので、
   // 採点は chooseFollowPlay と同じものを段階ごとに使う。
-  let best=null;
-  if(cpuLevel==='legend'){
-    best = bestByHandShape(idx, hand, candidates);
-  } else {
-    for(const c of candidates){
-      const remainder = c.groupSize - c.cards.length;
-      let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
-      if(remainder>0) score += remainder*2;
-      if(best===null || score < best.score) best = Object.assign({}, c, {score});
-    }
-  }
+  const best = bestByHandShape(idx, hand, candidates);
   if(best===null) return bluffFollowFallback(idx, hand);
   // レジェンドは温存したいかどうかを手札の形の比較で決める。下位段階は従来どおりの決めうち。
   const wantsToPreserve = (cpuLevel==='legend')
