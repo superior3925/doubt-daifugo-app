@@ -1233,7 +1233,7 @@
         <div class="cpu-level-list">
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="normal" checked><div><div class="rule-label">ノーマル</div><div class="rule-desc">ルールは把握しているが、出せるカードがあれば深く考えずに出す入門者タイプ。</div></div></label>
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="elite"><div><div class="rule-label">エリート</div><div class="rule-desc">捨て札などから他家の手札を確率的に推測し、役を温存しつつウソとダウトを仕掛けてくる中級者。</div></div></label>
-          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="legend"><div><div class="rule-label">レジェンド</div><div class="rule-desc">エリートの読みに加え、手札を「あと何手で捌けるか」で組み立てて上がり筋を作り、対戦中に各プレイヤーの正直さを学習して疑い方を変えてくる最強タイプ。</div></div></label>
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="legend"><div><div class="rule-label">レジェンド</div><div class="rule-desc">エリートの読みに加え、手札を「あと何手で捌けるか」で組み立てて上がり筋を作り、特殊カードも狙って撃ち、対戦中に各プレイヤーの正直さを学習して疑い方を変えてくる最強タイプ。</div></div></label>
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="random"><div><div class="rule-label">ランダム</div><div class="rule-desc">開始時に上記3つから抽選します（連戦中は同じ強さのまま）。</div></div></label>
         </div>
       </div>
@@ -3022,8 +3022,65 @@ function chaosConfirmActivate(cardId){
     + '<button class="action play" type="button" onclick="chaosActivate(\''+escapeHtml(card.id)+'\')">発動する</button>'
     + '<button class="restart" type="button" onclick="closeHistoryModal()">やめる</button></div>');
 }
-// CPUの発動判断（暫定）。手札に腐らせないことだけを狙った控えめなヒューリスティックで、
-// カードごとの戦術的な読みはフェーズ4のCPU実装で詰める。
+// ---- レジェンド専用：特殊カードを「いま撃つ価値」で採点する ----
+// 下位2段階は局面を一切見ずに、使える札から等確率で1枚選んで撃つ（手札に腐らせない
+// ことだけを狙った暫定の挙動）。レジェンドは1枚ずつ状況に照らして採点し、いちばん価値の
+// 高い札が閾値を超えたときだけ撃つ。単位は handShapeScore と揃えてある（手数1つぶん＝10）。
+const CHAOS_USE_THRESHOLD = 8;
+function chaosCardValue(seat, type){
+  const hand = hands[seat] || [];
+  const mine = hand.length;
+  const opps = activePlayers().filter(i=>i!==seat);
+  const oppSizes = opps.map(i=>hands[i].length);
+  const minOpp = oppSizes.length ? Math.min.apply(null, oppSizes) : 99;
+  const avgOpp = oppSizes.length ? oppSizes.reduce((a,b)=>a+b,0)/oppSizes.length : 0;
+  const myOuts = outs[seat] || 0;
+  // 「弱い札」＝いまの強さ順で下から5段ぶん。革命中かどうかは effStrength が吸収する。
+  const weak = hand.filter(c=>c.rank!=='JOKER' && effStrength(c.rank)<=4).length;
+  const canPlay = hasHonestPlay(seat);
+  switch(type){
+    // 場をランダムな札に変える。自分が出せない形で詰まっているときの脱出札。しばりも消える。
+    case 'hachiware': return canPlay ? 2 : 14;
+    // アウト3で自動発動する保険。手番を使って撃つのは、その保険を自分から捨てるのに等しい。
+    case 'shinimasen': return 1;
+    // 1枚押し付けて手札を減らしつつ、相手の特殊カードも1枚削る。上がられそうな相手ほど効く。
+    case 'kinoko': return 10 + (minOpp<=3 ? 6 : 0);
+    // ダウトの代わりに撃つ。外してもアウトも休みも無いので、疑う価値がある場なら撃ち得。
+    case 'katerukayo': return 16;
+    // 必ず場が流れて自分の番が続く＝主導権をまるごと取れる。出せる手がある前提。
+    case 'orenoTurn': return 18;
+    // 手札が見えるようになるが、CPUはその情報を判断に使っていないので価値がない。
+    case 'mienai': return 0;
+    // 全員の手札を集めて配り直す。自分の手札が相手より重いときだけ得。
+    case 'irekawari': return (mine - avgOpp) * 3;
+    // 札を出したあと全員に1枚ずつ配る＝人数ぶん手札が減る。相手が多いほど効く。
+    case 'yoroshiku': return 6 + opps.length * 4;
+    // 手札がまるごと2段強くなる。弱い札を多く抱えているほど支配力が跳ね上がる。
+    // 革命中は逆に弱くなるので撃たない。
+    case 'ikiru': return revolution ? 2 : (10 + weak*1.5);
+    // 全員から最強札を1枚ずつ奪う。枚数は増えるが、増える分はすべて支配札。
+    // ただし上がり間際に枚数を増やすのは損。
+    case 'shutou': return mine<=4 ? 4 : (6 + opps.length*3);
+    // 4が4枚増える。枚数は増えるが、まとめて出せる大きな役と4止めの material になる。
+    case 'genkai': return countOfRank(hand,'4')>0 ? 12 : 4;
+    // 手札を2枚まで表向きに捨てられる（アウトを抱えているときだけ発動可）。
+    case 'tsuree': return 12;
+    // 全員2枚ずつ捨て、自分のアウトが1減る。残り2枚以下の相手がいると、その相手を
+    // そのまま上がらせてしまうので絶対に撃たない。逆に自分が2枚以下なら自分が吐き切れる。
+    case 'sensou':
+      if(mine<=2 && minOpp>2) return 40;
+      if(minOpp<=2) return -40;
+      return 8 + myOuts*6;
+    // 手札最少の相手を1トリック止める。上がられる直前ほど価値が高い。
+    case 'funeorio': return minOpp<=2 ? 22 : (minOpp<=4 ? 12 : 4);
+    // 強制革命に加えて自分の最弱2枚が最強になる。弱い札を抱えているほど得。
+    case 'jakusha': return 6 + weak*2;
+    // アウトを配りつつ場の枚数ぶん捨ててパスになる。どうせ出せない手番の始末に向く。
+    case 'ottotto': return canPlay ? 4 : 14;
+  }
+  return 0;   // 自動発動専用（お前さぁ…疲れてんだよ／馬鹿野郎ーっ）などは自分からは撃たない
+}
+// CPUの発動判断。レジェンド以外は、手札に腐らせないことだけを狙った控えめな確率動作。
 function cpuMaybeUseChaos(idx){
   if(!isChaosMode()) return false;
   const hand = chaosHandOf(idx);
@@ -3037,6 +3094,18 @@ function cpuMaybeUseChaos(idx){
     }
   }
   if(!usable.length) return false;
+  if(cpuLevel==='legend'){
+    let best=null, bestV=-Infinity;
+    for(const c of usable){
+      const v = chaosCardValue(idx, c.type);
+      if(v>bestV){ bestV=v; best=c; }
+    }
+    // 上限まで抱えていると、温存してもこれ以上引けず腐るだけなので基準を下げる。
+    const threshold = (hand.length>=CHAOS_MAX_HAND) ? CHAOS_USE_THRESHOLD*0.4 : CHAOS_USE_THRESHOLD;
+    if(!best || bestV < threshold) return false;
+    chaosUseCard(idx, best);
+    return true;
+  }
   const p = (hand.length>=CHAOS_MAX_HAND) ? 0.5 : 0.18;
   if(Math.random()>=p) return false;
   chaosUseCard(idx, usable[Math.floor(Math.random()*usable.length)]);
@@ -3675,9 +3744,10 @@ function renderStatsBody(){
 // legend … eliteの全機能に加えて、手を「出したあとの手札の形」で選ぶ（handShapeScore）。
 //           あと何手で吐き切れるか＝手数と、そのうち何手が場を取れるか＝支配力の2軸で測り、
 //           役を割らずに単騎を処分し、終盤の鍵になる強い札を最後まで残す。伏せ札の選び方も
-//           同じ物差しで決める。さらに、そのゲーム中に学習した「その人はダウトされたとき
-//           どれくらい正直だったか」で確率を補正し（legendAdjustedTruthProb）、7渡しの
-//           相手選びと12ボンバーの指定を脅威の大きい相手に合わせる。
+//           同じ物差しで決める。カオスの特殊カードも局面に照らして採点し（chaosCardValue）、
+//           価値の高い1枚だけを狙って撃つ。さらに、そのゲーム中に学習した「その人はダウト
+//           されたときどれくらい正直だったか」で確率を補正し（legendAdjustedTruthProb）、
+//           7渡しの相手選びと12ボンバーの指定を脅威の大きい相手に合わせる。
 //
 // かつてlegendには他にも上積みがあった（ダウト閾値を上げて踏み込む・ブラフ頻度を上げる・
 // 「返され率」や数しばりの先読みで手を選ぶ）が、自己対戦で測ると有害または誤差内で、
@@ -5774,8 +5844,62 @@ const BLUFF_TRIGGER_RANKS = [
   {rank:'5', ruleKey:'fiveSkip', count:()=>Math.min(2, Math.max(1, activePlayers().length-1))},
   {rank:'10', ruleKey:'tenDiscard', count:()=>1}
 ];
+// ---- レジェンド専用：ブラフを撃つかどうかを期待値で決める ----
+// ブラフの得（手札が捌けること＋横取りする効果）と損（見破られたらアウト＋2トリック休み、
+// 出した札も手札に戻る）を、疑われる確率で秤にかける。
+//
+// 使いどころは慎重に選ぶこと。「期待値が正なら撃つ」と頻度そのものを期待値に任せる形は
+// 自己対戦で明確に悪化した（-0.058 → +0.073）。疑われる確率の見積りが、実測の露見率に
+// 対して楽観的すぎるためで、慎重側に振っても改善しなかった（doubtBaseを0.25/0.40に
+// 上げるとむしろ +0.168 / +0.248 まで悪化した）。撃つ頻度は固定確率のまま据え置き、
+// この期待値は「撃つと決めたあと、どの機会を選ぶか」の比較にだけ使う。それだと効く
+// （リードのトリガー選びに使って -0.058 → -0.152）。
+// 重みは SHAPE_W と同じくオブジェクトにまとめ、arena.js から掃引できるようにしてある。
+const BLUFF_W = {
+  cost:        26,   // 見破られたときの損（アウト0のとき）
+  honestBonus:  6,   // ジョーカー代用で結果的に正直＝むしろダウトを誘い込める
+  followValue:  6,   // パスせず場を取り返せることの価値
+  doubtBase: 0.10,   // 動機の薄い宣言でも相手ひとりが疑ってくる確率
+  doubtStakes: 0.06  // 動機1つあたりの上乗せ
+};
+// 横取りできる効果の価値。8切りは主導権をまるごと取れるので飛び抜けて高い。
+const BLUFF_EFFECT_VALUE = {'8':16, '7':10, '10':8, 'Q':8, '5':6};
+function bluffCaughtCost(seat){
+  const o = outs[seat]||0;
+  // アウトは3つで即敗北。すでに抱えているほど1つぶんの重みが跳ね上がる。
+  return BLUFF_W.cost * (o===0 ? 1 : (o===1 ? 2.2 : 5));
+}
+// この宣言をしたら疑われるか。相手の視点そのものは再現できないので、実際のダウト判断が
+// 何を見ているか（動機の強さ＝declarationStakes、相手のアウト数、休み中かどうか）と
+// 同じ形で近似する。「自分ならこれを疑うか」を考えるのと同じ発想。
+function estimateDoubtChanceAgainst(seat, declRank, count){
+  const stakes = declarationStakes({rank: declRank, count: count, owner: seat, pendingClear: null});
+  const per = Math.min(0.9, BLUFF_W.doubtBase + stakes*BLUFF_W.doubtStakes);
+  let none = 1;
+  for(const o of activePlayers()){
+    if(o===seat) continue;
+    if(sitOutTricks[o]>0) continue;              // 休み中の相手はダウトしてこない
+    none *= 1 - (outs[o]>=2 ? per*0.35 : per);   // アウト2の相手は自分が飛ぶので慎重になる
+  }
+  return 1-none;
+}
+// ブラフの期待値。正なら撃つ価値がある。手札が捌けたぶんの得は handShapeScore で測るので、
+// 通常の手と同じ物差しの上で比べられる。
+function bluffExpectedValue(seat, hand, decl, actual, effectBonus){
+  const table = buildBeatTable(seat);
+  const ids = new Set(actual.map(c=>c.id));
+  const rest = hand.filter(c=>!ids.has(c.id));
+  const gain = (handShapeScore(hand, table) - handShapeScore(rest, table)) + (effectBonus||0);
+  // ジョーカーを代役に使った結果、宣言が本当になっていることがある。この場合ダウトされても
+  // 失敗するので、損はゼロどころか相手にアウトを押し付けられる。
+  if(isDeclarationTruthful(decl, actual)) return gain + BLUFF_W.honestBonus;
+  const p = estimateDoubtChanceAgainst(seat, wildcardAwareRank(decl), decl.length);
+  return gain*(1-p) - bluffCaughtCost(seat)*p;
+}
+
 function bluffLeadTriggerOpportunity(idx, hand){
   if(outs[idx]>=2) return null;
+  let best = null, bestEv = -Infinity;
   for(const t of BLUFF_TRIGGER_RANKS){
     if(!rules[t.ruleKey]) continue;
     if(countOfRank(hand, t.rank)>0) continue; // 本当に持っているなら正直に出せばいい
@@ -5786,9 +5910,13 @@ function bluffLeadTriggerOpportunity(idx, hand){
     if(!decl) continue;
     const actual = pickPlayCards(hand, count, {seat: idx});
     if(!actual) continue;
-    return {decl, actual};
+    // レジェンドは全トリガーを見比べ、期待値が最も高いものを選ぶ（下位段階は
+    // 従来どおり、先に見つかった機会をそのまま使う）。
+    if(cpuLevel!=='legend') return {decl, actual};
+    const ev = bluffExpectedValue(idx, hand, decl, actual, BLUFF_EFFECT_VALUE[t.rank]||0);
+    if(ev > bestEv){ bestEv = ev; best = {decl, actual}; }
   }
-  return null;
+  return (cpuLevel==='legend' && bestEv <= 0) ? null : best;
 }
 function cpuDeclareLead(idx, hand, groups){
   const candidates = gatherLeadCandidates(hand, groups);
@@ -5796,6 +5924,9 @@ function cpuDeclareLead(idx, hand, groups){
   if(cpuLevel!=='normal'){
     // かつてレジェンドだけ0.45まで上げていたが、ブラフの撃ちすぎは咎める相手（＝ダウトを
     // する上位CPUや人間）に対して割に合わない。撃つこと自体は有効なので、頻度だけ戻す。
+    // 期待値で頻度そのものを決める形も試したが、自己対戦では明確に悪化した（下の
+    // bluffExpectedValue のコメント参照）。頻度は固定のまま、レジェンドは
+    // bluffLeadTriggerOpportunity の中で「どの機会を選ぶか」だけを期待値で決める。
     let chance = 0.3;
     if(outs[idx]===1) chance *= 0.6; // アウトを抱えたら博打の頻度を落とす
     if(Math.random()<chance){
@@ -5812,6 +5943,11 @@ function cpuDeclareLead(idx, hand, groups){
 // 追随するのを避けたい場合（chooseFollowPlay_elite の温存ロジックと同じ判定）は、
 // 同じランク・枚数を安全なブラフで宣言し、実物の代わりにジャンクを出して役を守る。
 // 合法な正直フォローが無いときも、パスの代わりにブラフで場をつなぐことがある。
+// legalDeclRanks は弱い順に返す。先頭から採るということは「場に通る中でいちばん安い名前を
+// 名乗る」＝いちばん疑われにくい宣言を選ぶということで、これが実測でも最良だった。
+// レジェンドにここで期待値を持ち込み「効果ランクを名乗って得を取りにいく」ようにしたところ、
+// 1回のブラフあたりの露見率が27%→42%へ跳ね上がり、総合成績も悪化した（-0.058→+0.073）。
+// 効果の得より、疑われないことのほうが価値が高い。全段階でこの素直な選び方を使う。
 function bluffFollowFallback(idx, hand){
   if(outs[idx]>=2) return null;
   // リード時と同じ理由で、レジェンド専用の高い頻度（0.6）は撤去してある。
@@ -5856,7 +5992,13 @@ function cpuDeclareFollow(idx, hand, groups){
     const decl = safeDeclSample(idx, best.rank, best.cards.length);
     if(decl){
       const actual = pickPlayCards(hand, best.cards.length, {excludeRank: best.rank, seat: idx});
-      if(actual) return {decl, actual};
+      // 役を守るためのブラフも博打であることに変わりはない。レジェンドは、守った役の
+      // 価値と見破られる損を比べたうえで撃つ（割に合わなければ素直に崩して出す）。
+      if(actual && (cpuLevel!=='legend'
+          || bluffExpectedValue(idx, hand, decl, actual, BLUFF_W.followValue) > 0)){
+        return {decl, actual};
+      }
+      if(actual && cpuLevel==='legend') return {decl: best.cards, actual: best.cards};
     }
   }
   return bluffFollowFallback(idx, hand);
