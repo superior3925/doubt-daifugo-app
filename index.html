@@ -1233,7 +1233,7 @@
         <div class="cpu-level-list">
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="normal" checked><div><div class="rule-label">ノーマル</div><div class="rule-desc">ルールは把握しているが、出せるカードがあれば深く考えずに出す入門者タイプ。</div></div></label>
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="elite"><div><div class="rule-label">エリート</div><div class="rule-desc">捨て札などから他家の手札を確率的に推測し、役を温存しつつウソとダウトを仕掛けてくる中級者。</div></div></label>
-          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="legend"><div><div class="rule-label">レジェンド</div><div class="rule-desc">エリートの読みに加え、対戦中に各プレイヤーの正直さを学習して疑い方を変え、渡す相手や没収するランクも狙って選ぶ最強タイプ。</div></div></label>
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="legend"><div><div class="rule-label">レジェンド</div><div class="rule-desc">エリートの読みに加え、手札を「あと何手で捌けるか」で組み立てて上がり筋を作り、対戦中に各プレイヤーの正直さを学習して疑い方を変えてくる最強タイプ。</div></div></label>
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="random"><div><div class="rule-label">ランダム</div><div class="rule-desc">開始時に上記3つから抽選します（連戦中は同じ強さのまま）。</div></div></label>
         </div>
       </div>
@@ -3672,7 +3672,10 @@ function renderStatsBody(){
 // elite  … 公開情報（自分の手札・表になった捨て札・場）だけから未確認の札を割り出し、
 //           宣言が額面どおりである確率を見積もってダウトの是非を決める。役を崩す手は避け、
 //           手札に無い効果ランクを名乗るブラフも仕掛ける。
-// legend … eliteの全機能に加えて、そのゲーム中に学習した「その人はダウトされたとき
+// legend … eliteの全機能に加えて、手を「出したあとの手札の形」で選ぶ（handShapeScore）。
+//           あと何手で吐き切れるか＝手数と、そのうち何手が場を取れるか＝支配力の2軸で測り、
+//           役を割らずに単騎を処分し、終盤の鍵になる強い札を最後まで残す。伏せ札の選び方も
+//           同じ物差しで決める。さらに、そのゲーム中に学習した「その人はダウトされたとき
 //           どれくらい正直だったか」で確率を補正し（legendAdjustedTruthProb）、7渡しの
 //           相手選びと12ボンバーの指定を脅威の大きい相手に合わせる。
 //
@@ -5162,8 +5165,8 @@ function estimateOpponentHasRank(idx, opp, rank){
 }
 // 「誰かがこのランクを持っていそうか」（estimateAnyOpponentHasRank）と「この手は返され
 // そうか」（estimateBeatRisk）はかつてここにあったが、唯一の利用先だったレジェンド専用の
-// 加点が自己対戦で無効と分かって撤去されたため、一緒に消してある。復活させる場合は
-// 重みを勘で置かず、scripts/arena.js で測ってから入れること。
+// 加点が自己対戦で無効と分かって撤去された。返され率の考え方自体は有効だったので、
+// 手札の形を評価する buildBeatTable / beatRiskOf として作り直してある（下のほう）。
 function estimateOpponentThreat(idx, opp){
   const topRank = orderReversed() ? '3' : '2';
   const strongProb = estimateOpponentHasRank(idx, opp, topRank) + (rules.jokers ? estimateOpponentHasRank(idx, opp, 'JOKER') : 0);
@@ -5241,8 +5244,35 @@ function safeDeclSample(idx, rank, count){
 // 手元に余裕のあるジョーカーがあれば優先して使う（結果的に正直宣言のまま成立し、
 // ダウトされても怖くない）。残りは最も弱い実カードで埋める。opts.excludeRankを
 // 指定すると、そのランクの実カードは温存目的で除外する（役を崩したくない場合用）。
+// レジェンドは opts.seat を受け取り、ジョーカー優先ではなく「出したあとの手札がいちばん
+// 捌けやすくなる組み合わせ」で伏せ札を選ぶ。ジョーカーを使えばダウトされても安全だが、
+// それは最強の支配札を捨てるということでもある。手数と支配力で測れば、その損得も
+// ほかの手と同じ土俵で比べられる。枚数は多くて数枚なので、1枚ずつ貪欲に選ぶ。
+function pickPlayCardsByShape(seat, hand, count, excludeRank){
+  const eligible = hand.filter(c=> !excludeRank || c.rank!==excludeRank);
+  if(eligible.length < count) return null;
+  const table = buildBeatTable(seat);
+  const chosen = new Set();
+  for(let k=0;k<count;k++){
+    let bestCard=null, bestScore=Infinity;
+    for(const c of eligible){
+      if(chosen.has(c.id)) continue;
+      const rest = hand.filter(x=> x.id!==c.id && !chosen.has(x.id));
+      const s = handShapeScore(rest, table);
+      if(s < bestScore){ bestScore = s; bestCard = c; }
+    }
+    if(!bestCard) return null;
+    chosen.add(bestCard.id);
+  }
+  return hand.filter(c=>chosen.has(c.id));
+}
 function pickPlayCards(hand, count, opts){
   const excludeRank = opts && opts.excludeRank;
+  const seat = opts && opts.seat;
+  if(cpuLevel==='legend' && typeof seat==='number'){
+    const byShape = pickPlayCardsByShape(seat, hand, count, excludeRank);
+    if(byShape) return byShape;
+  }
   const jokers = hand.filter(c=>c.rank==='JOKER');
   const rest = hand.filter(c=>c.rank!=='JOKER' && c.rank!==excludeRank);
   const useJokers = jokers.slice(0, count);
@@ -5535,6 +5565,78 @@ function gatherFollowCandidates(hand, groups){
   return out;
 }
 
+// ---- レジェンド専用：出したあとの「手札の形」で手を選ぶ ----
+// カード1枚ずつの強さを足す従来の採点では、役を割って単騎を増やす手と、単騎を処分して
+// 役を残す手がほとんど区別できない（実際そのせいで、通常モードでは3段階とも同じ強さだった）。
+// ここでは出したあとの手札そのものを2つの軸で測る。
+//   手数   … あと何回プレイすれば吐き切れるか。同じランクはまとめて1手で出せるので、
+//            ランクの種類数がそのまま手数になる。単騎が増えるほど不利。
+//   支配力 … そのうち何手が「場を取って主導権を握れる」見込みか。手数が少なくても
+//            全部弱ければ、場を取れないまま出せずに終わる。
+// 終盤の上がり筋（強い札を鍵として最後まで残す）は、この2軸から自然に出る。弱い組を先に
+// 処分したほうが残る手札の支配力が高いままになるので、鍵を温存する手が自動的に選ばれる。
+//
+// 既知の簡略化：革命や11バックで強さの順序が反転する手を選んだ場合でも、残り手札の評価は
+// 「反転前の順序」のままで行う。4枚出しやJ絡みは頻度が低いので、いまは追っていない。
+// 重みはオブジェクトに入れてある。scripts/arena.js から書き換えて総当たりで詰められる
+// ようにするため（勘で置いた定数を、対戦させずに信用しない）。
+const SHAPE_W = {
+  plays:   10,  // 手数が1つ増えることの重さ
+  control:  6,  // 主導権を握れる手1つぶんの価値
+  cards:    1   // 同じ形なら枚数が少ないほうが良い（同点の切り分け）
+};
+
+// 「そのランクより強い未確認札が何枚あるか」をランクごとに数えた表。候補ごとに未確認
+// プールを作り直すと重いので、1回の判断につき1度だけ作って使い回す。
+function buildBeatTable(idx){
+  const pool = unseenCardPool(idx);
+  const strengths = pool.map(c=>effStrength(c.rank));
+  const stronger = new Map();
+  for(const r of RANKS.concat(['JOKER'])){
+    const s = effStrength(r);
+    stronger.set(r, strengths.filter(v=>v>s).length);
+  }
+  return {poolSize: pool.length, stronger: stronger,
+          oppHandSizes: activePlayers().filter(i=>i!==idx).map(i=>hands[i].length)};
+}
+// その組を出したとき誰かに返される確率の粗い見積り。公開情報のみ（他家の手札は枚数しか
+// 見ない）。count枚出しは「同じ強いランクをcount枚まとめて」持っていないと返せないぶん
+// 通りやすいので、必要枚数の分だけ確率を掛けて効かせる（同ランク条件までは追わない近似）。
+function beatRiskOf(table, rank, count){
+  if(table.poolSize===0) return 0;
+  const strong = table.stronger.get(rank) || 0;
+  if(strong < count) return 0;
+  const p = strong / table.poolSize;
+  let noneCanBeat = 1;
+  for(const h of table.oppHandSizes){
+    if(h < count) continue;
+    const hasOne = 1 - Math.pow(1-p, h);
+    noneCanBeat *= (1 - Math.pow(hasOne, count));
+  }
+  return 1 - noneCanBeat;
+}
+// 手札の捌きやすさ。小さいほど良い。
+function handShapeScore(hand, table){
+  if(hand.length===0) return -1000;  // 上がり。ほかのどの手よりも優先される
+  const groups = groupByRank(hand);
+  const ranks = Object.keys(groups);
+  let control = 0;
+  for(const r of ranks) control += 1 - beatRiskOf(table, r, groups[r].length);
+  return ranks.length*SHAPE_W.plays - control*SHAPE_W.control + hand.length*SHAPE_W.cards;
+}
+function bestByHandShape(idx, hand, candidates){
+  if(candidates.length===0) return null;
+  const table = buildBeatTable(idx);
+  let best=null;
+  for(const c of candidates){
+    const ids = new Set(c.cards.map(x=>x.id));
+    const rest = hand.filter(x=>!ids.has(x.id));
+    const score = scoreWithTrapGuard(hand, c.rank, c.cards.length, handShapeScore(rest, table));
+    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  }
+  return best;
+}
+
 function chooseLeadPlay_normal(hand, candidates){
   let best=null;
   for(const c of candidates){
@@ -5552,13 +5654,13 @@ function chooseLeadPlay_elite(hand, candidates){
   }
   return best;
 }
-// エリートとレジェンドは同じ選び方を共有する。かつてレジェンドだけが「返され率」と
-// 「上がり間際の相手がいるときの重い蓋」を加点していたが、自己対戦で測ったところ
-// どちらも勝率に寄与せず、むしろわずかに足を引っ張っていたため撤去した
-// （測定手順は scripts/arena.js）。レジェンドの上積みはここではなく、
-// 手札の捌き方そのものを設計する層で行う。
+// ノーマルとエリートは「弱い手から出す」素朴な採点。レジェンドだけが、出したあとの
+// 手札の形（handShapeScore）で選ぶ。かつてレジェンドはここで「返され率」と「上がり間際の
+// 相手がいるときの重い蓋」を加点していたが、素朴な採点への継ぎ足しでは勝率に寄与せず
+// 撤去した。返され率は評価軸そのものとして作り直してある。
 function chooseLeadPlay(idx, hand, candidates){
   if(cpuLevel==='normal') return chooseLeadPlay_normal(hand, candidates);
+  if(cpuLevel==='legend') return bestByHandShape(idx, hand, candidates);
   return chooseLeadPlay_elite(hand, candidates);
 }
 
@@ -5585,11 +5687,16 @@ function chooseFollowPlay_elite(hand, candidates){
   }
   return best;
 }
-// リードと同じ理由で、フォローもエリートとレジェンドで共通にする。レジェンドだけが
-// 持っていた「数しばりが相手有利になりそうなら消極的に」の先読みは、自己対戦では
-// 一貫して逆効果だった（撤去すると差が縮む）ため外してある。
+// リードと同じ構成。レジェンドは手札の形で選ぶが、「強い役を崩してまで返さず見送る」
+// というエリートの判断はそのまま引き継ぐ（見送りの是非自体は別途検討する）。
 function chooseFollowPlay(idx, hand, candidates){
   if(cpuLevel==='normal') return chooseFollowPlay_normal(hand, candidates);
+  if(cpuLevel==='legend'){
+    const best = bestByHandShape(idx, hand, candidates);
+    if(best && hand.length>6 && best.groupSize>=3
+       && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed') return null;
+    return best;
+  }
   return chooseFollowPlay_elite(hand, candidates);
 }
 
@@ -5677,7 +5784,7 @@ function bluffLeadTriggerOpportunity(idx, hand){
     if(count > hand.length) continue;
     const decl = safeDeclSample(idx, t.rank, count);
     if(!decl) continue;
-    const actual = pickPlayCards(hand, count, {});
+    const actual = pickPlayCards(hand, count, {seat: idx});
     if(!actual) continue;
     return {decl, actual};
   }
@@ -5715,7 +5822,7 @@ function bluffFollowFallback(idx, hand){
   for(const r of legal){
     const decl = safeDeclSample(idx, r, field.count);
     if(!decl) continue;
-    const actual = pickPlayCards(hand, field.count, {});
+    const actual = pickPlayCards(hand, field.count, {seat: idx});
     if(!actual) continue;
     return {decl, actual};
   }
@@ -5728,15 +5835,19 @@ function cpuDeclareFollow(idx, hand, groups){
     if(chosen) return {decl: chosen.cards, actual: chosen.cards};
     return bluffFollowFallback(idx, hand);
   }
-  // エリート／レジェンドは、chooseFollowPlay_eliteが「役を崩したくないので見送る」と判断した
-  // ケースを自前で検出し、崩す代わりにブラフで凌げないか試す。採点は
-  // chooseFollowPlay_elite と同じ式にそろえてある（見送り判断もここで再現するため）。
+  // エリート／レジェンドは「役を崩したくないので見送る」と判断したケースを自前で検出し、
+  // 崩す代わりにブラフで凌げないか試す。見送り判断をここで再現する必要があるので、
+  // 採点は chooseFollowPlay と同じものを段階ごとに使う。
   let best=null;
-  for(const c of candidates){
-    const remainder = c.groupSize - c.cards.length;
-    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
-    if(remainder>0) score += remainder*2;
-    if(best===null || score < best.score) best = Object.assign({}, c, {score});
+  if(cpuLevel==='legend'){
+    best = bestByHandShape(idx, hand, candidates);
+  } else {
+    for(const c of candidates){
+      const remainder = c.groupSize - c.cards.length;
+      let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
+      if(remainder>0) score += remainder*2;
+      if(best===null || score < best.score) best = Object.assign({}, c, {score});
+    }
   }
   if(best===null) return bluffFollowFallback(idx, hand);
   const wantsToPreserve = hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed';
@@ -5744,7 +5855,7 @@ function cpuDeclareFollow(idx, hand, groups){
   if(outs[idx]<2){
     const decl = safeDeclSample(idx, best.rank, best.cards.length);
     if(decl){
-      const actual = pickPlayCards(hand, best.cards.length, {excludeRank: best.rank});
+      const actual = pickPlayCards(hand, best.cards.length, {excludeRank: best.rank, seat: idx});
       if(actual) return {decl, actual};
     }
   }
