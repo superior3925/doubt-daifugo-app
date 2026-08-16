@@ -1232,8 +1232,8 @@
         <div class="rule-column-title">CPUの強さ</div>
         <div class="cpu-level-list">
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="normal" checked><div><div class="rule-label">ノーマル</div><div class="rule-desc">ルールは把握しているが、出せるカードがあれば深く考えずに出す入門者タイプ。</div></div></label>
-          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="elite"><div><div class="rule-label">エリート</div><div class="rule-desc">ルールを完全把握。役や縛りを使いこなし、変則的なプレーも行う中級者。</div></div></label>
-          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="legend"><div><div class="rule-label">レジェンド</div><div class="rule-desc">捨て札などから他家の手札を確率的に推測し、駆け引きを仕掛けてくる最強タイプ。</div></div></label>
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="elite"><div><div class="rule-label">エリート</div><div class="rule-desc">捨て札などから他家の手札を確率的に推測し、役を温存しつつウソとダウトを仕掛けてくる中級者。</div></div></label>
+          <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="legend"><div><div class="rule-label">レジェンド</div><div class="rule-desc">エリートの読みに加え、対戦中に各プレイヤーの正直さを学習して疑い方を変え、渡す相手や没収するランクも狙って選ぶ最強タイプ。</div></div></label>
           <label class="rule-item cpu-level-item"><input type="radio" name="cpuLevelChoice" value="random"><div><div class="rule-label">ランダム</div><div class="rule-desc">開始時に上記3つから抽選します（連戦中は同じ強さのまま）。</div></div></label>
         </div>
       </div>
@@ -1926,6 +1926,23 @@ let chaosResumeSchedule = false;
 // 「馬鹿野郎ーっ!!誰を撃ってる!?」は札を新しく生み出すので、山札の枚数より総数が増える。
 // 「札が消えていないか」を検算するときの基準にするため、生成した枚数を数えておく。
 let chaosGeneratedCards = 0;
+// ---- カオスで崩れる「山札の構成」の追跡 ----
+// 通常なら山札の構成は固定（各面1枚＋ジョーカーn枚）で、CPUの推定器はこれを前提に
+// 「その面はもう残っていない＝その宣言はあり得ない」と断定できる。カオスの効果はこの
+// 前提を壊すが、壊し方は2種類あって扱いが分かれる。
+//  ・公開されたまま札が増える（つーかこれが限界＝全スートの4を手札に追加）
+//    → 何が何枚増えたかは全員が見ているので、台帳に足せば把握を保てる。
+//  ・伏せられた札の面が入れ替わる（生きるのは最高だ／八重歯／弱者の反撃）
+//    → 何が何に変わったかは誰にも追えない。以後そのゲームでは、公開情報から
+//      「あり得ない」と断定すること自体が原理的に不可能になる。
+// これを追わないと、正直な宣言をウソと誤断定してCPUが確定で失敗するダウトを撃つ。
+let chaosDeckExtra = null;        // Map<faceKey, 追加枚数>（公開情報だけで作る）
+let chaosDeckUncertain = false;   // 伏せ札の面の入れ替えが起きたか
+function chaosNoteDeckAdd(card){
+  if(!chaosDeckExtra) chaosDeckExtra = new Map();
+  const k = cardFaceKey(card);
+  chaosDeckExtra.set(k, (chaosDeckExtra.get(k)||0) + 1);
+}
 // その席がいま「ウソをつけない」状態か（＝伏せずに公開で出す）。
 function chaosHonestForced(seat){
   return chaosNantokaSeat===seat || !!(chaosOrenoTurn && chaosOrenoTurn.seat===seat);
@@ -2063,6 +2080,8 @@ function resetChaosState(){
   chaosBakayarouTarget = null;
   chaosResumeSchedule = false;
   chaosGeneratedCards = 0;
+  chaosDeckExtra = null;
+  chaosDeckUncertain = false;
   chaosGiveDepth = 0;
   clearChaosResend();
   inChaosEffect = 0;
@@ -2420,8 +2439,12 @@ function chaosYoroshiku(seat, cardIds){
 // 揃い、そのまま8枚出し・12枚出しができる。札を生み出すので生成枚数として数える。
 function chaosGenkai(seat){
   SUITS.forEach(s=>{
-    hands[seat].push({rank:'4', suit:s, id:mintCardId()});
+    const card = {rank:'4', suit:s, id:mintCardId()};
+    hands[seat].push(card);
     chaosGeneratedCards++;
+    // 何が何枚増えたかは発動が公開されているので全員に分かる。山札の台帳に足しておけば、
+    // 「4はもう場に出たはずだ」といった誤った断定を防げる。
+    chaosNoteDeckAdd(card);
   });
   log(playerName(seat)+'の手札に全スートの4が加わった（手札'+hands[seat].length+'枚）');
   chaosSay('手札に4が4枚加わった（手札'+hands[seat].length+'枚に）');
@@ -2612,6 +2635,9 @@ function chaosHachiware(seat){
   // という仕様は「同じランクがN枚」であることまで含む）。スートは重複しないように
   // 配り分ける（4枚を超えるときだけ、やむを得ず巡回して重複させる）。
   const face = chaosRandomFace();
+  // 伏せられていた札の面が別の面に化ける。元が何だったかは誰も見ていないので、
+  // 以後このゲームでは山札の構成を公開情報から確定できない。
+  chaosDeckUncertain = true;
   const suits = SUITS.slice();
   for(let i=suits.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [suits[i],suits[j]]=[suits[j],suits[i]]; }
   field.actual.forEach((c,i)=>{
@@ -2643,6 +2669,8 @@ function chaosHachiware(seat){
 // 自分の手札をすべて2つ強くする。上limitをはみ出した札（Aと2）はジョーカーになり、
 // ジョーカーは変化しない。革命中だけは逆に2つ弱くし、はみ出した札（3と4）がジョーカーになる。
 function chaosIkiru(seat){
+  // 手札の中身は非公開のまま面だけがずれる＝何が何に変わったかは他家に追えない。
+  chaosDeckUncertain = true;
   hands[seat].forEach(c=>{
     if(c.rank==='JOKER') return;
     const i = RANKS.indexOf(c.rank);
@@ -2873,6 +2901,8 @@ function chaosJakusha(seat){
     picked.push(pick);
     pool.splice(pool.indexOf(pick), 1);
   }
+  // 非公開の手札の面が変わるので、ここでも山札の構成は追えなくなる。
+  chaosDeckUncertain = true;
   picked.forEach(c=>{ c.rank = target; });
   log(playerName(seat)+'の最も弱い'+picked.length+'枚が'+target+'に変わった');
   chaosSay('最も弱い'+picked.length+'枚が最強の'+target+'に変わった');
@@ -3637,6 +3667,19 @@ function renderStatsBody(){
     + '<button class="score-reset-btn" type="button" onclick="if(confirm(\'通算成績をすべて消去します。よろしいですか？\'))resetCareerStats()">通算成績をリセット</button>';
 }
 
+// ---- CPUの強さ3段階 ----
+// normal … 素朴な貪欲法。出せる中でいちばん弱い手を出すだけで、ウソもダウトもほぼしない。
+// elite  … 公開情報（自分の手札・表になった捨て札・場）だけから未確認の札を割り出し、
+//           宣言が額面どおりである確率を見積もってダウトの是非を決める。役を崩す手は避け、
+//           手札に無い効果ランクを名乗るブラフも仕掛ける。
+// legend … eliteの全機能に加えて、そのゲーム中に学習した「その人はダウトされたとき
+//           どれくらい正直だったか」で確率を補正し（legendAdjustedTruthProb）、7渡しの
+//           相手選びと12ボンバーの指定を脅威の大きい相手に合わせる。
+//
+// かつてlegendには他にも上積みがあった（ダウト閾値を上げて踏み込む・ブラフ頻度を上げる・
+// 「返され率」や数しばりの先読みで手を選ぶ）が、自己対戦で測ると有害または誤差内で、
+// 総合ではeliteに負けていた。数字が出なかったものはすべて撤去してある。
+// 段階を増減・調整するときは、勘で定数をいじらず scripts/arena.js で対戦させて確かめること。
 let cpuLevelSetting = 'normal';
 let cpuLevel = 'normal';
 const CPU_LEVEL_LABELS = {normal:'ノーマル', elite:'エリート', legend:'レジェンド'};
@@ -3816,9 +3859,10 @@ function mintCardId(){ return 'k'+(++cardUidSeq); }
 // （どのジョーカーかを言い当てることに意味はないため）。
 function cardFaceKey(card){ return card.rank==='JOKER' ? 'JOKER' : (card.suit+'_'+card.rank); }
 // 山札に存在するその面の総枚数。ジョーカー以外は各1枚。
+// カオスで公開されたまま増えた分（chaosDeckExtra）はここに上乗せする。
 function faceTotalInDeck(faceKey){
-  if(faceKey!=='JOKER') return 1;
-  return rules.jokers ? (rules.jokerCount||2) : 0;
+  const base = (faceKey!=='JOKER') ? 1 : (rules.jokers ? (rules.jokerCount||2) : 0);
+  return base + (chaosDeckExtra ? (chaosDeckExtra.get(faceKey)||0) : 0);
 }
 function buildDeck(){
   const deck=[];
@@ -5067,6 +5111,16 @@ function fullDeckReference(){
     const n = rules.jokerCount || 2;
     for(let i=1;i<=n;i++) deck.push({rank:'JOKER', suit:null});
   }
+  // カオスで公開されたまま増えた札も未確認プールの母数に入れる（faceKeyは suit+'_'+rank。
+  // スートにもランクにもアンダースコアは入らないので、そのまま分解できる）。
+  if(chaosDeckExtra){
+    chaosDeckExtra.forEach((count, key)=>{
+      const parts = key.split('_');
+      for(let i=0;i<count;i++){
+        deck.push(key==='JOKER' ? {rank:'JOKER', suit:null} : {rank:parts[1], suit:parts[0]});
+      }
+    });
+  }
   return deck;
 }
 // idx から見て「中身が分かっている」実カードのid。ダウトモードでは、伏せられたままの札
@@ -5106,26 +5160,10 @@ function estimateOpponentHasRank(idx, opp, rank){
   const pThisCardIsRank = rankUnseen/pool.length;
   return 1 - Math.pow(1-pThisCardIsRank, hands[opp].length);
 }
-function estimateAnyOpponentHasRank(idx, rank){
-  const opponents = activePlayers().filter(i=>i!==idx);
-  let probNone = 1;
-  for(const opp of opponents) probNone *= (1-estimateOpponentHasRank(idx, opp, rank));
-  return 1-probNone;
-}
-function estimateBeatRisk(idx, rank, count){
-  const pool = unseenCardPool(idx);
-  if(pool.length===0) return 0;
-  const strongerCount = pool.filter(c=> c.rank==='JOKER' || effStrength(c.rank) > effStrength(rank)).length;
-  if(strongerCount===0) return 0;
-  const pStrongCard = strongerCount/pool.length;
-  const opponents = activePlayers().filter(i=>i!==idx);
-  let probNoneCanBeat = 1;
-  for(const opp of opponents){
-    const pOppHasEnough = 1 - Math.pow(1-pStrongCard, hands[opp].length);
-    probNoneCanBeat *= (1-pOppHasEnough);
-  }
-  return 1-probNoneCanBeat;
-}
+// 「誰かがこのランクを持っていそうか」（estimateAnyOpponentHasRank）と「この手は返され
+// そうか」（estimateBeatRisk）はかつてここにあったが、唯一の利用先だったレジェンド専用の
+// 加点が自己対戦で無効と分かって撤去されたため、一緒に消してある。復活させる場合は
+// 重みを勘で置かず、scripts/arena.js で測ってから入れること。
 function estimateOpponentThreat(idx, opp){
   const topRank = orderReversed() ? '3' : '2';
   const strongProb = estimateOpponentHasRank(idx, opp, topRank) + (rules.jokers ? estimateOpponentHasRank(idx, opp, 'JOKER') : 0);
@@ -5158,6 +5196,10 @@ function addOut(idx, reason){
 // （isDeclarationTruthfulの代用ルールと同じ考え方）。実際に必要な代役ジョーカー数が、
 // まだ所在の分からないジョーカーの残数を超えて初めて「不可能」と断定できる。
 function declarationImpossible(idx, declCards){
+  // カオスで伏せ札の面が入れ替わったあとは、山札の構成そのものが公開情報から追えない。
+  // 「あり得ない」は証明を要する主張なので、この状態では一切断定しない。断定すると
+  // エリート以上は必ずダウトするため、誤断定はそのまま確定で失敗するダウトになる。
+  if(chaosDeckUncertain) return false;
   const seen = seenFaceCounts(idx);
   const declaredJokers = declCards.filter(d=>d.rank==='JOKER').length;
   const substitutesNeeded = declCards.filter(d=> d.rank!=='JOKER' && (seen.get(cardFaceKey(d))||0)>0).length;
@@ -5223,7 +5265,10 @@ function estimateDeclarationTruthProbability(doubterIdx, declCards){
     const key = cardFaceKey(d);
     // 「その面の札が山札に何枚あって、そのうち何枚を自分が見たか」で判定する。ジョーカーが
     // 2枚あって1枚しか見えていなければ、出し手がもう1枚を持っている可能性は残る。
-    if(faceTotalInDeck(key) - (seen.get(key)||0) <= 0){
+    // 面の入れ替えが起きたあとは「その面はもう残っていない」が成り立たない（伏せ札が
+    // 別の面に化けている可能性が常にある）ので、この反証は使わない。使うと正直な宣言まで
+    // ウソ扱いになる。
+    if(!chaosDeckUncertain && faceTotalInDeck(key) - (seen.get(key)||0) <= 0){
       // 出し手の手元には無いと分かっている＝ジョーカー代用でのみ真になり得る。
       // 簡略化のため、代用が効いている確率相当の低い一定値として見積もる。
       logProbTrue += Math.log(0.15);
@@ -5507,24 +5552,14 @@ function chooseLeadPlay_elite(hand, candidates){
   }
   return best;
 }
-function chooseLeadPlay_legend(idx, hand, candidates){
-  // 残り2枚以下の相手がいる状況で弱い単騎をリードすると、そのまま相手の上がりの
-  // 起点になりやすい。複数枚や強めのリードで蓋をする。
-  const oppNearOut = activePlayers().some(i=>i!==idx && hands[i].length<=2);
-  let best=null;
-  for(const c of candidates){
-    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
-    if(c.cards.length===1) score -= 5;
-    score += estimateBeatRisk(idx, c.rank, c.cards.length) * 4;
-    if(oppNearOut && c.cards.length===1 && c.es<=6) score += 10;
-    if(best===null || score < best.score) best = Object.assign({}, c, {score});
-  }
-  return best;
-}
+// エリートとレジェンドは同じ選び方を共有する。かつてレジェンドだけが「返され率」と
+// 「上がり間際の相手がいるときの重い蓋」を加点していたが、自己対戦で測ったところ
+// どちらも勝率に寄与せず、むしろわずかに足を引っ張っていたため撤去した
+// （測定手順は scripts/arena.js）。レジェンドの上積みはここではなく、
+// 手札の捌き方そのものを設計する層で行う。
 function chooseLeadPlay(idx, hand, candidates){
-  if(cpuLevel==='elite') return chooseLeadPlay_elite(hand, candidates);
-  if(cpuLevel==='legend') return chooseLeadPlay_legend(idx, hand, candidates);
-  return chooseLeadPlay_normal(hand, candidates);
+  if(cpuLevel==='normal') return chooseLeadPlay_normal(hand, candidates);
+  return chooseLeadPlay_elite(hand, candidates);
 }
 
 function chooseFollowPlay_normal(hand, candidates){
@@ -5550,36 +5585,12 @@ function chooseFollowPlay_elite(hand, candidates){
   }
   return best;
 }
-function chooseFollowPlay_legend(idx, hand, candidates){
-  if(candidates.length===0) return null;
-  let best=null;
-  for(const c of candidates){
-    const remainder = c.groupSize - c.cards.length;
-    let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
-    if(remainder>0) score += remainder*2;
-    if(rules.numberLock && !numberLock && field && c.rank!=='JOKER' && field.rank!=='JOKER'
-       && effStrength(c.rank)===effStrength(field.rank)+1){
-      const nextIdxGuess = strengthIndex(c.rank) + (orderReversed() ? -1 : 1);
-      const nextRankGuess = (nextIdxGuess>=0 && nextIdxGuess<RANKS.length) ? RANKS[nextIdxGuess] : null;
-      if(nextRankGuess){
-        const selfHasNext = hand.some(h=>h.rank===nextRankGuess && !c.cards.includes(h));
-        if(!selfHasNext){
-          score += estimateAnyOpponentHasRank(idx, nextRankGuess) * 6; // 数しばりが相手有利になりそうなら消極的に
-        }
-      }
-    }
-    score += estimateBeatRisk(idx, c.rank, c.cards.length) * 4;
-    if(best===null || score < best.score) best = Object.assign({}, c, {score});
-  }
-  if(best && hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed'){
-    return null;
-  }
-  return best;
-}
+// リードと同じ理由で、フォローもエリートとレジェンドで共通にする。レジェンドだけが
+// 持っていた「数しばりが相手有利になりそうなら消極的に」の先読みは、自己対戦では
+// 一貫して逆効果だった（撤去すると差が縮む）ため外してある。
 function chooseFollowPlay(idx, hand, candidates){
-  if(cpuLevel==='elite') return chooseFollowPlay_elite(hand, candidates);
-  if(cpuLevel==='legend') return chooseFollowPlay_legend(idx, hand, candidates);
-  return chooseFollowPlay_normal(hand, candidates);
+  if(cpuLevel==='normal') return chooseFollowPlay_normal(hand, candidates);
+  return chooseFollowPlay_elite(hand, candidates);
 }
 
 // ---- ダウトモード専用のCPU判断（正直宣言／ブラフ／ダウト） ----
@@ -5621,8 +5632,14 @@ function declarationStakes(f){
 //   ステップ3：動機のある宣言は「額面通りである確率」の見積もりと比べてダウトする。
 //              動機が強いほど（＝見逃すコストが高いほど）閾値を上げて踏み込む。
 //              レジェンドはさらに、このゲーム中に学習した「その人はダウトされた時どれくらい
-//              正直だったか」の統計で確率を補正し、出し手がアウト2なら即退場も狙いにいく。
+//              正直だったか」の統計で確率を補正する。
 //   自分のアウトが2ならこれ以上のリスクを避け、閾値をぐっと下げる（確実な時しか賭けない）。
+//
+// ここの踏み込み具合は、かつてレジェンドだけ大きく強気に振ってあった（閾値0.30・
+// 低stakes時0.25・出し手がアウト2ならさらに+0.08で追撃）。自己対戦で測ったところ、
+// これが最大の弱点だった：ダウト実行率は1.5倍になる一方で成功率は74%→63%に落ち、
+// 失敗ダウトのアウトで自滅して3アウト失格が12倍になっていた。強気設定を捨てて
+// エリートと同じ踏み込みに揃えてある。
 function cpuChooseDoubt(idx){
   if(declarationImpossible(idx, field.cards)){
     return cpuLevel==='normal' ? Math.random()<0.5 : true;
@@ -5631,12 +5648,8 @@ function cpuChooseDoubt(idx){
   const baseProb = estimateDeclarationTruthProbability(idx, field.cards);
   const truthProb = cpuLevel==='legend' ? legendAdjustedTruthProb(field.owner, baseProb) : baseProb;
   const stakes = declarationStakes(field);
-  if(stakes < 0.9){
-    const evidenceDoubtChance = cpuLevel==='legend' ? 0.25 : 0.15;
-    return truthProb < 0.3 && Math.random() < evidenceDoubtChance;
-  }
-  let threshold = (cpuLevel==='legend' ? 0.30 : 0.22) + Math.min(0.35, stakes*0.08);
-  if(cpuLevel==='legend' && outs[field.owner]>=2) threshold += 0.08;
+  if(stakes < 0.9) return truthProb < 0.3 && Math.random() < 0.15;
+  let threshold = 0.22 + Math.min(0.35, stakes*0.08);
   if(outs[idx]>=2) threshold *= 0.35;
   return truthProb < threshold;
 }
@@ -5674,7 +5687,9 @@ function cpuDeclareLead(idx, hand, groups){
   const candidates = gatherLeadCandidates(hand, groups);
   const honest = candidates.length ? chooseLeadPlay(idx, hand, candidates) : null;
   if(cpuLevel!=='normal'){
-    let chance = cpuLevel==='legend' ? 0.45 : 0.3;
+    // かつてレジェンドだけ0.45まで上げていたが、ブラフの撃ちすぎは咎める相手（＝ダウトを
+    // する上位CPUや人間）に対して割に合わない。撃つこと自体は有効なので、頻度だけ戻す。
+    let chance = 0.3;
     if(outs[idx]===1) chance *= 0.6; // アウトを抱えたら博打の頻度を落とす
     if(Math.random()<chance){
       const bluff = bluffLeadTriggerOpportunity(idx, hand);
@@ -5687,12 +5702,13 @@ function cpuDeclareLead(idx, hand, groups){
 
 // ---- フォロー時の宣言 ----
 // 合法な正直フォローがあればそれを使う。ただし役（ペア・トリプル等）を崩してまで
-// 追随するのを避けたい場合（既存のchooseFollowPlay_elite/_legendの温存ロジックと同じ判定）は、
+// 追随するのを避けたい場合（chooseFollowPlay_elite の温存ロジックと同じ判定）は、
 // 同じランク・枚数を安全なブラフで宣言し、実物の代わりにジャンクを出して役を守る。
 // 合法な正直フォローが無いときも、パスの代わりにブラフで場をつなぐことがある。
 function bluffFollowFallback(idx, hand){
   if(outs[idx]>=2) return null;
-  let chance = cpuLevel==='legend' ? 0.6 : (cpuLevel==='elite' ? 0.45 : 0.12);
+  // リード時と同じ理由で、レジェンド専用の高い頻度（0.6）は撤去してある。
+  let chance = (cpuLevel==='normal') ? 0.12 : 0.45;
   if(outs[idx]===1) chance *= 0.6; // アウトを抱えたら博打の頻度を落とす
   if(Math.random()>=chance) return null;
   const legal = legalDeclRanks(field.count);
@@ -5712,25 +5728,14 @@ function cpuDeclareFollow(idx, hand, groups){
     if(chosen) return {decl: chosen.cards, actual: chosen.cards};
     return bluffFollowFallback(idx, hand);
   }
-  // エリート／レジェンドは、chooseFollowPlay_*が「役を崩したくないので見送る」と判断した
-  // ケースを自前で検出し、崩す代わりにブラフで凌げないか試す。
+  // エリート／レジェンドは、chooseFollowPlay_eliteが「役を崩したくないので見送る」と判断した
+  // ケースを自前で検出し、崩す代わりにブラフで凌げないか試す。採点は
+  // chooseFollowPlay_elite と同じ式にそろえてある（見送り判断もここで再現するため）。
   let best=null;
   for(const c of candidates){
     const remainder = c.groupSize - c.cards.length;
     let score = scoreWithTrapGuard(hand, c.rank, c.cards.length, c.es);
     if(remainder>0) score += remainder*2;
-    if(cpuLevel==='legend'){
-      if(rules.numberLock && !numberLock && field && c.rank!=='JOKER' && field.rank!=='JOKER'
-         && effStrength(c.rank)===effStrength(field.rank)+1){
-        const nextIdxGuess = strengthIndex(c.rank) + (orderReversed() ? -1 : 1);
-        const nextRankGuess = (nextIdxGuess>=0 && nextIdxGuess<RANKS.length) ? RANKS[nextIdxGuess] : null;
-        if(nextRankGuess){
-          const selfHasNext = hand.some(h=>h.rank===nextRankGuess && !c.cards.includes(h));
-          if(!selfHasNext) score += estimateAnyOpponentHasRank(idx, nextRankGuess) * 6;
-        }
-      }
-      score += estimateBeatRisk(idx, c.rank, c.cards.length) * 4;
-    }
     if(best===null || score < best.score) best = Object.assign({}, c, {score});
   }
   if(best===null) return bluffFollowFallback(idx, hand);
