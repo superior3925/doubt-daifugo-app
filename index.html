@@ -3026,7 +3026,10 @@ function chaosConfirmActivate(cardId){
 // 下位2段階は局面を一切見ずに、使える札から等確率で1枚選んで撃つ（手札に腐らせない
 // ことだけを狙った暫定の挙動）。レジェンドは1枚ずつ状況に照らして採点し、いちばん価値の
 // 高い札が閾値を超えたときだけ撃つ。単位は handShapeScore と揃えてある（手数1つぶん＝10）。
-const CHAOS_USE_THRESHOLD = 8;
+// 自己対戦で掃引した結果、11〜14あたりが平らな最良域だった（8だと-0.359、11で-0.419、
+// 14で-0.404、5まで下げると-0.321）。撃てるからといって撃つより、狙える局面まで
+// 温存するほうが強い。平らな範囲の真ん中を採る。
+const CHAOS_USE_THRESHOLD = 12;
 function chaosCardValue(seat, type){
   const hand = hands[seat] || [];
   const mine = hand.length;
@@ -5653,8 +5656,19 @@ function gatherFollowCandidates(hand, groups){
 const SHAPE_W = {
   plays:   10,  // 手数が1つ増えることの重さ
   control:  6,  // 主導権を握れる手1つぶんの価値
-  cards:    1   // 同じ形なら枚数が少ないほうが良い（同点の切り分け）
+  cards:    1,  // 同じ形なら枚数が少ないほうが良い（同点の切り分け）
+  split:    4,  // 役を割って出したときの、残った端数1枚あたりの損（ダウトモードのみ）
+  hold:     0   // 見送って手札を丸ごと温存できることの価値（0なら戦略的パスをしない）
 };
+// 役を割る損を数えるのはダウトモードだけにする。ダウトモードには「役はしまったまま、
+// 同じランクを名乗ってジャンクを伏せる」という逃げ道があるので、割る損を数えると
+// そちらへ正しく誘導される（自己対戦で -0.126 → -0.176）。通常モードにその逃げ道は
+// 無く、割る損を数えても「代わりに悪い札を選ぶ」だけになって逆効果だった
+// （-0.160 → -0.042）。同じ重みでモードをまたぐと、どちらかが必ず損をする。
+function splitPenaltyWeight(){ return isDoubtMode() ? SHAPE_W.split : 0; }
+// 見送り（戦略的パス）は自己対戦では一貫して有害だった。hold を上げるほど成績が落ちる
+// （0/4で-0.175、8で-0.128、14以上で+0.060）。大富豪は手札を早く空にした者が勝つゲームで、
+// 1枚も捌けないパスは、役を温存できる価値では割に合わない。既定の0で無効にしてある。
 
 // 「そのランクより強い未確認札が何枚あるか」をランクごとに数えた表。候補ごとに未確認
 // プールを作り直すと重いので、1回の判断につき1度だけ作って使い回す。
@@ -5694,6 +5708,10 @@ function handShapeScore(hand, table){
   for(const r of ranks) control += 1 - beatRiskOf(table, r, groups[r].length);
   return ranks.length*SHAPE_W.plays - control*SHAPE_W.control + hand.length*SHAPE_W.cards;
 }
+// 候補を採点し、いちばん良い手に passScore（＝見送った場合の点）を添えて返す。
+// フォロー時は場の枚数ぶんしか出せないので、大きな役を持っていても割って出すことになる。
+// 割ると「次にリードを取れたときまとめて1手で捌く」機会を失うため、残った端数の枚数に
+// 応じて損を上乗せする。それでも出したほうがマシなら出す——この比較が戦略的パスになる。
 function bestByHandShape(idx, hand, candidates){
   if(candidates.length===0) return null;
   const table = buildBeatTable(idx);
@@ -5701,10 +5719,19 @@ function bestByHandShape(idx, hand, candidates){
   for(const c of candidates){
     const ids = new Set(c.cards.map(x=>x.id));
     const rest = hand.filter(x=>!ids.has(x.id));
-    const score = scoreWithTrapGuard(hand, c.rank, c.cards.length, handShapeScore(rest, table));
+    const remainder = c.groupSize - c.cards.length;   // 役を割って余る枚数
+    const base = handShapeScore(rest, table) + remainder*splitPenaltyWeight();
+    const score = scoreWithTrapGuard(hand, c.rank, c.cards.length, base);
     if(best===null || score < best.score) best = Object.assign({}, c, {score});
   }
+  // 見送りの点。1枚も捌けないので基本は損（手札がそのまま残るぶん点が高い）だが、
+  // 役を丸ごと温存できる価値（hold）がそれを上回れば見送るほうがマシになる。
+  best.passScore = handShapeScore(hand, table) - SHAPE_W.hold;
   return best;
+}
+// レジェンドが「出すより見送るほうがマシ」と判断したか。
+function shapePrefersHold(best){
+  return !!(best && best.passScore !== undefined && best.score > best.passScore);
 }
 
 function chooseLeadPlay_normal(hand, candidates){
@@ -5762,10 +5789,10 @@ function chooseFollowPlay_elite(hand, candidates){
 function chooseFollowPlay(idx, hand, candidates){
   if(cpuLevel==='normal') return chooseFollowPlay_normal(hand, candidates);
   if(cpuLevel==='legend'){
+    // レジェンドは「役を崩すなら見送る」という固定の決めうちではなく、出した場合と
+    // 見送った場合を同じ物差しで比べて決める（禁止上がりの番人は score 側に入っている）。
     const best = bestByHandShape(idx, hand, candidates);
-    if(best && hand.length>6 && best.groupSize>=3
-       && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed') return null;
-    return best;
+    return shapePrefersHold(best) ? null : best;
   }
   return chooseFollowPlay_elite(hand, candidates);
 }
@@ -5986,7 +6013,10 @@ function cpuDeclareFollow(idx, hand, groups){
     }
   }
   if(best===null) return bluffFollowFallback(idx, hand);
-  const wantsToPreserve = hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed';
+  // レジェンドは温存したいかどうかを手札の形の比較で決める。下位段階は従来どおりの決めうち。
+  const wantsToPreserve = (cpuLevel==='legend')
+    ? shapePrefersHold(best)
+    : (hand.length>6 && best.groupSize>=3 && forbiddenFinishClass(hand, best.rank, best.cards.length)!=='shed');
   if(!wantsToPreserve) return {decl: best.cards, actual: best.cards};
   if(outs[idx]<2){
     const decl = safeDeclSample(idx, best.rank, best.cards.length);
