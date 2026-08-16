@@ -336,6 +336,23 @@
     padding:3px 9px; border-radius:999px; border:1px solid rgba(231,205,123,0.4);
     background:rgba(0,0,0,0.25); color:#d9e3da; white-space:nowrap;
   }
+  /* いま効いている特殊効果の常設表示。カットインは流れて消えてしまうので、複数ターンに
+     またがる効果は「まだ効いている」ことを場に置いておく。★公開情報だけを書くこと。 */
+  .chaos-active{
+    display:flex; flex-direction:column; gap:4px; align-items:center;
+    width:100%; max-width:520px;
+  }
+  .chaos-active-row{
+    display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; justify-content:center;
+    font-size:11px; line-height:1.35;
+    padding:4px 12px; border-radius:999px;
+    border:1px solid rgba(255,233,168,0.55);
+    background:linear-gradient(100deg, rgba(91,29,143,0.45), rgba(160,50,26,0.45));
+    box-shadow:0 0 14px rgba(224,138,30,0.25);
+  }
+  .chaos-active-name{ color:var(--gold-soft); font-weight:700; white-space:nowrap; }
+  .chaos-active-note{ color:#e8ded0; }
+
   .decl-history-chip.you{ border-color:var(--gold); color:var(--gold-soft); }
   .decl-history-chip.latest{ opacity:1; }
   .decl-history-chip.fading{ opacity:0.55; }
@@ -483,6 +500,12 @@
     100%{ transform:translateY(50px) scale(0.75) rotate(10deg); opacity:0; }
   }
   .card.flow-out{ animation:cardFlowOut 0.55s ease-in forwards; pointer-events:none; }
+  /* 流れたあとも読ませたい札（特殊効果で公開のまま出したもの）。飛ばさずその場に残し、
+     「もう場のカードではない」ことは淡さと枠だけで示す。 */
+  .card.flow-held{
+    opacity:0.9; pointer-events:none;
+    box-shadow:0 0 0 2px rgba(255,233,168,0.55), 0 0 16px rgba(224,138,30,0.35);
+  }
 
   @keyframes turnGlow{
     0%,100%{ box-shadow:0 0 8px rgba(201,162,39,0.55); }
@@ -531,6 +554,9 @@
     animation:bannerPulse 0.9s ease-in-out infinite;
   }
 
+  /* 演出の縦位置は layoutCutIn() が実行時に決める（場のカードに重ならない側の帯へ寄せる）。
+     ダウトの判断は「場に何が出ているか」を見ながら行うので、演出で場を隠してはいけない。
+     ここの top は、場の位置が測れなかったときだけ使う保険の初期値。 */
   .cut-in{
     position:fixed; top:38%; left:0; right:0; z-index:80;
     display:flex; justify-content:center; pointer-events:none;
@@ -613,13 +639,15 @@
     text-shadow:0 2px 5px rgba(0,0,0,0.85);
     animation:cutInSubSlide 4.2s cubic-bezier(.2,.9,.25,1) forwards;
   }
-  /* 発動の瞬間に画面全体を一瞬だけ光らせる（特殊カード専用） */
+  /* 発動の瞬間に画面全体を一瞬だけ光らせる（特殊カード専用）。
+     光の中心は画面上寄りに置き、明るさも早めに引く——場のカードの上で白飛びさせると、
+     せっかく演出をどかしても結局そこだけ読めなくなるため。 */
   @keyframes chaosFlash{
-    0%{ opacity:0; } 8%{ opacity:0.55; } 30%{ opacity:0; } 100%{ opacity:0; }
+    0%{ opacity:0; } 8%{ opacity:0.42; } 20%{ opacity:0; } 100%{ opacity:0; }
   }
   .chaos-flash{
     position:fixed; inset:0; z-index:78; pointer-events:none;
-    background:radial-gradient(circle at 50% 42%, rgba(255,214,130,0.95), rgba(150,40,20,0.35) 45%, transparent 70%);
+    background:radial-gradient(circle at 50% 18%, rgba(255,214,130,0.95), rgba(150,40,20,0.35) 45%, transparent 70%);
     animation:chaosFlash 3.2s ease-out forwards;
   }
 
@@ -1356,8 +1384,9 @@
           <button class="discard-pile chaos-discard-pile" id="chaosDiscardBtn" type="button" title="使用済みの特殊カードを見る" style="display:none;">✨ <span id="chaosDiscardCount">0</span></button>
           <div class="turn-order-strip" id="turnOrderStrip"></div>
           <div class="opponents-row" id="opponents"></div>
-          <div class="field-area">
+          <div class="field-area" id="fieldArea">
             <div class="flags" id="flags"></div>
+            <div class="chaos-active" id="chaosActive" style="display:none;"></div>
             <div class="field-owner" id="fieldOwner"></div>
             <div class="field-cards" id="fieldCards"></div>
           </div>
@@ -1836,6 +1865,11 @@ let exchangeTokenSeq = 0; // 交換要求ごとの識別子（ゲストの二重
 let gameGen = 0;
 let flowingOutCards = null;
 let flowOutTimer = null;
+// 流れた札に添える一行と、「自動で消さずに次の一手まで出しっぱなしにするか」。
+// 特殊効果で公開のまま出して即座に流れた札は、既定の0.6秒では読む間がない
+// （出した本人しか何が出たか分からないままトリックが終わってしまう）。
+let flowingOutNote = '';
+let flowingOutHold = false;
 let legitFinishOrder = [];
 let violationFinishOrder = [];
 let violationReasons = {};
@@ -1946,6 +1980,44 @@ function chaosNoteDeckAdd(card){
 // その席がいま「ウソをつけない」状態か（＝伏せずに公開で出す）。
 function chaosHonestForced(seat){
   return chaosNantokaSeat===seat || !!(chaosOrenoTurn && chaosOrenoTurn.seat===seat);
+}
+// ---- いま効いている特殊効果（場に常設で出す一行） ----
+// カットインは数秒で流れて消えるので、1手で終わらない効果は「まだ効いている」ことを
+// 盤面に置いておかないと、途中から見た人には何が起きているのか分からない。
+// ★ここに書けるのは公開情報だけ。手札の中身・伏せ札の正体は絶対に書かない
+//   （誰がどのカードを使ったかは全員に見えているので、席名とカード名は書いてよい）。
+let chaosOngoingFeed = null;   // ゲスト用：ホストが計算した行をそのまま受け取る
+function chaosOngoingLines(){
+  if(onlineRole==='guest') return chaosOngoingFeed || [];
+  if(!isChaosMode()) return [];
+  const rows = [];
+  const oreno = (chaosNantokaSeat!==null) ? chaosNantokaSeat
+              : (chaosOrenoTurn ? chaosOrenoTurn.seat : null);
+  if(oreno!==null){
+    rows.push({name: chaosDef('orenoTurn').name,
+      note: playerName(oreno)+'の次の1手は公開（ダウト不可）。出せば場が流れて、続けて'+playerName(oreno)+'の番'});
+  }
+  if(chaosPeek && chaosPeek.trick===trickIndex){
+    rows.push({name: chaosDef('mienai').name,
+      note: 'このトリックの間、'+playerName(chaosPeek.seat)+'には全員の手札が見えています'});
+  }
+  if(chaosYoroshikuSeat!==null){
+    rows.push({name: chaosDef('yoroshiku').name,
+      note: playerName(chaosYoroshikuSeat)+'は札を出したあと、ほかの全員に1枚ずつ配ります'});
+  }
+  return rows;
+}
+function renderChaosActive(){
+  const el = document.getElementById('chaosActive');
+  if(!el) return;
+  const rows = chaosOngoingLines();
+  if(!rows.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display = 'flex';
+  el.innerHTML = rows.map(r=>
+    '<div class="chaos-active-row">'
+    + '<span class="chaos-active-name">✨'+escapeHtml(r.name)+'　効果発動中</span>'
+    + '<span class="chaos-active-note">'+escapeHtml(r.note)+'</span>'
+    + '</div>').join('');
 }
 // 特殊カードの「選択待ち」。通常の追加アクション（pendingAction）とは別に持つ。最大の違いは
 // 解決しても手番を進めないこと——発動者はこのあと通常どおりトランプを出すため。
@@ -2092,6 +2164,7 @@ function resetChaosState(){
   chaosNoteTarget = null;
   chaosResultLines = [];
   chaosCutInFresh = false;
+  chaosOngoingFeed = null;
   if(isChaosMode()){
     for(let s=0;s<seatCount;s++){
       for(let k=0;k<CHAOS_INITIAL_HAND;k++) chaosHandOf(s).push(drawChaosCard());
@@ -4129,10 +4202,14 @@ function checkForbiddenWin(playerIdx, rank, count, wasSpade3Counter, postToggleR
 
 // clearField はそのまま「トリックの終わり」を意味するので、ダウト罰の休み（トリック単位）の
 // 消化もここで行う。
-function clearField(discardLabel){
+// opts.note … 「場が流れました」の代わりに出す一行（公開情報だけ）。
+// opts.hold … 流れた札を自動で消さず、次に場が動くまで出しっぱなしにする。
+function clearField(discardLabel, opts){
   if(field && field.cards && field.cards.length){
     flowingOutCards = field.actual || field.cards;
     flowingOutFaceDown = !!(field.faceDown && !field.revealed);
+    flowingOutNote = (opts && opts.note) ? String(opts.note) : '';
+    flowingOutHold = !!(opts && opts.hold);
     if(currentTrickCards.length>0){
       const label = discardLabel
         || ('最後は'+playerName(field.owner)+'が出した'+(field.rank==='JOKER'?'ジョーカー':field.rank)+'×'+field.count+'（このトリック全体で'+currentTrickCards.length+'枚）');
@@ -4144,7 +4221,12 @@ function clearField(discardLabel){
     // カオスモードで「親になるたび1枚」を配る基準になる。
     trickIndex++;
     if(flowOutTimer) clearTimeout(flowOutTimer);
-    flowOutTimer = setTimeout(()=>{ flowingOutCards = null; flowOutTimer = null; render(); }, 600);
+    flowOutTimer = null;
+    // hold のときはタイマーで消さない。次に場が動けば field が入って上書きされるし、
+    // 新しいゲームや巻き戻しでは下の後始末が消すので、出しっぱなしのまま残ることはない。
+    if(!flowingOutHold){
+      flowOutTimer = setTimeout(()=>{ flowingOutCards = null; flowOutTimer = null; render(); }, 600);
+    }
   }
   field = null;
   passStreak = 0;
@@ -4166,6 +4248,7 @@ function dealFreshHands(){
   pendingDealAnimation = false;
   if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer=null; }
   flowingOutCards = null;
+  flowingOutNote = ''; flowingOutHold = false;
   if(cutInTimer){ clearTimeout(cutInTimer); cutInTimer=null; }
   clearCutInQueue();
   clearDoubtWindowTimers();
@@ -4873,11 +4956,15 @@ function resolvePlayCore(playerIdx, cardsPlayed, elevenBackDecision, actualCards
   // 「ずっと俺のターン!!」は他のどの効果よりも優先して即座に場を流す。公開で出しているので
   // ダウトを待つ必要がなく、4止め・スペ3返しで返される余地も残さない（仕様どおり）。
   if(nantoka){
-    clearField('「ずっと俺のターン!!」で流れた札');
+    // 公開で出した札は、すぐ流れてしまうと誰も中身を見られないまま消える。ここだけは
+    // 流れた札を出しっぱなしにして、次に場が動くまで表向きのまま読めるようにする。
+    // カットインは発動時に1度出しているので、ここでは重ねない（同じカードで二度光ると
+    // どこまでが1つの効果なのか分からなくなる）。代わりに、場の一行で続きを説明する。
+    clearField('「ずっと俺のターン!!」で流れた札', {hold:true,
+      note:'「ずっと俺のターン!!ドローっ!!」で公開のまま出して場が流れました　─　続けて'+playerName(playerIdx)+'の番'});
     fieldCleared=true;
+    chaosCutInFresh = true;   // 次のCPUの手を1つぶん遅らせ、この公開札を読む間を作る
     log('「ずっと俺のターン!!」で場が流れた！ 続けて'+playerName(playerIdx)+'の番です');
-    showCutIn('ずっと俺のターン!!ドローっ!!', undefined, {chaos:true,
-      sub:'公開で出したので誰もダウトできず、4止め・スペ3返しも不可。場が流れて続けて'+playerName(playerIdx)+'の番！'});
   } else if(rank==='8' && rules.eightGiri && !rules.fourStop){
     if(faceDown){
       field.pendingClear = 'eightGiri';
@@ -5076,12 +5163,13 @@ function passAction(playerIdx){
     chaosNantokaSeat = null;
     log(playerName(playerIdx)+'は出せる札がなく、「ずっと俺のターン!!」は空打ちに終わった');
     // 「必ず場が流れる」と予告した直後に何も起きないと、効果が壊れているように見える。
-    // 空振りに終わったことも同じ強さで見せて、使用済みの山にも結果として残す。
+    // 空振りに終わったことは、使用済みの山（＝「直近の特殊カード」欄）に結果として残す。
+    // ここでカットインを重ねないのは、同じ1枚で二度光らせないため（発動時に1度出している）。
+    // 発動中を示していた場の一行は、この時点で消えるので「終わった」ことも伝わる。
     const spent = chaosDiscard.slice().reverse()
       .find(c=>c.type==='orenoTurn' && c.seat===playerIdx && (!c.kind || c.kind==='used'));
     const line = playerName(playerIdx)+'は出せる札がなく空打ち。場を流す効果は消えました';
     if(spent) spent.note = line;
-    showCutIn(chaosDef('orenoTurn').name, undefined, {chaos:true, sub:line});
   }
   if(chaosOrenoTurn && chaosOrenoTurn.seat===playerIdx) chaosOrenoTurnFinish();
   if(!isOwnLiveField(playerIdx)) passStreak++;
@@ -5580,6 +5668,7 @@ function annulFieldPlay(){
   if(flowOutTimer){ clearTimeout(flowOutTimer); flowOutTimer = null; }
   flowingOutCards = null;
   flowingOutFaceDown = false;
+  flowingOutNote = ''; flowingOutHold = false;
 }
 
 function cpuDecideElevenBack(idx){
@@ -6327,6 +6416,55 @@ const CUT_IN_QUEUE_MAX = 3;
 let cutInQueue = [];
 let cutInBusy = false;
 function clearCutInQueue(){ cutInQueue = []; cutInBusy = false; }
+// 演出を「場のカードに重ならない側」へ寄せる。ダウトするかどうかは場に何が出ているかを
+// 見て決めるので、演出が場を覆うと、判断がつかないまま猶予が切れてしまう。
+// 場の上下で広いほうの帯を選び、そこに収まらなければ演出のほうを縮める（場は動かさない）。
+function layoutCutIn(host, stack){
+  // top と bottom を両方効かせると高さが「その差」に固定され、中身が潰れる
+  // （CSS側の top:38% が残ったまま bottom を足すと、まさにそれが起きる）。
+  // 使わないほうは必ず auto に倒して、高さは中身に決めさせる。
+  const anchorTop = (v)=>{ host.style.top = v; host.style.bottom = 'auto'; };
+  const anchorBottom = (v)=>{ host.style.bottom = v; host.style.top = 'auto'; };
+  stack.style.transform = ''; stack.style.transformOrigin = '';
+  const area = document.getElementById('fieldArea');
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  if(!area || !vh || area.offsetParent===null){ anchorTop('38%'); return; }
+  // .field-area は縦に伸びる箱なので、その全体ではなく「実際に読ませたい中身」の
+  // 範囲だけを避ける。箱ごと避けると演出の置き場がほとんど無くなってしまう。
+  let top = Infinity, bottom = -Infinity;
+  ['chaosActive','fieldOwner','fieldCards'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el || el.offsetParent===null) return;
+    const b = el.getBoundingClientRect();
+    if(b.height<=0) return;
+    top = Math.min(top, b.top); bottom = Math.max(bottom, b.bottom);
+  });
+  if(!(bottom > top)){ anchorTop('38%'); return; }
+  // 画面の外にはみ出している分は避けても意味がないので、見えている範囲だけを対象にする
+  // （スクロールで場が画面外にあるときは、そもそも隠していない）。
+  const visTop = Math.max(0, Math.min(vh, top));
+  const visBottom = Math.max(0, Math.min(vh, bottom));
+  if(visBottom - visTop < 8){ anchorTop('38%'); return; }
+  const gap = 10;
+  const above = Math.max(0, visTop - gap);
+  const below = Math.max(0, vh - visBottom - gap);
+  const putAbove = above >= below;
+  const band = putAbove ? above : below;
+  // どちらの帯も狭すぎる（画面が低い）ときは、無理に押し込まず従来どおり中央に出す。
+  // 縮めて避けたところで今度は演出が読めなくなるので、そこは重なりを許す。
+  if(band < 56){ anchorTop('38%'); return; }
+  // 高さは offsetHeight（＝レイアウト上の高さ）で測る。getBoundingClientRect は
+  // 滑り込みアニメの拡縮を含んだ「その瞬間の見た目」を返すので、開始直後に測ると
+  // 本来より小さい値になり、演出が場に食い込む。行き過ぎ（最大1.16倍）ぶんも逃がす。
+  const h = stack.offsetHeight || 0;
+  const pad = gap + Math.ceil(h * 0.09);
+  if(h * 1.16 > band){
+    stack.style.transformOrigin = putAbove ? 'bottom center' : 'top center';
+    stack.style.transform = 'scale('+Math.max(0.5, band/(h*1.16)).toFixed(3)+')';
+  }
+  if(putAbove) anchorBottom((vh - visTop + pad) + 'px');
+  else anchorTop((visBottom + pad) + 'px');
+}
 function renderCutIn(text, sound, chaos, sub){
   Feedback.sfx(sound===undefined ? 'cutin' : sound);
   const host = document.getElementById('cutInHost');
@@ -6351,6 +6489,7 @@ function renderCutIn(text, sound, chaos, sub){
     stack.appendChild(s);
   }
   host.appendChild(stack);
+  layoutCutIn(host, stack);
   // 特殊カードの演出の間だけ「表示中」として、後続を待たせる。通常の効果演出は
   // 短く数も多いので、従来どおり上書きで流す。
   cutInBusy = chaos;
@@ -7260,15 +7399,20 @@ function render(){
 
   const isNewField = field !== null && pendingDealAnimation;
   const pendingSuffix = (field && field.pendingClear) ? '（成立待ち・'+pendingClearLabel(field.pendingClear)+'）' : '';
+  renderChaosActive();
+
   if(field===null){
     if(flowingOutCards){
-      document.getElementById('fieldOwner').textContent = '場が流れました';
+      document.getElementById('fieldOwner').textContent = flowingOutNote || '場が流れました';
+      // 保持表示のときは飛ばす演出をつけない。cardFlowOut は消えて終わるアニメなので、
+      // 出しっぱなしにすると「置いてあるのに見えない」札になってしまう。
+      const fx = flowingOutHold ? 'flow-held' : 'flow-out';
       document.getElementById('fieldCards').innerHTML = flowingOutCards.map(c=>{
-        if(!flowingOutFaceDown) return cardHtml(c,'mini flow-out',false,false);
+        if(!flowingOutFaceDown) return cardHtml(c,'mini '+fx,false,false);
         // 伏せたまま流れた札：観戦者にはうっすら実体を、それ以外には裏向きを表示。
         return (spectate && c && c.rank && c.rank!=='?')
-          ? cardHtml(c,'mini flow-out spec-peek',false,false)
-          : cardBackHtml('mini flow-out');
+          ? cardHtml(c,'mini '+fx+' spec-peek',false,false)
+          : cardBackHtml('mini '+fx);
       }).join('');
     } else {
       document.getElementById('fieldOwner').textContent = '';
@@ -7468,6 +7612,11 @@ function buildRedactedView(viewerSeat){
           : flowingOutCards.map(c=>({rank:c.rank, suit:c.suit, id:c.id})))
       : null,
     flowingOutFaceDown: !!flowingOutFaceDown,
+    flowingOutNote: flowingOutNote || '',
+    flowingOutHold: !!flowingOutHold,
+    // いま効いている特殊効果の一行。公開情報だけで組んであるので全員に同じものを配る
+    // （ゲストは自前で計算せず、これをそのまま描く）。
+    chaosOngoing: chaosOngoingLines(),
     // 手札はFirebase安全な形で送る。RTDBは空配列（[]）を保存しないため、席が0枚に
     // なると hands 配列が欠落・短縮し、ゲスト側の再構成が壊れる（hands[mySeat] が
     // undefined になる等）。そこで「全席の枚数（数値配列：0も保存される）」と「自席の
@@ -7554,6 +7703,8 @@ function applyView(v){
   lastReceivedCardIds = new Set((v.pendingRemoteExchange && v.pendingRemoteExchange.receivedIds) || []);
   declHistory = v.declHistory||[]; rules = v.rules||{}; cpuLevel = v.cpuLevel||'normal';
   flowingOutCards = v.flowingOutCards || null; flowingOutFaceDown = !!v.flowingOutFaceDown;
+  flowingOutNote = v.flowingOutNote || ''; flowingOutHold = !!v.flowingOutHold;
+  chaosOngoingFeed = v.chaosOngoing || [];
   pendingDealAnimation = false; fastForward = false;
   // ゲストは dealFreshHands を通らないので、手札選択状態を明示的に用意しておく
   // （render の selected.has(...) が undefined でクラッシュするのを防ぐ。二重の安全策）。
@@ -8733,7 +8884,7 @@ const Online = (function(){
     pendingExchangeBySeat={}; exchangePairs=[]; clearExchangeResend();
     chaosHands=[]; chaosDiscard=[]; trickIndex=0; chaosGrantedForTrick=-1;
     chaosOutSnapshot=[]; chaosRecycleSel=new Set();
-    chaosNoteTarget=null; chaosResultLines=[]; chaosCutInFresh=false;
+    chaosNoteTarget=null; chaosResultLines=[]; chaosCutInFresh=false; chaosOngoingFeed=null;
     cutInFeed=null; lastSeenCutInSeq=null; clearCutInQueue();
     chaosPeek=null; chaosPeekGuest=false; chaosPending=null; clearChaosResend(); inChaosEffect=0;
     chaosNantokaSeat=null; chaosOrenoTurn=null; chaosYoroshikuSeat=null; chaosDeferredTurn=null;
